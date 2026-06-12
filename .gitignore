@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.xcresult
+
+# SPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Secrets — never commit credentials
+.env
+*.secrets
+
+# Brand kit working files (extracted zip; curated assets are committed)
+Brand/_kit-download/
