@@ -1,0 +1,88 @@
+# CI for InterlinedList (PLAN.md §6 M0: "CI (GitHub Actions: build + test)").
+#
+# Two jobs:
+#   packages — swift test for each local SPM package (matrix).
+#   app      — xcodebuild build of the InterlinedList scheme, signing disabled.
+#
+# NOTE: The contract test suite (PLAN.md §7) is env-gated and intentionally
+# NOT run in CI — it hits the live API with a test account and is run
+# manually/on-demand. If that ever changes, add a separate job gated on a
+# repository secret rather than folding it into these jobs.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Cancel superseded runs on the same ref (e.g. force-push or rapid commits).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pin to the local toolchain: Xcode 16.2 / Swift 6.0.3.
+  XCODE_VERSION: "16.2"
+
+jobs:
+  packages:
+    name: "swift test: ${{ matrix.package }}"
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [InterlinedKit, InterlinedDomain, InterlinedPersistence]
+    steps:
+      - uses: actions/checkout@v4
+
+      # macos-15 images ship Xcode 16.x; select 16.2 explicitly so the Swift
+      # version matches local dev. Fallback if 16.2 is ever dropped from the
+      # image: relax to "16" (latest 16.x) or pin via
+      # `sudo xcode-select -s /Applications/Xcode_16.2.app`.
+      - name: Select Xcode ${{ env.XCODE_VERSION }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: Cache SPM build artifacts
+        uses: actions/cache@v4
+        with:
+          path: Packages/${{ matrix.package }}/.build
+          key: spm-${{ runner.os }}-${{ matrix.package }}-${{ hashFiles(format('Packages/{0}/Package.swift', matrix.package)) }}
+          restore-keys: |
+            spm-${{ runner.os }}-${{ matrix.package }}-
+
+      - name: Run tests
+        run: swift test --package-path Packages/${{ matrix.package }}
+
+  app:
+    name: "xcodebuild: InterlinedList"
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode ${{ env.XCODE_VERSION }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+
+      - name: Cache SPM checkouts and DerivedData
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Developer/Xcode/DerivedData
+            ~/Library/Caches/org.swift.swiftpm
+          key: xcode-${{ runner.os }}-${{ hashFiles('Packages/*/Package.swift') }}
+          restore-keys: |
+            xcode-${{ runner.os }}-
+
+      # No signing identity exists on CI runners, so signing is disabled.
+      - name: Build app (unsigned)
+        run: |
+          xcodebuild build \
+            -project InterlinedList.xcodeproj \
+            -scheme InterlinedList \
+            -destination "platform=macOS" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
