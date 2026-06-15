@@ -41,12 +41,12 @@ Launched in parallel per ORCHESTRATION.md Wave 0 step 3 (non-overlapping path ow
 - Commit: `<recorded in this commit>`.
 - Coverage matrix delta: baseline created (98 endpoints, 0 implemented, 0 tested).
 
-### Auth transport decision — RECORDED (provisional)
-See [decisions/0001-auth-transport.md](decisions/0001-auth-transport.md).
+### Auth transport decision — RECORDED & spike RESOLVED (2026-06-15)
+See [decisions/0001-auth-transport.md](decisions/0001-auth-transport.md) and [spikes/auth-bearer-vs-session.md](spikes/auth-bearer-vs-session.md).
 
-- **Decision:** conservative **dual-transport** — Bearer primary + cookie-session fallback; per-request `AuthTransport` seam. Correct whether or not Bearer works on Session-only groups, so Wave 1 is unblocked.
-- **Empirical status:** spike BLOCKED — `POST /api/auth/sync-token` returns 401 `Invalid email or password` with the provided env-var credentials (endpoint healthy: empty body → 400). Probe ready to re-run once valid credentials are supplied; if Bearer proves universal, open `0002` to drop the fallback.
-- **Wave 1 carry-in:** every Wave 1 task prompt must cite decision 0001 and build the `AuthTransport` seam.
+- **Spike resolved:** user supplied working credentials; read-only probe ran in full. **Bearer works on nearly the whole surface** (incl. Notifications, Follow, Organizations, Documents, document folders, message replies — all 200). Bearer is rejected (401) on only **~6 endpoints**: `GET /api/user/identities`, `GET /api/user/organizations`, and the four `GET /api/exports/*` CSV endpoints.
+- **Decision:** `AuthTransport` seam — **Bearer default for everything**, **lazy cookie-session fallback** scoped to that ~6-endpoint allowlist; runtime 401-retry safety net for drift. Simpler than the conservative fallback the docs implied.
+- **Wave 1 carry-in:** every Wave 1 task prompt must cite decision 0001 — Bearer primary, lazy session fallback for the allowlist only.
 
 ---
 
