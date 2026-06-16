@@ -37,7 +37,13 @@ public struct RegisterRequest: Encodable, Sendable, Equatable {
     }
 }
 
-/// Payload for `POST /api/auth/password-reset/request`.
+/// Legacy payload for the password-reset request.
+///
+/// - Warning: The path this was built for, `/api/auth/password-reset/request`,
+///   does not exist on the live API (it returns 404). The working endpoint is
+///   `POST /api/auth/forgot-password`; use `ForgotPasswordRequest` and
+///   `AuthService.requestPasswordReset`. Retained only for source compatibility.
+@available(*, deprecated, message: "Use ForgotPasswordRequest — /api/auth/password-reset/request 404s on the live API.")
 public struct PasswordResetRequest: Encodable, Sendable, Equatable {
     public let email: String
 
@@ -70,6 +76,22 @@ public protocol AuthServiceProtocol: Sendable {
 
     /// Triggers the password-reset email flow. Does not require a token.
     func requestPasswordReset(email: String) async throws
+
+    /// Completes a password reset using the `token` from the reset email and a
+    /// new password. Does not require a bearer token.
+    func resetPassword(token: String, newPassword: String) async throws
+
+    /// (Re)sends the email-verification message for `email`. Requires an
+    /// authenticated caller (the live endpoint rejects anonymous requests).
+    func sendVerificationEmail(email: String) async throws
+
+    /// Verifies the account using the `token` from the verification email.
+    /// Does not require a bearer token.
+    func verifyEmail(token: String) async throws
+
+    /// Ends the server-side cookie session (`POST /api/auth/logout`). This does
+    /// **not** clear the locally-held bearer token — use `signOut()` for that.
+    func logout() async throws
 
     /// Clears the persisted token. Domain code should also clear caches.
     func signOut() async throws
@@ -120,13 +142,27 @@ public final class AuthService: AuthServiceProtocol {
     }
 
     public func requestPasswordReset(email: String) async throws {
-        let request = Request<EmptyResponse>(
-            method: .post,
-            path: "/api/auth/password-reset/request",
-            body: .json(PasswordResetRequest(email: email)),
-            auth: .none
-        )
-        try await api.sendVoid(request)
+        // Uses /api/auth/forgot-password — the live, working path. The
+        // previously-coded /api/auth/password-reset/request returns 404
+        // (verified by probe; see the task report). The `Auth` builder owns
+        // the path and body so there is a single source of truth.
+        try await api.sendVoid(Auth.forgotPassword(email: email))
+    }
+
+    public func resetPassword(token: String, newPassword: String) async throws {
+        try await api.sendVoid(Auth.resetPassword(token: token, newPassword: newPassword))
+    }
+
+    public func sendVerificationEmail(email: String) async throws {
+        try await api.sendVoid(Auth.sendVerificationEmail(email: email))
+    }
+
+    public func verifyEmail(token: String) async throws {
+        try await api.sendVoid(Auth.verifyEmail(token: token))
+    }
+
+    public func logout() async throws {
+        try await api.sendVoid(Auth.logout())
     }
 
     public func signOut() async throws {

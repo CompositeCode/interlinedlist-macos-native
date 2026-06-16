@@ -19,3 +19,6 @@ Package.resolved
 
 # Brand kit working files (extracted zip; curated assets are committed)
 Brand/_kit-download/
+
+# Agent worktrees (isolated parallel work, never committed)
+.claude/worktrees/
