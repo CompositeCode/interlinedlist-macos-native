@@ -20,5 +20,10 @@ Package.resolved
 # Brand kit working files (extracted zip; curated assets are committed)
 Brand/_kit-download/
 
-# Agent worktrees (isolated parallel work, never committed)
-.claude/worktrees/
+# Claude Code assets — ignore everything under .claude by default (local
+# settings, agent worktrees, caches, history, todos), then re-include only the
+# shareable, version-controlled project assets.
+.claude/*
+!.claude/README.md
+!.claude/agents/
+!.claude/skills/
