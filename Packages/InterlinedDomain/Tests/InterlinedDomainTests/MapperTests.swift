@@ -1,0 +1,185 @@
+import XCTest
+import InterlinedKit
+@testable import InterlinedDomain
+
+/// Verifies the DTO → domain boundary (PLAN.md §3): nullable fields resolve to
+/// sensible defaults and no DTO leaks through.
+final class MapperTests: XCTestCase {
+
+    private let date = Date(timeIntervalSince1970: 1_700_000_000)
+
+    // MARK: UserSummary
+
+    func test_givenSummaryWithDisplayName_whenMapped_thenUsesDisplayName() {
+        // Given
+        let dto = UserSummaryDTO(id: "1", username: "ada", displayName: "Ada", avatar: "https://x/a.png")
+
+        // When
+        let summary = UserSummary(from: dto)
+
+        // Then
+        XCTAssertEqual(summary.displayName, "Ada")
+        XCTAssertEqual(summary.avatarURL, URL(string: "https://x/a.png"))
+    }
+
+    func test_givenSummaryMissingDisplayName_whenMapped_thenFallsBackToUsername() {
+        // Given
+        let dto = UserSummaryDTO(id: "1", username: "ada", displayName: nil, avatar: nil)
+
+        // When
+        let summary = UserSummary(from: dto)
+
+        // Then
+        XCTAssertEqual(summary.displayName, "ada")
+        XCTAssertNil(summary.avatarURL)
+    }
+
+    // MARK: Message
+
+    func test_givenMessageWithNullTags_whenMapped_thenTagsAreEmpty() {
+        // Given
+        let dto = makeMessageDTO(tags: nil)
+
+        // When
+        let message = Message(from: dto)
+
+        // Then
+        XCTAssertEqual(message.tags, [])
+    }
+
+    func test_givenPublicMessage_whenMapped_thenVisibilityIsPublic() {
+        // Given / When
+        let message = Message(from: makeMessageDTO(publiclyVisible: true))
+
+        // Then
+        XCTAssertEqual(message.visibility, .public)
+        XCTAssertTrue(message.visibility.isPubliclyVisible)
+    }
+
+    func test_givenPrivateMessage_whenMapped_thenVisibilityIsPrivate() {
+        // Given / When
+        let message = Message(from: makeMessageDTO(publiclyVisible: false))
+
+        // Then
+        XCTAssertEqual(message.visibility, .private)
+    }
+
+    func test_givenMessageWithPushedMessage_whenMapped_thenCarriesRepost() {
+        // Given
+        let original = makeMessageDTO(id: "orig")
+        let dto = makeMessageDTO(id: "repost", pushedMessage: PushedMessageBox(original))
+
+        // When
+        let message = Message(from: dto)
+
+        // Then
+        XCTAssertEqual(message.repost?.original.id, "orig")
+    }
+
+    func test_givenMessageWithoutPushedMessage_whenMapped_thenRepostIsNil() {
+        // Given / When
+        let message = Message(from: makeMessageDTO(pushedMessage: nil))
+
+        // Then
+        XCTAssertNil(message.repost)
+    }
+
+    func test_givenMessageDigState_whenMapped_thenPreservesDigCountAndFlag() {
+        // Given / When
+        let message = Message(from: makeMessageDTO(digCount: 7, dugByMe: true))
+
+        // Then
+        XCTAssertEqual(message.digCount, 7)
+        XCTAssertTrue(message.didDig)
+    }
+
+    // MARK: CurrentUser
+
+    func test_givenSubscriberUser_whenMapped_thenCustomerStatusIsSubscriber() {
+        // Given / When
+        let user = CurrentUser(from: makeUserDTO(customerStatus: "subscriber"))
+
+        // Then
+        XCTAssertEqual(user.customerStatus, .subscriber)
+        XCTAssertEqual(user.email, "ada@example.com")
+    }
+
+    func test_givenUnknownCustomerStatus_whenMapped_thenPreservedAsOther() {
+        // Given / When
+        let user = CurrentUser(from: makeUserDTO(customerStatus: "trialing"))
+
+        // Then
+        XCTAssertEqual(user.customerStatus, .other("trialing"))
+        XCTAssertFalse(user.customerStatus.isSubscriber)
+    }
+
+    // MARK: TimelinePage
+
+    func test_givenPaginationHasMore_whenMapped_thenNextOffsetAdvances() {
+        // Given
+        let paginated = Paginated(
+            items: [makeMessageDTO(id: "a")],
+            pagination: PaginationInfo(total: 40, limit: 20, offset: 0, hasMore: true)
+        )
+
+        // When
+        let page = TimelinePage(from: paginated)
+
+        // Then
+        XCTAssertTrue(page.hasMore)
+        XCTAssertEqual(page.nextOffset, 20)
+    }
+
+    func test_givenPaginationNoMore_whenMapped_thenNextOffsetIsNil() {
+        // Given
+        let paginated = Paginated(
+            items: [makeMessageDTO(id: "a")],
+            pagination: PaginationInfo(total: 1, limit: 20, offset: 0, hasMore: false)
+        )
+
+        // When
+        let page = TimelinePage(from: paginated)
+
+        // Then
+        XCTAssertFalse(page.hasMore)
+        XCTAssertNil(page.nextOffset)
+    }
+
+    // MARK: - Builders
+
+    private func makeMessageDTO(
+        id: String = "m1",
+        publiclyVisible: Bool = true,
+        tags: [String]? = ["swift"],
+        digCount: Int = 3,
+        dugByMe: Bool = false,
+        pushedMessage: PushedMessageBox? = nil
+    ) -> MessageDTO {
+        MessageDTO(
+            id: id,
+            content: "hello",
+            publiclyVisible: publiclyVisible,
+            userId: "u1",
+            tags: tags,
+            createdAt: date,
+            updatedAt: date,
+            digCount: digCount,
+            pushCount: 1,
+            user: UserSummaryDTO(id: "u1", username: "ada", displayName: "Ada", avatar: nil),
+            pushedMessage: pushedMessage,
+            dugByMe: dugByMe
+        )
+    }
+
+    private func makeUserDTO(customerStatus: String) -> UserDTO {
+        UserDTO(
+            id: "u1",
+            email: "ada@example.com",
+            username: "ada",
+            displayName: "Ada",
+            emailVerified: true,
+            customerStatus: customerStatus,
+            createdAt: date
+        )
+    }
+}
