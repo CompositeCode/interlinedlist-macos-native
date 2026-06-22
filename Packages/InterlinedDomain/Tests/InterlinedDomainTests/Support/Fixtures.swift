@@ -85,6 +85,154 @@ enum Fixtures {
         """
     }
 
+    // MARK: - Lists fixtures
+
+    /// A single `ListDTO` object body (the inner JSON of one list).
+    static func listObject(
+        id: String,
+        title: String = "Books",
+        description: String? = "Things I have read",
+        isPublic: Bool? = true,
+        schema: String? = "Title:text, Year:number",
+        parentId: String? = nil
+    ) -> String {
+        let descJSON = description.map { "\"\($0)\"" } ?? "null"
+        let schemaJSON = schema.map { "\"\($0)\"" } ?? "null"
+        let parentJSON = parentId.map { "\"\($0)\"" } ?? "null"
+        let isPublicJSON = isPublic.map { $0 ? "true" : "false" } ?? "null"
+        return """
+        {
+          "id": "\(id)",
+          "title": "\(title)",
+          "description": \(descJSON),
+          "isPublic": \(isPublicJSON),
+          "schema": \(schemaJSON),
+          "parentId": \(parentJSON),
+          "createdAt": "\(createdAtISO)",
+          "updatedAt": "\(createdAtISO)"
+        }
+        """
+    }
+
+    /// The `{ "data": [...], "pagination": {...} }` envelope used by the
+    /// public-list browse and the row endpoint.
+    static func paginatedLists(
+        ids: [String],
+        total: Int? = nil,
+        limit: Int = 20,
+        offset: Int = 0,
+        hasMore: Bool = false
+    ) -> String {
+        let objects = ids.map { listObject(id: $0) }.joined(separator: ",")
+        let totalValue = total ?? ids.count
+        return """
+        {
+          "data": [\(objects)],
+          "pagination": {
+            "total": \(totalValue),
+            "limit": \(limit),
+            "offset": \(offset),
+            "hasMore": \(hasMore)
+          }
+        }
+        """
+    }
+
+    /// A single `ListRowDTO` object body with two columns matching the schema
+    /// fixture.
+    static func listRowObject(
+        id: String,
+        listId: String = "list-1",
+        title: String = "Dune",
+        year: Int = 1965
+    ) -> String {
+        """
+        {
+          "id": "\(id)",
+          "listId": "\(listId)",
+          "rowData": {
+            "Title": "\(title)",
+            "Year": \(year)
+          },
+          "createdAt": "\(createdAtISO)",
+          "updatedAt": "\(createdAtISO)"
+        }
+        """
+    }
+
+    /// The paginated row envelope: `{ "data": [...], "pagination": {...} }`.
+    static func paginatedRows(
+        ids: [String],
+        total: Int? = nil,
+        limit: Int = 20,
+        offset: Int = 0,
+        hasMore: Bool = false
+    ) -> String {
+        let objects = ids.map { listRowObject(id: $0) }.joined(separator: ",")
+        let totalValue = total ?? ids.count
+        return """
+        {
+          "data": [\(objects)],
+          "pagination": {
+            "total": \(totalValue),
+            "limit": \(limit),
+            "offset": \(offset),
+            "hasMore": \(hasMore)
+          }
+        }
+        """
+    }
+
+    // MARK: - Follow / social fixtures
+
+    /// `GET /api/follow/[userId]/status` shape.
+    static func followStatus(
+        following: Bool = false,
+        followedBy: Bool = false,
+        pendingRequest: Bool = false
+    ) -> String {
+        """
+        {
+          "following": \(following),
+          "followedBy": \(followedBy),
+          "pendingRequest": \(pendingRequest)
+        }
+        """
+    }
+
+    /// `GET /api/follow/[userId]/counts` shape.
+    static func followCounts(followerCount: Int, followingCount: Int) -> String {
+        """
+        { "followerCount": \(followerCount), "followingCount": \(followingCount) }
+        """
+    }
+
+    /// A single `FollowUserDTO` object body.
+    static func followUserObject(
+        id: String,
+        username: String = "ada",
+        displayName: String? = "Ada Lovelace",
+        avatarUrl: String? = "https://cdn.interlinedlist.com/ada.png"
+    ) -> String {
+        let displayJSON = displayName.map { "\"\($0)\"" } ?? "null"
+        let avatarJSON = avatarUrl.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "id": "\(id)",
+          "username": "\(username)",
+          "displayName": \(displayJSON),
+          "avatarUrl": \(avatarJSON)
+        }
+        """
+    }
+
+    /// The bare-array shape `GET /api/follow/[userId]/followers` and `/following`
+    /// return today.
+    static func followUserArray(ids: [String]) -> String {
+        let objects = ids.map { followUserObject(id: $0) }.joined(separator: ",")
+        return "[\(objects)]"
+    }
+
     /// The `GET /api/user` envelope: `{ "user": { ... } }`.
     static func userEnvelope(
         id: String = "user-ada",

@@ -1,6 +1,10 @@
 // TimelinePlaceholderView
 //
-// M0 placeholder. Replaced in M1 with the real feed view per PLAN.md §6.
+// Superseded by `TimelineRootView` in M1. Kept here only as a
+// minimal fallback view for previews / scaffolding scenarios that do
+// not have an `AppEnvironment` available. The main window dispatcher
+// (`MainWindowView.SidebarDetailDispatcher`) routes the Timeline
+// case to `TimelineRootView()`.
 
 import SwiftUI
 

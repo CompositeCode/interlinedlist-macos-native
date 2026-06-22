@@ -1,6 +1,10 @@
 // ListsPlaceholderView
 //
-// M0 placeholder. Replaced in M3 with the lists feature per PLAN.md §6.
+// Superseded by `ListsBrowserView` in M1. Kept here only as a
+// minimal fallback view for previews / scaffolding scenarios that do
+// not have an `AppEnvironment` available. The main window dispatcher
+// (`MainWindowView.SidebarDetailDispatcher`) routes the Lists case
+// to `ListsBrowserView()`.
 
 import SwiftUI
 

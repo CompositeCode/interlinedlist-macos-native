@@ -1,10 +1,14 @@
 // MainWindowView
 //
-// M0 placeholder for the app's main window. Renders a NavigationSplitView
-// with the seven sidebar sections enumerated in PLAN.md §5 (Timeline,
-// Scheduled, Notifications, Lists, Documents, Organizations, Profile) —
-// static labels only; no behaviour. Real navigation routing arrives with
-// the per-feature work in later waves.
+// The app's main window: a `NavigationSplitView` with the seven
+// sidebar sections enumerated in PLAN.md §5 (Timeline, Scheduled,
+// Notifications, Lists, Documents, Organizations, Profile).
+//
+// The sidebar is fixed; the detail column is driven by the
+// `SidebarDetailDispatcher` below, which switches on `SidebarSection`
+// and returns the per-feature root view. Each feature owns its own
+// folder under `App/Features/<Feature>/` and replaces its case in the
+// dispatcher when it lands — every other line stays untouched.
 
 import SwiftUI
 
@@ -47,7 +51,7 @@ struct MainWindowView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
             if let selection {
-                PlaceholderDetailView(section: selection)
+                SidebarDetailDispatcher(section: selection)
             } else {
                 Text("Select a section")
                     .foregroundStyle(.secondary)
@@ -56,24 +60,46 @@ struct MainWindowView: View {
     }
 }
 
-private struct PlaceholderDetailView: View {
+// MARK: - SidebarDetailDispatcher
+//
+// Single switch that maps a sidebar section to its detail view. This is
+// the *only* place feature roots are constructed for the main window.
+//
+// Extension contract for parallel feature agents:
+//   - To wire up a new feature, change exactly one line in this switch
+//     to point at the new feature root (e.g. `case .lists: ListsBrowserView()`).
+//   - Do not add cross-cutting state here. Anything richer than "swap
+//     one case to its new root view" belongs inside the feature folder.
+//   - Cases that have not landed yet render their original
+//     `*PlaceholderView` so the app keeps building.
+
+private struct SidebarDetailDispatcher: View {
     let section: SidebarSection
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: section.systemImage)
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
-            Text(section.rawValue)
-                .font(.title)
-            Text("Coming soon")
-                .foregroundStyle(.secondary)
+        switch section {
+        case .timeline:
+            TimelineRootView()
+        case .scheduled:
+            // Scheduled posts ship in M6 with cross-posting (PLAN.md §6).
+            // No dedicated folder exists yet; the compose placeholder is
+            // the closest stand-in until the scheduled-posts UI lands.
+            ComposePlaceholderView()
+        case .notifications:
+            NotificationsPlaceholderView()
+        case .lists:
+            ListsBrowserView()
+        case .documents:
+            DocumentsPlaceholderView()
+        case .organizations:
+            OrganizationsPlaceholderView()
+        case .profile:
+            ProfileRootView()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle(section.rawValue)
     }
 }
 
 #Preview {
     MainWindowView()
+        .environmentObject(AppEnvironment.live())
 }
