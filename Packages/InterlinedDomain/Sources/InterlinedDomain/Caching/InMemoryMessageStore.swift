@@ -41,6 +41,16 @@ public actor InMemoryMessageStore: MessageStore {
         }
     }
 
+    public func remove(id: String) async {
+        messagesByID.removeValue(forKey: id)
+        for (key, messages) in timelines {
+            let filtered = messages.filter { $0.id != id }
+            if filtered.count != messages.count {
+                timelines[key] = filtered
+            }
+        }
+    }
+
     public func clear() async {
         timelines.removeAll()
         messagesByID.removeAll()

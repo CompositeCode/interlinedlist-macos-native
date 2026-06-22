@@ -81,7 +81,11 @@ public protocol SocialServicing: Sendable {
 
     /// Loads follower / following counts for `userId`. Cheap call that powers
     /// the header stats on a profile.
-    func counts(of userId: String) async throws -> FollowCountsDTO
+    ///
+    /// Returns the domain `FollowCounts` (not the underlying
+    /// `InterlinedKit.FollowCountsDTO`) per decision 0003 — App-layer files
+    /// must not need `import InterlinedKit` to render counts.
+    func counts(of userId: String) async throws -> FollowCounts
 
     /// Loads the followers list for `userId`. Bare-array shape today (see
     /// `FollowEndpoint.swift` note); the `UsersPage.hasMore` is always
@@ -144,8 +148,9 @@ public final class SocialService: SocialServicing {
         try await api.send(Follow.status(userId: userId))
     }
 
-    public func counts(of userId: String) async throws -> FollowCountsDTO {
-        try await api.send(Follow.counts(userId: userId))
+    public func counts(of userId: String) async throws -> FollowCounts {
+        let dto = try await api.send(Follow.counts(userId: userId))
+        return FollowCounts(from: dto)
     }
 
     // MARK: Follower / following lists

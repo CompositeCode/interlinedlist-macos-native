@@ -19,11 +19,13 @@
 // kit-level builder (`Messages.userMessages(username:limit:offset:)`)
 // exists but isn't wrapped by `MessagesService`, and the App layer is not
 // permitted to call the kit directly (layering — see PLAN.md §3).
+//
+// Per decision 0003 (App-layer Kit-import policy), this view model consumes
+// the domain `FollowCounts` and does not `import InterlinedKit`.
 
 import Foundation
 import Observation
 import InterlinedDomain
-import InterlinedKit
 
 @MainActor
 @Observable
@@ -54,7 +56,7 @@ final class ProfileViewModel {
     /// `social.counts(of:)` call. `nil` when the counts request hasn't
     /// completed yet or failed. Counts failure is *soft* — `profile`
     /// stays set so the header still renders.
-    private(set) var counts: FollowCountsDTO?
+    private(set) var counts: FollowCounts?
 
     /// True while either the profile load or the counts follow-up is in
     /// flight. The view shows a single progress indicator for both.

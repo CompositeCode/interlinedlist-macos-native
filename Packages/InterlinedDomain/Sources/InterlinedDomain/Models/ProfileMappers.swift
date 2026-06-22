@@ -54,12 +54,16 @@ extension UserProfile {
     /// Returns a copy with the counts populated — used by `SocialService` to
     /// stitch the identity payload together with the `/api/follow/[id]/counts`
     /// response without making the model mutable.
-    public func withCounts(_ counts: FollowCountsDTO) -> UserProfile {
+    ///
+    /// Takes the domain `FollowCounts` (not the underlying
+    /// `InterlinedKit.FollowCountsDTO`) per decision 0003 — App-layer call
+    /// sites must not need `import InterlinedKit`.
+    public func withCounts(_ counts: FollowCounts) -> UserProfile {
         UserProfile(
             summary: summary,
             bio: bio,
-            followerCount: counts.followerCount,
-            followingCount: counts.followingCount,
+            followerCount: counts.followers,
+            followingCount: counts.following,
             isPrivate: isPrivate,
             joinedAt: joinedAt
         )

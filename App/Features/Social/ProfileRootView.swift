@@ -15,10 +15,12 @@
 // The view is a thin shell over `ProfileViewModel`: it observes state,
 // dispatches user intents, and leaves all loading / error logic in the
 // view model so unit tests cover the behavior without touching SwiftUI.
+//
+// Per decision 0003 (App-layer Kit-import policy), this view consumes the
+// domain `FollowCounts` and does not `import InterlinedKit`.
 
 import SwiftUI
 import InterlinedDomain
-import InterlinedKit
 
 struct ProfileRootView: View {
 
@@ -127,7 +129,7 @@ struct ProfileRootView: View {
     }
 
     @ViewBuilder
-    private func profileSection(profile: UserProfile, counts: FollowCountsDTO?) -> some View {
+    private func profileSection(profile: UserProfile, counts: FollowCounts?) -> some View {
         ScrollView {
             ProfileHeaderView(profile: profile, counts: counts)
         }

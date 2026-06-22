@@ -113,6 +113,36 @@ final class MapperTests: XCTestCase {
         XCTAssertFalse(user.customerStatus.isSubscriber)
     }
 
+    // MARK: FollowCounts (decision 0003 — App-layer Kit-import policy)
+
+    func test_givenCountsDTO_whenMapped_thenFollowersAndFollowingArePreserved() {
+        // Given
+        let dto = FollowCountsDTO(followerCount: 12, followingCount: 7)
+
+        // When
+        let counts = FollowCounts(from: dto)
+
+        // Then
+        XCTAssertEqual(counts.followers, 12)
+        XCTAssertEqual(counts.following, 7)
+        // And the DTO-shaped aliases continue to read the same values, so
+        // call sites that read `.followerCount` against the DTO compile
+        // unchanged against the domain value.
+        XCTAssertEqual(counts.followerCount, 12)
+        XCTAssertEqual(counts.followingCount, 7)
+    }
+
+    func test_givenZeroedCountsDTO_whenMapped_thenMatchesZeroBoundary() {
+        // Given — boundary: a brand-new account with no follow relationships.
+        let dto = FollowCountsDTO(followerCount: 0, followingCount: 0)
+
+        // When
+        let counts = FollowCounts(from: dto)
+
+        // Then
+        XCTAssertEqual(counts, .zero)
+    }
+
     // MARK: TimelinePage
 
     func test_givenPaginationHasMore_whenMapped_thenNextOffsetAdvances() {

@@ -280,6 +280,386 @@ final class MessagesServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - M2 write surface: create
+
+    func test_givenBody_whenCreating_thenPostsToMessagesAndReturnsDomainMessage() async throws {
+        // Given
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageObject(id: "m-new", content: "hello"))
+        let store = InMemoryMessageStore()
+        let service = MessagesService(api: api, store: store)
+
+        // When
+        let message = try await service.create(
+            body: "hello",
+            parentId: nil,
+            tags: ["swift"],
+            visibility: .public,
+            pushedMessageId: nil
+        )
+
+        // Then
+        XCTAssertEqual(message.id, "m-new")
+        XCTAssertEqual(message.text, "hello")
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.method, "POST")
+        XCTAssertEqual(recorded.first?.path, "/api/messages")
+        let cached = await store.cachedMessage(id: "m-new")
+        XCTAssertEqual(cached?.id, "m-new")
+    }
+
+    func test_givenEmptyBody_whenCreating_thenStillPostsAndReturnsServerResponse() async throws {
+        // Given — boundary: the API permits an empty content (bare reposts use
+        // this shape). The domain layer does not pre-validate; it forwards
+        // whatever the caller supplied and trusts the server to reject as
+        // needed.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageObject(id: "m-empty", content: ""))
+        let service = MessagesService(api: api)
+
+        // When
+        let message = try await service.create(
+            body: "",
+            parentId: nil,
+            tags: [],
+            visibility: .public,
+            pushedMessageId: nil
+        )
+
+        // Then
+        XCTAssertEqual(message.id, "m-empty")
+        XCTAssertEqual(message.text, "")
+    }
+
+    func test_givenAPIFailure_whenCreating_thenThrows() async throws {
+        // Given — invalid input: server rejects with 400.
+        let api = StubAPIClient()
+        await api.enqueue(failure: .badRequest(serverMessage: "content too long"))
+        let service = MessagesService(api: api)
+
+        // When / Then
+        do {
+            _ = try await service.create(
+                body: String(repeating: "x", count: 5_000),
+                parentId: nil,
+                tags: [],
+                visibility: .public,
+                pushedMessageId: nil
+            )
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .badRequest(serverMessage: "content too long"))
+        }
+    }
+
+    func test_givenPrivateVisibility_whenCreating_thenStoresPrivateVisibility() async throws {
+        // Given — happy path covering visibility round-trip.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageObject(id: "m-priv", publiclyVisible: false))
+        let service = MessagesService(api: api)
+
+        // When
+        let message = try await service.create(
+            body: "secret",
+            parentId: nil,
+            tags: [],
+            visibility: .private,
+            pushedMessageId: nil
+        )
+
+        // Then
+        XCTAssertEqual(message.visibility, .private)
+    }
+
+    // MARK: - M2 write surface: reply
+
+    func test_givenParent_whenReplying_thenForwardsParentIdToCreate() async throws {
+        // Given
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageObject(id: "r-1", parentId: "m-parent"))
+        let service = MessagesService(api: api)
+
+        // When
+        let reply = try await service.reply(
+            to: "m-parent",
+            body: "great post",
+            tags: [],
+            visibility: .public
+        )
+
+        // Then
+        XCTAssertEqual(reply.parentID, "m-parent")
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.path, "/api/messages")
+        XCTAssertEqual(recorded.first?.method, "POST")
+    }
+
+    func test_givenEmptyParentId_whenReplying_thenStillForwardsToCreate() async throws {
+        // Given — invalid input case: empty parent. The domain layer doesn't
+        // pre-validate; it forwards to `create` and lets the server reject.
+        let api = StubAPIClient()
+        await api.enqueue(failure: .badRequest(serverMessage: "missing parent"))
+        let service = MessagesService(api: api)
+
+        // When / Then
+        do {
+            _ = try await service.reply(to: "", body: "hi", tags: [], visibility: .public)
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .badRequest(serverMessage: "missing parent"))
+        }
+    }
+
+    // MARK: - M2 write surface: repost
+
+    func test_givenOriginal_whenReposting_thenSendsPushedMessageId() async throws {
+        // Given
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageObject(id: "rp-1", pushedMessageId: "m-orig"))
+        let service = MessagesService(api: api)
+
+        // When
+        let repost = try await service.repost(
+            "m-orig",
+            commentary: "this!",
+            visibility: .public
+        )
+
+        // Then
+        XCTAssertEqual(repost.id, "rp-1")
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.method, "POST")
+        XCTAssertEqual(recorded.first?.path, "/api/messages")
+    }
+
+    func test_givenNoCommentary_whenReposting_thenSendsEmptyBodyAndStillReturnsMessage() async throws {
+        // Given — boundary: a bare repost with no commentary.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageObject(id: "rp-2", content: ""))
+        let service = MessagesService(api: api)
+
+        // When
+        let repost = try await service.repost("m-orig", commentary: nil, visibility: .public)
+
+        // Then
+        XCTAssertEqual(repost.text, "")
+    }
+
+    func test_givenRepostAPIFailure_whenReposting_thenThrows() async throws {
+        // Given
+        let api = StubAPIClient()
+        await api.enqueue(failure: .forbidden(serverMessage: "blocked author"))
+        let service = MessagesService(api: api)
+
+        // When / Then
+        do {
+            _ = try await service.repost("m-orig", commentary: nil, visibility: .public)
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .forbidden(serverMessage: "blocked author"))
+        }
+    }
+
+    // MARK: - M2 write surface: update (edit)
+
+    func test_givenEdits_whenUpdating_thenPutsToMessageIdAndCachesResult() async throws {
+        // Given
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageObject(id: "m-42", content: "edited"))
+        let store = InMemoryMessageStore()
+        let service = MessagesService(api: api, store: store)
+
+        // When
+        let updated = try await service.update(
+            messageId: "m-42",
+            body: "edited",
+            tags: ["swift"],
+            visibility: .public
+        )
+
+        // Then
+        XCTAssertEqual(updated.text, "edited")
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.method, "PUT")
+        XCTAssertEqual(recorded.first?.path, "/api/messages/m-42")
+        let cached = await store.cachedMessage(id: "m-42")
+        XCTAssertEqual(cached?.text, "edited")
+    }
+
+    func test_givenEmptyBody_whenUpdating_thenStillIssuesPut() async throws {
+        // Given — boundary: empty body. Forwarded as-is; server validates.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageObject(id: "m-42", content: ""))
+        let service = MessagesService(api: api)
+
+        // When
+        let updated = try await service.update(
+            messageId: "m-42",
+            body: "",
+            tags: [],
+            visibility: .public
+        )
+
+        // Then
+        XCTAssertEqual(updated.text, "")
+    }
+
+    func test_givenUpdateAPIFailure_whenUpdating_thenThrows() async throws {
+        // Given
+        let api = StubAPIClient()
+        await api.enqueue(failure: .notFound(serverMessage: "gone"))
+        let service = MessagesService(api: api)
+
+        // When / Then
+        do {
+            _ = try await service.update(
+                messageId: "missing",
+                body: "x",
+                tags: [],
+                visibility: .public
+            )
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .notFound(serverMessage: "gone"))
+        }
+    }
+
+    // MARK: - M2 write surface: delete
+
+    func test_givenMessageId_whenDeleting_thenIssuesDeleteAndRemovesFromCache() async throws {
+        // Given a primed cache that holds the message.
+        let store = InMemoryMessageStore()
+        await store.upsert([Message(from: sampleDTO(id: "m-del"))])
+        let api = StubAPIClient()
+        // `sendVoid` consumes one queued outcome but discards the bytes —
+        // any non-failure entry works.
+        await api.enqueue(json: "{}")
+        let service = MessagesService(api: api, store: store)
+
+        // When
+        try await service.delete(messageId: "m-del")
+
+        // Then
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.method, "DELETE")
+        XCTAssertEqual(recorded.first?.path, "/api/messages/m-del")
+        let cached = await store.cachedMessage(id: "m-del")
+        XCTAssertNil(cached, "Deleted message must be evicted from the by-id cache.")
+    }
+
+    func test_givenMessageNotCached_whenDeleting_thenStillSucceeds() async throws {
+        // Given — boundary: deleting a message we never cached.
+        let api = StubAPIClient()
+        await api.enqueue(json: "{}")
+        let service = MessagesService(api: api, store: InMemoryMessageStore())
+
+        // When / Then — no throw.
+        try await service.delete(messageId: "never-cached")
+    }
+
+    func test_givenDeleteAPIFailure_whenDeleting_thenThrowsAndLeavesCacheIntact() async throws {
+        // Given a primed cache and a failing server delete.
+        let store = InMemoryMessageStore()
+        await store.upsert([Message(from: sampleDTO(id: "m-keep"))])
+        let api = StubAPIClient()
+        await api.enqueue(failure: .forbidden(serverMessage: "not yours"))
+        let service = MessagesService(api: api, store: store)
+
+        // When / Then
+        do {
+            try await service.delete(messageId: "m-keep")
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .forbidden(serverMessage: "not yours"))
+        }
+        // Cache must remain untouched on a failed delete.
+        let cached = await store.cachedMessage(id: "m-keep")
+        XCTAssertNotNil(cached)
+    }
+
+    // MARK: - M2 write surface: dig / undig
+
+    func test_givenMessage_whenDigging_thenReturnsMessageWithUpdatedDigCount() async throws {
+        // Given — dig endpoint, followed by the get-by-id refresh the service
+        // issues to fold the new count into a full `Message`.
+        let api = StubAPIClient()
+        await api.enqueue(json: """
+        { "digCount": 5, "dugByMe": true, "isNewDig": true }
+        """)
+        await api.enqueue(json: Fixtures.messageObject(id: "m-dig", digCount: 4, dugByMe: false))
+        let store = InMemoryMessageStore()
+        let service = MessagesService(api: api, store: store)
+
+        // When
+        let updated = try await service.dig(messageId: "m-dig")
+
+        // Then — the dig response's count/flag win over the get-by-id payload.
+        XCTAssertEqual(updated.id, "m-dig")
+        XCTAssertEqual(updated.digCount, 5)
+        XCTAssertTrue(updated.didDig)
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.method, "POST")
+        XCTAssertEqual(recorded.first?.path, "/api/messages/m-dig/dig")
+        let cached = await store.cachedMessage(id: "m-dig")
+        XCTAssertEqual(cached?.digCount, 5)
+        XCTAssertEqual(cached?.didDig, true)
+    }
+
+    func test_givenAlreadyDug_whenUndigging_thenReturnsMessageWithDecrementedCount() async throws {
+        // Given
+        let api = StubAPIClient()
+        await api.enqueue(json: """
+        { "digCount": 3, "dugByMe": false }
+        """)
+        await api.enqueue(json: Fixtures.messageObject(id: "m-undig", digCount: 4, dugByMe: true))
+        let service = MessagesService(api: api)
+
+        // When
+        let updated = try await service.undig(messageId: "m-undig")
+
+        // Then
+        XCTAssertEqual(updated.digCount, 3)
+        XCTAssertFalse(updated.didDig)
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.method, "DELETE")
+        XCTAssertEqual(recorded.first?.path, "/api/messages/m-undig/dig")
+    }
+
+    func test_givenDigAPIFailure_whenDigging_thenThrows() async throws {
+        // Given
+        let api = StubAPIClient()
+        await api.enqueue(failure: .unauthorized(serverMessage: "sign in"))
+        let service = MessagesService(api: api)
+
+        // When / Then
+        do {
+            _ = try await service.dig(messageId: "m-x")
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .unauthorized(serverMessage: "sign in"))
+        }
+    }
+
+    func test_givenDigSucceedsButRefreshFails_whenDigging_thenThrows() async throws {
+        // Given — boundary: dig POST succeeded, but the follow-up get-by-id
+        // refresh failed. The service surfaces the failure so the caller
+        // doesn't render a half-merged message.
+        let api = StubAPIClient()
+        await api.enqueue(json: """
+        { "digCount": 9, "dugByMe": true, "isNewDig": true }
+        """)
+        await api.enqueue(failure: .transport(message: "offline"))
+        let service = MessagesService(api: api)
+
+        // When / Then
+        do {
+            _ = try await service.dig(messageId: "m-x")
+            XCTFail("Expected an APIError from the refresh leg")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .transport(message: "offline"))
+        }
+    }
+
     // MARK: - Helpers
 
     private func sampleDTO(id: String) -> MessageDTO {

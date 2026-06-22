@@ -1,7 +1,7 @@
 // ProfileHeaderView
 //
 // Read-only public profile header (PLAN.md §1 "Profile", §6 M1). Pure
-// presentation: it takes a `UserProfile` plus an optional `FollowCountsDTO`
+// presentation: it takes a `UserProfile` plus an optional `FollowCounts`
 // and renders avatar, display name, handle, and the conditional fields.
 //
 // Per `docs/decisions/0002-public-profile-fallback.md`, the M1 fallback
@@ -16,10 +16,12 @@
 // private badge" — the badge is only ever rendered when the value
 // transitions to `true`, which won't happen until the upstream profile
 // endpoint lands and the decision is revived.
+//
+// Per decision 0003 (App-layer Kit-import policy), this view consumes the
+// domain `FollowCounts` and does not `import InterlinedKit`.
 
 import SwiftUI
 import InterlinedDomain
-import InterlinedKit
 
 struct ProfileHeaderView: View {
 
@@ -27,7 +29,7 @@ struct ProfileHeaderView: View {
     /// Optional follow-counts follow-up. `nil` while the call is in
     /// flight or after it failed (the failure is soft — see
     /// `ProfileViewModel.loadProfile`).
-    let counts: FollowCountsDTO?
+    let counts: FollowCounts?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -139,15 +141,15 @@ struct ProfileHeaderView: View {
     }
 
     @ViewBuilder
-    private func countsRow(counts: FollowCountsDTO) -> some View {
+    private func countsRow(counts: FollowCounts) -> some View {
         HStack(spacing: 24) {
             countPill(
-                value: counts.followerCount,
+                value: counts.followers,
                 singular: "follower",
                 plural: "followers"
             )
             countPill(
-                value: counts.followingCount,
+                value: counts.following,
                 singular: "following",
                 plural: "following"
             )

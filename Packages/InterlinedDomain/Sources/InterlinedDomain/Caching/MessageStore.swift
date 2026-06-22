@@ -23,6 +23,28 @@ public protocol MessageStore: Sendable {
     /// Inserts or updates messages in the by-id cache.
     func upsert(_ messages: [Message]) async
 
+    /// Removes a single message from every cached slice (by-id + every
+    /// timeline list it appeared in). Called after a successful
+    /// `DELETE /api/messages/[id]` so the UI never re-renders a tombstoned
+    /// message from cache. Missing-id is a no-op (the protocol does not
+    /// throw — cache state is best-effort, see protocol doc).
+    ///
+    /// A default no-op implementation is provided below so existing
+    /// conformances (e.g. the persistence layer's SwiftData store, owned
+    /// by a different package) compile without immediate change. The
+    /// `InMemoryMessageStore` overrides it; the persistence store should
+    /// adopt a concrete implementation in the next persistence wave so the
+    /// on-disk cache stays consistent on delete.
+    func remove(id: String) async
+
     /// Clears all cached state. Called on sign-out.
     func clear() async
+}
+
+public extension MessageStore {
+    /// Default no-op so the new protocol method does not break existing
+    /// out-of-package conformances written before it landed. Concrete stores
+    /// should override to keep the cache consistent with deletes; see the
+    /// protocol's `remove(id:)` doc.
+    func remove(id: String) async { }
 }

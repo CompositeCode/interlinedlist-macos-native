@@ -55,6 +55,39 @@ final class InMemoryMessageStoreTests: XCTestCase {
         XCTAssertEqual(message?.text, "v2")
     }
 
+    func test_givenCachedMessage_whenRemoved_thenGoneFromByIdAndTimeline() async {
+        // Given a message that exists in both the by-id and the timeline
+        // index.
+        let store = InMemoryMessageStore()
+        await store.replaceTimeline(
+            [sampleMessage(id: "a"), sampleMessage(id: "b")],
+            scope: .all,
+            tag: nil
+        )
+
+        // When
+        await store.remove(id: "a")
+
+        // Then
+        let removed = await store.cachedMessage(id: "a")
+        XCTAssertNil(removed)
+        let timeline = await store.cachedTimeline(scope: .all, tag: nil)
+        XCTAssertEqual(timeline.map(\.id), ["b"])
+    }
+
+    func test_givenMissingId_whenRemoved_thenNoOp() async {
+        // Given — boundary: removing an id that was never cached.
+        let store = InMemoryMessageStore()
+        await store.upsert([sampleMessage(id: "a")])
+
+        // When
+        await store.remove(id: "ghost")
+
+        // Then — the existing message stays.
+        let kept = await store.cachedMessage(id: "a")
+        XCTAssertEqual(kept?.id, "a")
+    }
+
     func test_givenPopulatedStore_whenCleared_thenEverythingGone() async {
         // Given
         let store = InMemoryMessageStore()
