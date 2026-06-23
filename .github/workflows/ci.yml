@@ -77,12 +77,45 @@ jobs:
             xcode-${{ runner.os }}-
 
       # No signing identity exists on CI runners, so signing is disabled.
+      # Build into a known DerivedData path so we can collect the .app artifact.
       - name: Build app (unsigned)
         run: |
           xcodebuild build \
             -project InterlinedList.xcodeproj \
             -scheme InterlinedList \
             -destination "platform=macOS" \
+            -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
+
+      - name: Run app-target tests (xcodebuild)
+        run: |
+          xcodebuild test \
+            -project InterlinedList.xcodeproj \
+            -scheme InterlinedList \
+            -destination "platform=macOS" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY=""
+
+      - name: Locate built .app
+        id: locate
+        run: |
+          APP_PATH="$(find build/DerivedData/Build/Products -maxdepth 4 -name 'InterlinedList.app' -type d | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "No InterlinedList.app produced" >&2
+            exit 1
+          fi
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          # Zip with ditto so resource forks and symlinks survive.
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" build/InterlinedList-unsigned.zip
+
+      - name: Upload unsigned .app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: InterlinedList-unsigned-${{ github.sha }}
+          path: build/InterlinedList-unsigned.zip
+          if-no-files-found: error
+          retention-days: 14

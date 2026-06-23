@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: InterlinedList web app
+    url: https://interlinedlist.com
+    about: The web app this native client mirrors.
+  - name: API reference
+    url: https://interlinedlist.com/help/api
+    about: Endpoint inventory the client maps to (see docs/api-coverage.md).
