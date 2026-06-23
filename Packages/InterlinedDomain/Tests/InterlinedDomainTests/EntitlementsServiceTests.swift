@@ -68,6 +68,35 @@ final class EntitlementsServiceTests: XCTestCase {
         XCTAssertEqual(CustomerStatus(raw: "mystery"), .other("mystery"))
     }
 
+    // MARK: - canManageLists (M3 defensive gate)
+
+    func test_givenDefaultConstruction_whenAskingCanManageLists_thenPermissiveByDefault() {
+        // Given — every default factory keeps the M3 permissive default.
+        XCTAssertTrue(EntitlementsService(customerStatus: .free).canManageLists)
+        XCTAssertTrue(EntitlementsService(customerStatus: .subscriber).canManageLists)
+        XCTAssertTrue(EntitlementsService(user: nil).canManageLists)
+    }
+
+    func test_givenOverrideToFalse_whenAskingCanManageLists_thenBlocks() {
+        // Given — the test seam used by M3 services to exercise gating
+        // before M6 wires the real source.
+        let service = EntitlementsService(customerStatus: .subscriber, canManageLists: false)
+
+        // Then
+        XCTAssertFalse(service.canManageLists)
+        // Subscriber-only features remain gated by their own switch.
+        XCTAssertTrue(service.isEnabled(.mediaAttachments))
+    }
+
+    func test_givenOverrideToTrueOnFreeAccount_whenAskingCanManageLists_thenAllows() {
+        // Given — override is authoritative; the default permissive M3 gate
+        // is preserved for callers who do not pass the seam.
+        let service = EntitlementsService(customerStatus: .free, canManageLists: true)
+
+        // Then
+        XCTAssertTrue(service.canManageLists)
+    }
+
     // MARK: - Helpers
 
     private func makeUser(status: CustomerStatus) -> CurrentUser {

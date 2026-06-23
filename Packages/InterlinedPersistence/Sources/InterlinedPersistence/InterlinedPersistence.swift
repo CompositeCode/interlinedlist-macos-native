@@ -2,17 +2,21 @@
 //
 // SwiftData-backed caches and (later, in Wave 4) the DocumentSyncEngine
 // (PLAN.md §3, §5 — timeline reads from a SwiftData cache with
-// stale-while-revalidate). M1 ships only the message / timeline cache; the
-// document, list, and folder schemas land with their respective milestones
-// (M3 lists, M4 documents) rather than being half-implemented here.
+// stale-while-revalidate). M1 shipped the message / timeline cache;
+// Wave 4.1 (M3) adds the lists cache; the document and folder schemas
+// land with M4.
 //
-//   Schema/  — SwiftData @Model record types (MessageRecord, TimelinePageRecord).
-//   Stores/  — SwiftDataMessageStore: actor-isolated conformance to the
-//              InterlinedDomain.MessageStore port.
+//   Schema/  — SwiftData @Model record types
+//              (MessageRecord, TimelinePageRecord, ListRecord, ListsPageRecord,
+//               ListSchemaRecord, SchemaFieldRecord, ListRowRecord,
+//               ListConnectionRecord, ListWatcherRecord).
+//   Stores/  — SwiftDataMessageStore, SwiftDataListsStore: actor-isolated
+//              conformances to the InterlinedDomain cache ports.
 //   Mapping/ — internal record <-> domain value-type translation.
 //
 // The package's public API surface is intentionally narrow: callers wire up a
-// `SwiftDataMessageStore` and pass it to `MessagesService` as a `MessageStore`.
+// `SwiftDataMessageStore` / `SwiftDataListsStore` and pass it to the
+// corresponding domain service as a `MessageStore` / `ListsStore`.
 
 import Foundation
 import InterlinedDomain

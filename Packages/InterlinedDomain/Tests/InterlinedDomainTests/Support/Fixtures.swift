@@ -183,6 +183,76 @@ enum Fixtures {
         """
     }
 
+    // MARK: - M3 lists fixtures
+
+    /// `GET /api/lists/[id]/schema` envelope: `{ "schema": "<DSL>" }`.
+    static func listSchemaEnvelope(_ dsl: String) -> String {
+        """
+        { "schema": "\(dsl)" }
+        """
+    }
+
+    /// A single `ListWatcherDTO` object body.
+    static func watcherObject(
+        userId: String,
+        role: String? = "editor",
+        username: String? = "ada"
+    ) -> String {
+        let roleJSON = role.map { "\"\($0)\"" } ?? "null"
+        let usernameJSON = username.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "userId": "\(userId)",
+          "role": \(roleJSON),
+          "username": \(usernameJSON),
+          "createdAt": "\(createdAtISO)"
+        }
+        """
+    }
+
+    /// A bare array of watcher objects (the shape `/watchers` returns).
+    static func watchersArray(_ entries: [(userId: String, role: String?)]) -> String {
+        let objects = entries.map { watcherObject(userId: $0.userId, role: $0.role) }
+            .joined(separator: ",")
+        return "[\(objects)]"
+    }
+
+    /// `GET /api/lists/[id]/watchers/me` envelope.
+    static func watcherStatusEnvelope(isWatching: Bool?, role: String?) -> String {
+        let watchingJSON = isWatching.map { $0 ? "true" : "false" } ?? "null"
+        let roleJSON = role.map { "\"\($0)\"" } ?? "null"
+        return """
+        { "isWatching": \(watchingJSON), "role": \(roleJSON) }
+        """
+    }
+
+    /// A single `ListConnectionDTO` object body.
+    static func connectionObject(
+        id: String,
+        fromListId: String = "list-from",
+        toListId: String = "list-to",
+        label: String? = "references"
+    ) -> String {
+        let labelJSON = label.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "id": "\(id)",
+          "fromListId": "\(fromListId)",
+          "toListId": "\(toListId)",
+          "label": \(labelJSON),
+          "createdAt": "\(createdAtISO)"
+        }
+        """
+    }
+
+    /// `GET /api/lists/connections` envelope.
+    static func connectionsEnvelope(_ ids: [String]) -> String {
+        let objects = ids.map { connectionObject(id: $0) }.joined(separator: ",")
+        return """
+        { "connections": [\(objects)] }
+        """
+    }
+
     // MARK: - Follow / social fixtures
 
     /// `GET /api/follow/[userId]/status` shape.
