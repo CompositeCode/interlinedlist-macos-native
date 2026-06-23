@@ -54,6 +54,20 @@ final class AppEnvironment: ObservableObject {
     /// mutate their rendered lists in place without a full refetch.
     let composerEventBus: ComposerEventBus
 
+    /// Cross-window event bus for the M3 Lists feature
+    /// (PLAN.md §6 M3 — list / row / schema / watcher / connection
+    /// writes). Owned-list sidebar, schema editor, rows table,
+    /// watchers panel, and the connections graph all subscribe so a
+    /// write in any open window mutates other views in place without
+    /// a refetch.
+    let listsEventBus: ListsEventBus
+
+    /// The lists cache port (PLAN.md §5 — "stale-while-revalidate").
+    /// M3 wires a `SwiftDataListsStore.inMemory()`; future on-disk
+    /// persistence drops in by swapping the factory. Falls back to
+    /// `NullListsStore` if the in-memory container cannot be built.
+    let listsStore: ListsStore
+
     /// Designated initializer used by tests and previews that want to
     /// inject a fully synthetic service graph. Production code calls
     /// `live()` instead.
@@ -63,7 +77,9 @@ final class AppEnvironment: ObservableObject {
         social: SocialServicing,
         session: SessionManaging,
         currentUserStore: CurrentUserStore,
-        composerEventBus: ComposerEventBus
+        composerEventBus: ComposerEventBus,
+        listsEventBus: ListsEventBus,
+        listsStore: ListsStore
     ) {
         self.messages = messages
         self.lists = lists
@@ -71,6 +87,8 @@ final class AppEnvironment: ObservableObject {
         self.session = session
         self.currentUserStore = currentUserStore
         self.composerEventBus = composerEventBus
+        self.listsEventBus = listsEventBus
+        self.listsStore = listsStore
     }
 
     /// Builds the production service graph:
@@ -119,13 +137,17 @@ final class AppEnvironment: ObservableObject {
         let session = SessionService(auth: auth, api: api, cache: store)
         let currentUserStore = CurrentUserStore(session: session)
         let composerEventBus = ComposerEventBus()
+        let listsEventBus = ListsEventBus()
+        let listsStore = Self.makeListsStore()
         return AppEnvironment(
             messages: messages,
             lists: lists,
             social: social,
             session: session,
             currentUserStore: currentUserStore,
-            composerEventBus: composerEventBus
+            composerEventBus: composerEventBus,
+            listsEventBus: listsEventBus,
+            listsStore: listsStore
         )
     }
 
@@ -140,6 +162,16 @@ final class AppEnvironment: ObservableObject {
             return inMemory
         }
         return NullMessageStore()
+    }
+
+    /// Returns an in-memory `SwiftDataListsStore`, falling back to a
+    /// no-op cache if even that cannot be constructed. Mirrors the
+    /// `makeMessageStore` policy: persistence is best-effort.
+    private static func makeListsStore() -> ListsStore {
+        if let inMemory = try? SwiftDataListsStore.inMemory() {
+            return inMemory
+        }
+        return NullListsStore()
     }
 }
 
