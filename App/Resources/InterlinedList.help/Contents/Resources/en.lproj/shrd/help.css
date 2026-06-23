@@ -1,0 +1,143 @@
+/* InterlinedList Help — minimal stylesheet.
+   System font, system colors, no external assets. */
+
+:root {
+    color-scheme: light dark;
+    --text: #1A1A1A;
+    --muted: #555;
+    --rule: #D0D0D0;
+    --accent: #0F4C5F;
+    --bg: #FFFFFF;
+    --card: #F5F5F5;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --text: #FFFFFF;
+        --muted: #B8B8B8;
+        --rule: #2A323B;
+        --accent: #7FB8C8;
+        --bg: #191E23;
+        --card: #1D2329;
+    }
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+}
+
+body {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 24px 28px 48px;
+}
+
+header.help-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 20px;
+}
+
+header.help-header img {
+    width: 32px;
+    height: 32px;
+}
+
+header.help-header h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+h1, h2, h3 {
+    color: var(--text);
+    line-height: 1.3;
+}
+
+h2 {
+    font-size: 17px;
+    margin-top: 28px;
+    margin-bottom: 8px;
+}
+
+h3 {
+    font-size: 15px;
+    margin-top: 20px;
+    margin-bottom: 6px;
+}
+
+p, li {
+    color: var(--text);
+}
+
+a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+ul, ol {
+    padding-left: 22px;
+}
+
+li {
+    margin-bottom: 4px;
+}
+
+code, kbd {
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    background: var(--card);
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+
+kbd {
+    border: 1px solid var(--rule);
+}
+
+.note {
+    background: var(--card);
+    border-left: 3px solid var(--accent);
+    padding: 10px 14px;
+    margin: 14px 0;
+    border-radius: 3px;
+}
+
+.note strong {
+    color: var(--accent);
+}
+
+.status-future {
+    color: var(--muted);
+    font-style: italic;
+}
+
+footer.help-footer {
+    margin-top: 36px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+    color: var(--muted);
+    font-size: 12px;
+}
+
+nav.toc ul {
+    list-style: none;
+    padding-left: 0;
+}
+
+nav.toc li {
+    margin-bottom: 6px;
+}

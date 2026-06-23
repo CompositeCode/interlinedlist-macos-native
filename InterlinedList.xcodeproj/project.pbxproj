@@ -10,10 +10,23 @@
 		4875FC868DEAD10754CA3266 /* InterlinedKit in Frameworks */ = {isa = PBXBuildFile; productRef = E82F17947DA800A8ACFC24FA /* InterlinedKit */; };
 		A2F99A68629A6FFE570F17B6 /* InterlinedDomain in Frameworks */ = {isa = PBXBuildFile; productRef = F55A3043259B18AED6834ECA /* InterlinedDomain */; };
 		24D2BC406897058D83E90425 /* InterlinedPersistence in Frameworks */ = {isa = PBXBuildFile; productRef = 6B41CE7F9049DE79ADF5F310 /* InterlinedPersistence */; };
+		AB10000000000000000000A1 /* InterlinedDomain in Frameworks */ = {isa = PBXBuildFile; productRef = AB20000000000000000000A1 /* InterlinedDomain */; };
+		AB10000000000000000000A2 /* InterlinedKit in Frameworks */ = {isa = PBXBuildFile; productRef = AB20000000000000000000A2 /* InterlinedKit */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		AB30000000000000000000B1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A8934E4F726C6FDDD0A8A878 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 368744F4D2FC50119EA37A06;
+			remoteInfo = InterlinedList;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		D78BA91D9ADE434F0CE71AD7 /* InterlinedList.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InterlinedList.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB40000000000000000000C1 /* InterlinedListTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = InterlinedListTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -40,6 +53,15 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		AB50000000000000000000D1 /* AppTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = AppTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +75,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AB60000000000000000000E1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AB10000000000000000000A1 /* InterlinedDomain in Frameworks */,
+				AB10000000000000000000A2 /* InterlinedKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -60,6 +91,7 @@
 			isa = PBXGroup;
 			children = (
 				07D2BA4E1377807CA7FE5CEA /* App */,
+				AB50000000000000000000D1 /* AppTests */,
 				FB1017EFC257BDBAA6ABC98F /* Packages */,
 				C7037A342339022835F93EFA /* Products */,
 			);
@@ -69,6 +101,7 @@
 			isa = PBXGroup;
 			children = (
 				D78BA91D9ADE434F0CE71AD7 /* InterlinedList.app */,
+				AB40000000000000000000C1 /* InterlinedListTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -108,6 +141,31 @@
 			productReference = D78BA91D9ADE434F0CE71AD7 /* InterlinedList.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AB70000000000000000000F1 /* InterlinedListTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AB8000000000000000000101 /* Build configuration list for PBXNativeTarget "InterlinedListTests" */;
+			buildPhases = (
+				AB90000000000000000000F2 /* Sources */,
+				AB60000000000000000000E1 /* Frameworks */,
+				ABA0000000000000000000F3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				ABB0000000000000000000F4 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AB50000000000000000000D1 /* AppTests */,
+			);
+			name = InterlinedListTests;
+			packageProductDependencies = (
+				AB20000000000000000000A1 /* InterlinedDomain */,
+				AB20000000000000000000A2 /* InterlinedKit */,
+			);
+			productName = InterlinedListTests;
+			productReference = AB40000000000000000000C1 /* InterlinedListTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -120,6 +178,10 @@
 				TargetAttributes = {
 					368744F4D2FC50119EA37A06 = {
 						CreatedOnToolsVersion = 16.2;
+					};
+					AB70000000000000000000F1 = {
+						CreatedOnToolsVersion = 16.2;
+						TestTargetID = 368744F4D2FC50119EA37A06;
 					};
 				};
 			};
@@ -143,12 +205,20 @@
 			projectRoot = "";
 			targets = (
 				368744F4D2FC50119EA37A06 /* InterlinedList */,
+				AB70000000000000000000F1 /* InterlinedListTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		F76F847B5AE24697ABD3C7E5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABA0000000000000000000F3 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -165,7 +235,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AB90000000000000000000F2 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		ABB0000000000000000000F4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 368744F4D2FC50119EA37A06 /* InterlinedList */;
+			targetProxy = AB30000000000000000000B1 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		573EB93CD33E77BADF6A4886 /* Debug */ = {
@@ -352,6 +437,48 @@
 			};
 			name = Release;
 		};
+		AB8000000000000000000102 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.interlinedlist.macos.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/InterlinedList.app/Contents/MacOS/InterlinedList";
+			};
+			name = Debug;
+		};
+		AB8000000000000000000103 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.interlinedlist.macos.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/InterlinedList.app/Contents/MacOS/InterlinedList";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -369,6 +496,15 @@
 			buildConfigurations = (
 				5FF8F565B0D584C9B40E9186 /* Debug */,
 				BABD889F011D2EE21B755131 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AB8000000000000000000101 /* Build configuration list for PBXNativeTarget "InterlinedListTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AB8000000000000000000102 /* Debug */,
+				AB8000000000000000000103 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -402,6 +538,14 @@
 		6B41CE7F9049DE79ADF5F310 /* InterlinedPersistence */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = InterlinedPersistence;
+		};
+		AB20000000000000000000A1 /* InterlinedDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = InterlinedDomain;
+		};
+		AB20000000000000000000A2 /* InterlinedKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = InterlinedKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

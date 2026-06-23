@@ -1,14 +1,22 @@
 // TimelineRootView
 //
-// Read-only timeline feed (PLAN.md §1 / §6 M1). Owns the scope picker
-// and tag filter affordances and renders the message list inside a
+// Timeline feed (PLAN.md §1 / §6 M1). Owns the scope picker and tag
+// filter affordances and renders the message list inside a
 // `NavigationStack` so a tap pushes `MessageDetailView` onto the
 // detail column's own stack.
 //
 // The view is a thin shell over `TimelineViewModel`: it observes
-// state, dispatches user intents, and leaves all loading / paging
-// logic in the view model so unit tests cover the behavior without
-// touching SwiftUI.
+// state, dispatches user intents, and leaves all loading / paging /
+// optimistic-dig / delete logic in the view model so unit tests cover
+// the behavior without touching SwiftUI.
+//
+// M2 wiring:
+// - The row's dig button calls `TimelineViewModel.toggleDig`.
+// - The row's context menu opens a repost sheet, opens the composer
+//   in edit mode, or confirms + deletes.
+// - The view subscribes to the shared `ComposerEventBus` so a new
+//   post / repost / update / delete from the composer window flows
+//   into the rendered list in place.
 
 import SwiftUI
 import InterlinedDomain
@@ -20,6 +28,11 @@ struct TimelineRootView: View {
     @State private var viewModel: TimelineViewModel?
     @State private var selection: Message.ID?
     @State private var tagDraft: String = ""
+
+    // M2 row affordances — sheet / dialog state.
+    @State private var repostTarget: Message?
+    @State private var editTarget: Message?
+    @State private var deleteTarget: Message?
 
     var body: some View {
         NavigationStack {
@@ -46,6 +59,50 @@ struct TimelineRootView: View {
                 await model.initialLoad()
             }
         }
+        .task(id: environmentEventBusToken) {
+            // Subscribe to composer events so writes in the composer
+            // window flow into the timeline without a full refetch.
+            // `task(id:)` re-runs if the environment ever changes
+            // identity.
+            guard let environment, let viewModel else { return }
+            for await event in environment.composerEventBus.events() {
+                viewModel.apply(event: event)
+            }
+        }
+        // Repost sheet — opens with the original message and dismisses
+        // itself on success / cancel.
+        .sheet(item: $repostTarget) { target in
+            RepostSheetView(original: target)
+        }
+        // Edit sheet — reuses the composer window UI inside a sheet so
+        // the user can edit without leaving the timeline context.
+        .sheet(item: $editTarget) { target in
+            ComposerWindowView(mode: .edit(messageID: target.id, original: target))
+        }
+        .confirmationDialog(
+            "Delete this post?",
+            isPresented: Binding(
+                get: { deleteTarget != nil },
+                set: { if !$0 { deleteTarget = nil } }
+            ),
+            presenting: deleteTarget
+        ) { target in
+            Button("Delete", role: .destructive) {
+                if let viewModel {
+                    Task { await viewModel.deleteMessage(id: target.id) }
+                }
+                deleteTarget = nil
+            }
+            Button("Cancel", role: .cancel) { deleteTarget = nil }
+        } message: { _ in
+            Text("This action cannot be undone.")
+        }
+    }
+
+    /// Stable token derived from the environment identity so
+    /// `task(id:)` re-subscribes if the environment is swapped.
+    private var environmentEventBusToken: ObjectIdentifier? {
+        environment.map { ObjectIdentifier($0) }
     }
 
     // MARK: - Body sections
@@ -123,10 +180,26 @@ struct TimelineRootView: View {
 
     @ViewBuilder
     private func messageList(viewModel: TimelineViewModel) -> some View {
+        let currentUserID = environment?.currentUserStore.currentUserID
         List(selection: $selection) {
             ForEach(viewModel.messagesLoaded) { message in
                 NavigationLink(value: message.id) {
-                    MessageRowView(message: message)
+                    MessageRowView(
+                        message: message,
+                        canEdit: viewModel.canEdit(message, currentUserID: currentUserID),
+                        onToggleDig: { tapped in
+                            Task { await viewModel.toggleDig(on: tapped) }
+                        },
+                        onRepost: { tapped in
+                            repostTarget = tapped
+                        },
+                        onEdit: { tapped in
+                            editTarget = tapped
+                        },
+                        onDelete: { tapped in
+                            deleteTarget = tapped
+                        }
+                    )
                 }
                 .onAppear {
                     // Trigger paging when we surface the row that's

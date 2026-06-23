@@ -28,6 +28,18 @@ You are the InterlinedList Documentation Engineer. Your job is to produce accura
 - Write concisely and actionably; state assumptions explicitly.
 - Every output must identify: objective, audience track, docs created or updated, validation notes, and open questions.
 
+## Project-specific rules (proven by past waves)
+
+- **Help Book and `docs/user/` stay in sync.** `docs/user/<page>.md` is the source of truth; the matching `.help/Contents/Resources/<lang>.lproj/pgs/<page>.html` mirrors its wording. Divergence is a maintenance bug — flag it.
+- **Shipped vs. planned discipline.** User-facing pages may only describe shipped behavior (anchored in `docs/progress.md`). Planned features are labeled "coming in a future update" with a brief explanation. Cross-check the progress log before claiming a feature works.
+- **Apple Help Book layout.** `App/Resources/InterlinedList.help/Contents/{Info.plist, Resources/<lang>.lproj/{InterlinedList.helpindex, pgs/*.html, shrd/*}}`. Bundle `Info.plist` keys: `CFBundlePackageType=BNDL`, `CFBundleSignature=hbwr`, `HPDBookTitle`, `HPDBookType=3`, `HPDBookAccessPath=pgs/index.html`, `HPDBookIconPath`, `HPDBookIndexPath`. App `Info.plist` keys: `CFBundleHelpBookFolder` (folder name) + `CFBundleHelpBookName` (matches the help bundle's `CFBundleIdentifier`).
+- **No `<script>` tags in Help Book HTML.** Apple Help disallows JavaScript. Grep before declaring done.
+- **`hiutil` indexing.** Regenerate the `.helpindex` whenever HTML pages change: `hiutil -Cagf InterlinedList.helpindex -s <lang> pgs` from inside the `<lang>.lproj/` directory. If `hiutil` is unavailable, document the manual step in the report; do not fake the index file.
+- **Anchor catalogue.** `index.html` maintains a list of every anchor name; in-app `openHelpAnchor(_:inBook:)` calls reuse from that list. New anchors land here first.
+- **Coverage matrix discipline.** Only flip ◐⁴ → ☑ for rows the wave's consumers exercised end-to-end. Never re-flip an already-☑ row; note re-consumption in the delta block instead. Recompute the header totals; never paste a number without confirming it against the matrix.
+- **Update-history hygiene.** Same-date entries are merged, not stacked. Replace the partial entry with the finalized one when the wave completes.
+- **Don't touch `PLAN.md`, `ORCHESTRATION.md`, or `docs/decisions/**`.** These are read-only for everyone, including this agent. Decisions are appended in their own commits by the orchestrator.
+
 ## Quality Checks
 
 Before finalizing, confirm:

@@ -218,3 +218,91 @@ Rows flipped ◐⁴ → ☑ this wave (10 total, all M1):
 3. **List rows are projected via `ListRow` with dynamic `rowData`.** The M1 list-detail UI renders rows with the dynamic-schema `rowData` typed as `[String: ListJSONValue]` from `InterlinedKit.ListRowDTO`. No schema-driven typing for row values is in scope until M3 (Lists CRUD).
 4. **Composition root uses `SwiftDataMessageStore.inMemory()` for M1.** On-disk persistence is wired (the factory exists) but the live `AppEnvironment` defaults to the in-memory store so the M1 read-only core does not need a schema-migration story before M4. A `NullMessageStore` is the documented fallback if the in-memory store fails to construct at boot.
 5. **Zero-public-messages users surface as `SocialError.profileUnavailable(username:)`.** This is the documented limit of the decision-0002 fallback, not a defect; M1 UX renders the typed error as a friendly empty state. Will resolve when the upstream `GET /api/users/[username]` lands and decision 0002 is superseded.
+
+---
+
+## Wave 3 — InterlinedDomain M2 write surface + App-layer Posting UI (PLAN.md §6 M2)
+
+Wave 3 lands the M2 posting kickoff: a Decision-0003 architectural rule for kit-import policy, the `InterlinedDomain.MessagesService` write surface (`create / reply / repost / update / delete / dig / undig`) plus a `FollowCounts` domain model so the M1 Social views drop their `InterlinedKit` imports, then the App-layer Composer / inline-reply / optimistic-dig / repost / edit / delete UI that consumes those write methods end-to-end. Path ownership stayed inside `Packages/InterlinedDomain/**`, `App/**`, `InterlinedList.xcodeproj/**` (for the new test target only), and `docs/decisions/**` for the recorded decision; `InterlinedKit` source paths were not touched this wave (its 174/174 suite from Wave 1 is unchanged), and `InterlinedPersistence` source paths were not touched either (its 13/13 from Wave 2 is unchanged).
+
+### Decisions
+
+- **2026-06-22 — Decision 0003 recorded and accepted.** App-layer files (`App/Features/**`, `App/Navigation/**`, `App/MenuCommands/**`) must not `import InterlinedKit`; the only permitted location is the composition root (`App/Composition/AppEnvironment.swift`). Domain mappers in `Packages/InterlinedDomain/**` carry the kit-to-domain projection so view code only ever sees domain values. The `FollowCounts` model added this wave is the first downstream consequence — `ProfileHeaderView`, `ProfileViewModel`, and the Wave 2 deviation-1 follow-up are resolved by this rule. See [decisions/0003-kit-import-policy.md](decisions/0003-kit-import-policy.md). The decision picks the consumer-ergonomics-preserving option from Wave 2 deviation 1 (introduce a domain-level type) over the surface-area-leak option (`@_exported import`).
+
+### 3.1 — Decision 0003 + InterlinedDomain M2 write surface — DONE
+
+- Commit: `c07ac8a`.
+- Decision 0003 (kit-import policy) recorded and merged.
+- `MessagesService` write surface: `create / reply / repost / update(messageId:…) / delete(messageId:) / dig(messageId:) / undig(messageId:)` — every method wraps the existing Wave 1 `InterlinedKit.Messages` builders and returns domain values via the established mappers.
+- `MessageStore.remove(id:)` added to the persistence protocol with a no-op default so existing conformers (incl. `NullMessageStore`) keep compiling; `InMemoryMessageStore` evicts the message across both the by-id index and any timeline page that referenced it.
+- `FollowCounts` domain model introduced; `ProfileHeaderView` / `ProfileViewModel` / the third Social view dropped `import InterlinedKit` and now consume the domain projection only. This is the first material proof point of decision 0003.
+- Domain suite: 76 → **99 passing** (23 new BDD-named cases across the write methods and the `FollowCounts` projection).
+
+### 3.2 — App-layer M2 UI (Composer / reply / dig / repost / edit / delete) — DONE
+
+- Commit pending (orchestrator just verified gate; uncommitted at the time of this entry).
+- **Composer window.** Dedicated SwiftUI `Window` scene opened via ⌘N (`CommandGroup(replacing: .newItem)` in `App/MenuCommands/ComposeCommands.swift`). `ComposerViewModel` supports both `.newPost` (calls `MessagesService.create`) and `.edit(messageID:original:)` (calls `MessagesService.update`). UI: plain-text body, tag-token entry (comma/whitespace split, leading `#` stripped, dedupe-preserving-order), public/private visibility toggle, ⌘↩ submit; empty/whitespace bodies rejected before any service call.
+- **Inline reply.** `MessageDetailView` gained a bottom `DisclosureGroup` composer that calls `MessageDetailViewModel.postReply` → `MessagesService.reply`.
+- **Optimistic dig/undig.** `MessageRowView` and `MessageDetailView` snapshot the original message, flip locally, then call `dig`/`undig`; on success the service return value replaces the snapshot, on failure the snapshot is restored. A `pendingDigOperations: Set<Message.ID>` debounces rapid toggling.
+- **Repost.** Context-menu entry opens `RepostSheetView` (commentary + visibility) → `RepostSheetViewModel.submit` → `MessagesService.repost`.
+- **Edit and Delete.** Context-menu entries are gated by ownership via the new App-layer `CurrentUserStore` (an adapter wrapping `SessionManaging`); both items are hidden when `currentUserID` is `nil`. Delete uses `.confirmationDialog`. Root-message delete routes through `TimelineViewModel.deleteMessage` and `MessageDetailViewModel.deleteCurrentMessage`.
+- **Cross-window write propagation.** New `ComposerEventBus` (actor-backed pub/sub) broadcasts write events; `TimelineViewModel.apply(event:)` and `MessageDetailViewModel.apply(event:)` translate to pure local mutations (prepend / replace / remove), so the timeline and detail windows stay coherent without re-fetching. Reply events are routed only to the matching parent detail view.
+- **Test target.** New `InterlinedListTests` test target added to `InterlinedList.xcodeproj` using a `PBXFileSystemSynchronizedRootGroup` rooted at `AppTests/`, so future test files do not require pbxproj edits — they land in `AppTests/` and are picked up automatically. **44 BDD-named tests** added this wave.
+- **Decision 0003 compliance.** Kit-import grep on `App/**`: zero `Features/**` imports of `InterlinedKit`; the only `import InterlinedKit` is in `App/Composition/AppEnvironment.swift` — the documented permitted location. Decision 0003 holds.
+
+### Wave 3 gate — PASSED (2026-06-22)
+
+- App build: `xcodebuild -scheme InterlinedList -destination 'platform=macOS' build` → **BUILD SUCCEEDED**.
+- App tests: `xcodebuild -scheme InterlinedList -destination 'platform=macOS' test` → **44/44 passing** in the new `InterlinedListTests` target.
+- Domain tests: `swift test --package-path Packages/InterlinedDomain` → **99/99 passing**.
+- Kit tests: `swift test --package-path Packages/InterlinedKit` → **174/174 passing** (unchanged; no Kit source paths touched).
+- Persistence tests: `swift test --package-path Packages/InterlinedPersistence` → **13/13 passing** (unchanged; no Persistence source paths touched).
+- Path-ownership check: changes confined to `Packages/InterlinedDomain/**`, `App/**`, `InterlinedList.xcodeproj/**` (test-target add only), `docs/decisions/0003-kit-import-policy.md`, and `docs/**` for this wave-end update — no overlaps with Wave 1 or Wave 2 paths; conflict rules held.
+- Decision-0003 compliance check: `App/**` kit-import grep returned only the permitted composition-root import.
+
+### Test counts per suite (run 2026-06-22)
+
+| Suite | Tests | Notes |
+| --- | ---: | --- |
+| `InterlinedListTests.ComposerViewModelTests` | 9 | New-post and edit flows, tag-token parsing, empty-body rejection, ⌘↩ submission gate. |
+| `InterlinedListTests.RepostSheetViewModelTests` | 4 | Commentary + visibility round-trip through `MessagesService.repost`. |
+| `InterlinedListTests.TimelineViewModelTests` | 13 | Includes optimistic dig/undig (success and restore-on-failure), `apply(event:)` prepend / replace / remove, `deleteMessage`, scope-change behavior. |
+| `InterlinedListTests.MessageDetailViewModelTests` | 14 | Inline reply, optimistic dig/undig on detail, repost, edit, root delete, reply-scoped event routing. |
+| `InterlinedListTests.CurrentUserStoreTests` | 4 | Restore / refresh / sign-out transitions and ownership-gating reads. |
+| **`InterlinedListTests` total** | **44** | New test target; all passing. |
+| `InterlinedDomainTests` (full) | 99 | +23 cases this wave covering `create / reply / repost / update / delete / dig / undig` quartets and the `FollowCounts` mapper. |
+| `InterlinedPersistenceTests` (full) | 13 | Unchanged from Wave 2. |
+| `InterlinedKitTests` (full) | 174 | Unchanged from Wave 1. |
+| **Grand total across all targets** | **330** | All passing; 0 failures. |
+
+### Coverage matrix delta (after this update)
+
+The M2 consumption rule (Wave 1 deviation 6, reiterated in the matrix footnote 4) applied: every M2-consumed row that was partial (◐⁴) after Wave 2 is now fully tested (☑) end-to-end (Kit builder → Domain service → App view-model).
+
+| | Before Wave 3 | After Wave 3 |
+| --- | ---: | ---: |
+| Implemented (☑) | 92 / 98 | **92 / 98** |
+| Tested fully (☑) | 16 / 98 | **20 / 98** |
+| Tested partial (◐⁴) | 75 / 98 | **71 / 98** |
+| Untested (☐) | 7 / 98 | **7 / 98** |
+
+Rows flipped ◐⁴ → ☑ this wave (**4 total**, all M2-consumed end-to-end). The orchestrator brief listed six row-paths to flip, but two of those rows — `POST /api/messages` and `GET /api/user` — were already ☑ on the matrix before this wave (`POST /api/messages` from Wave 1 footnote 2 carry-in; `GET /api/user` from Wave 2's M1 closure). The four genuine flips are:
+
+- Messages: `PUT /api/messages/[id]` (`ComposerViewModel.submit` edit case → `MessagesService.update`).
+- Messages: `DELETE /api/messages/[id]` (`TimelineViewModel.deleteMessage` and `MessageDetailViewModel.deleteCurrentMessage` → `MessagesService.delete`).
+- Messages: `POST /api/messages/[id]/dig` (`toggleDig` undug→dug branch → `MessagesService.dig`).
+- Messages: `DELETE /api/messages/[id]/dig` (`toggleDig` dug→undug branch → `MessagesService.undig`).
+
+Re-consumed but unchanged (☑ already):
+
+- `POST /api/messages` — re-exercised this wave by all three Wave 3 entry points (`create` for new posts, `reply` for inline replies, `repost` for the repost sheet). Each is covered by dedicated `MessagesServiceTests` quartets and by App-layer tests in `ComposerViewModelTests`, `MessageDetailViewModelTests`, and `RepostSheetViewModelTests`. Cross-post / scheduled / media-upload request fields on this row remain M6 per footnote 2.
+- `GET /api/user` — additionally consumed by the App layer this wave through `CurrentUserStore.restore` → `SessionManaging.restore` → `SessionService.fetchCurrentUser` for ownership gating of Edit / Delete (`CurrentUserStoreTests`, 4 cases). Row state was already ☑ from Wave 2.
+
+### Deviations and follow-ups
+
+1. **Reply-delete is wired in the context menu but not in the view model.** `MessageDetailViewModel` only exposes `deleteCurrentMessage` (root). A reply's Delete menu item shows the `.confirmationDialog` but does not call through. Scoped out of M2 because PLAN.md §6 M2 says "delete/edit own messages" without specifying reply-level granularity. Follow-up: add `MessageDetailViewModel.deleteReply(id:)` in an M2 polish slice or M5.
+2. **Repost is a sheet, not a window.** Matches PLAN.md §6 M2 wording ("a small sheet"). Flagged here in case a later milestone wants window parity with the composer.
+3. **Edit reuses `ComposerWindowView` inside a sheet.** Allowed by PLAN.md §6 M2 ("Edit reopens the composer pre-populated"). To open edits in a dedicated window so the timeline stays visible, change the `.sheet(item:)` call to `openWindow(id:value:)` with a second `Window` scene.
+4. **`AsyncStream` deinit-cancel concession.** `CurrentUserStore`'s subscription Task uses `[weak self]`; deinit-time cancellation of the handle is not wired because Swift 6 Observation-macro semantics block `nonisolated` storage on the handle. The Task ends naturally on the next stream value after deallocation — acceptable for production. Fix path if it ever matters: wrap the handle in a separate non-observed helper class.
+5. **`TimelineViewModelTests.seedForTest` seeds state via `apply(event: .messageCreated)`.** Mild test-code smell — the long-term cleaner shape is an `internal` (test-only) `replaceMessagesForTest(_:)` under `#if DEBUG`. Not blocking, not done this wave.
+6. **SourceKit-only diagnostic noise after pbxproj mutation.** Adding the `InterlinedListTests` target via direct pbxproj edits left Xcode's SourceKit indexer reporting stale "No such module 'InterlinedDomain'" errors across every `App/**` file. `xcodebuild` was unaffected. Resolves with Xcode's **File → Packages → Reset Package Caches** or **Product → Clean Build Folder**. Noted here for future contributors who land pbxproj edits this way.

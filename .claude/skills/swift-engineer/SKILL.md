@@ -27,14 +27,16 @@ description: Build and refactor native macOS Swift code for InterlinedList with 
 ## Required Checks
 - See ./assets/architecture-checklist.md
 - See ./assets/bdd-test-template.md
+- See ./assets/e2e-gate-checklist.md (required on every change — unit quartet + build/test/grep gate)
 
 ## Output
 1. Objective
 2. Design and implementation summary
 3. Files changed
-4. Tests added or updated
-5. Verification run and results
-6. Risks and follow-up actions
+4. Tests added or updated (every test by name)
+5. Verification run and results — paste the final line of each gate command
+6. Coverage matrix candidates (endpoint → ViewModel consumer)
+7. Risks and follow-up actions
 
 ## References
 - https://interlinedlist.com/api

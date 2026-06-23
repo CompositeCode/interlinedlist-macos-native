@@ -5,10 +5,11 @@
 // view model reads services from the environment rather than
 // constructing them itself (PLAN.md §3).
 //
-// The full scene graph (compose window, document windows, onboarding)
-// is wired up in later milestones. M1 ships a NavigationSplitView with
-// a real Timeline detail and placeholders for the remaining six
-// sidebar sections, plus a Settings placeholder scene.
+// M2 adds the dedicated composer `Window` scene (PLAN.md §5 — "⌘N
+// anywhere"), the ⌘N menu command (`ComposeCommands`), and a launch-
+// time session restore so the ownership-gated edit / delete UI knows
+// who the signed-in user is. Sign-out / re-sign-in still go through
+// the Onboarding window (M0/M7).
 
 import SwiftUI
 
@@ -24,8 +25,32 @@ struct InterlinedListApp: App {
             MainWindowView()
                 .environmentObject(environment)
                 .environment(\.appEnvironment, environment)
+                .task {
+                    // Begin observing session state, then attempt a
+                    // token-restore. Errors are swallowed at the launch
+                    // boundary — a failed restore just leaves the UI in
+                    // the signed-out projection (no current user → no
+                    // ownership-gated UI), which is the correct safe
+                    // default.
+                    environment.currentUserStore.start()
+                    _ = try? await environment.currentUserStore.restore()
+                }
         }
         .windowToolbarStyle(.unified)
+        .commands {
+            ComposeCommands()
+        }
+
+        // Dedicated composer scene (PLAN.md §5). `Window` instead of
+        // `WindowGroup` because we want a single composer at a time —
+        // opening ⌘N twice should re-focus the existing window rather
+        // than spawn a second one.
+        Window("New Post", id: ComposeWindowID.newPost) {
+            ComposerWindowView(mode: .newPost)
+                .environmentObject(environment)
+                .environment(\.appEnvironment, environment)
+        }
+        .windowResizability(.contentMinSize)
 
         Settings {
             SettingsPlaceholderView()

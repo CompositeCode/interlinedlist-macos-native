@@ -22,8 +22,9 @@ import InterlinedPersistence
 @MainActor
 final class AppEnvironment: ObservableObject {
 
-    /// The timeline + message read service the Timeline feature binds
-    /// against. Exposed as the protocol so test doubles substitute in.
+    /// The timeline + message read / write service the Timeline and
+    /// Compose features bind against. Exposed as the protocol so test
+    /// doubles substitute in.
     let messages: MessagesServicing
 
     /// The public-list browse service the Lists feature binds against
@@ -33,10 +34,25 @@ final class AppEnvironment: ObservableObject {
 
     /// The read-only social surface the Social feature binds against for
     /// the M1 profile UI (PLAN.md §1 "Profile" / "Follow system", §6 M1).
-    /// Exposed as the protocol so test doubles substitute in. Profile reads
-    /// are the public-author fallback per decision 0002; follower / following
-    /// counts are populated via `counts(of:)` once a userId is in hand.
     let social: SocialServicing
+
+    /// The current-session source the App layer reads when deciding
+    /// whether to show ownership-gated affordances (M2 edit / delete
+    /// menu items on a message row, PLAN.md §6 M2). Exposed as the
+    /// protocol so tests substitute a stub session.
+    let session: SessionManaging
+
+    /// SwiftUI-friendly mirror of `session` for views and view models.
+    /// Populated asynchronously from the session state stream — when
+    /// `currentUserID` is `nil`, ownership-gated UI must hide itself
+    /// (PLAN.md §6 M2 rule: never "enabled but broken").
+    let currentUserStore: CurrentUserStore
+
+    /// Cross-window event bus the composer / repost sheet / detail
+    /// view post to after a successful create / reply / repost /
+    /// update / delete. Open Timeline / Detail views subscribe and
+    /// mutate their rendered lists in place without a full refetch.
+    let composerEventBus: ComposerEventBus
 
     /// Designated initializer used by tests and previews that want to
     /// inject a fully synthetic service graph. Production code calls
@@ -44,11 +60,17 @@ final class AppEnvironment: ObservableObject {
     init(
         messages: MessagesServicing,
         lists: ListsServicing,
-        social: SocialServicing
+        social: SocialServicing,
+        session: SessionManaging,
+        currentUserStore: CurrentUserStore,
+        composerEventBus: ComposerEventBus
     ) {
         self.messages = messages
         self.lists = lists
         self.social = social
+        self.session = session
+        self.currentUserStore = currentUserStore
+        self.composerEventBus = composerEventBus
     }
 
     /// Builds the production service graph:
@@ -57,6 +79,11 @@ final class AppEnvironment: ObservableObject {
     /// M1; the session establisher is `NullSessionEstablisher` because
     /// the timeline feature only touches Bearer endpoints) →
     /// `APIClient` → `SwiftDataMessageStore` → `MessagesService`.
+    ///
+    /// M2 adds `AuthService` → `SessionService` → `CurrentUserStore`
+    /// so the timeline / detail UI can ownership-gate the edit / delete
+    /// menu items, and a singleton `ComposerEventBus` so the composer
+    /// window can notify the open Timeline of a successful write.
     ///
     /// TODO: M4 — swap the in-memory message store for a persistent
     /// one once `InterlinedPersistence` exposes a public factory for
@@ -82,11 +109,24 @@ final class AppEnvironment: ObservableObject {
         // second client would be redundant and would double up auth
         // bookkeeping at no benefit.
         let lists = ListsService(api: api)
-        // Same `APIClient` reuse as `lists` — the M1 profile read hits the
-        // same Bearer-or-public endpoints (`/api/user/[username]/messages`
-        // via the decision 0002 fallback, plus `/api/follow/[id]/counts`).
         let social = SocialService(api: api)
-        return AppEnvironment(messages: messages, lists: lists, social: social)
+        // Auth + session — the kit-level `AuthService` owns the token
+        // store and credential exchange; `SessionService` adds the
+        // `GET /api/user` read that turns a stored token into a
+        // `CurrentUser`. Cache is shared with the messages store so
+        // sign-out clears the timeline cache.
+        let auth = AuthService(api: api, tokenStore: tokenStore)
+        let session = SessionService(auth: auth, api: api, cache: store)
+        let currentUserStore = CurrentUserStore(session: session)
+        let composerEventBus = ComposerEventBus()
+        return AppEnvironment(
+            messages: messages,
+            lists: lists,
+            social: social,
+            session: session,
+            currentUserStore: currentUserStore,
+            composerEventBus: composerEventBus
+        )
     }
 
     // MARK: - Store construction

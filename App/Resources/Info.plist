@@ -10,6 +10,10 @@
 	<string>InterlinedList</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleHelpBookFolder</key>
+	<string>InterlinedList.help</string>
+	<key>CFBundleHelpBookName</key>
+	<string>com.interlinedlist.macos.help</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>

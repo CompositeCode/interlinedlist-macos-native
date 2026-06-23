@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Troubleshooting — InterlinedList Help</title>
+<meta name="AppleTitle" content="Troubleshooting">
+<meta name="AppleIcon" content="../shrd/logo.png">
+<meta name="description" content="Common problems and the current feature boundary.">
+<meta name="keywords" content="troubleshooting, problem, sign-in, login, empty, profile, known limits, future update">
+<meta name="ROBOTS" content="ANCHORS">
+<link rel="stylesheet" href="../shrd/help.css">
+</head>
+<body>
+<a name="troubleshooting"></a>
+<header class="help-header">
+<img src="../shrd/logo.png" alt="">
+<h1>Troubleshooting</h1>
+</header>
+
+<p><a href="index.html#index">Back to Help home</a></p>
+
+<a name="troubleshooting-signin"></a>
+<h2>I can't sign in</h2>
+<ul>
+<li>Double-check that the same email and password work at <a href="https://interlinedlist.com">interlinedlist.com</a>. The app uses the same account.</li>
+<li>If the website shows your account is locked or unverified, finish those steps on the site first.</li>
+<li>Use <strong>Reset password</strong> on the welcome window if you have forgotten your password.</li>
+<li>If your network requires a proxy or VPN, make sure macOS can reach <code>interlinedlist.com</code>.</li>
+</ul>
+
+<a name="troubleshooting-empty-profile"></a>
+<h2>A profile says "no public messages yet"</h2>
+<p>This is expected. In the current release the app builds a profile from the user's most recent public message. Users who have never posted a public message cannot be shown as a profile yet. The user does exist; their profile will become viewable as soon as they post a public message, or when a future update adds direct profile lookup.</p>
+
+<h2>The timeline is empty</h2>
+<ul>
+<li>If you have just signed in, scroll up to trigger a refresh.</li>
+<li>If the <strong>Mine</strong> scope is empty, you have not posted any messages yet on this account. (Composing arrives in the next milestone.)</li>
+<li>If a tag filter is set, clear it.</li>
+</ul>
+
+<h2>A message thread won't open</h2>
+<p>Threads require an internet connection to load replies for the first time. Check your network and try again. If the original message has been deleted by its author, the thread cannot be opened.</p>
+
+<a name="known-limits"></a>
+<h2>Known limits in this release</h2>
+<p>The following features are <span class="status-future">coming in a future update</span> and are not available yet:</p>
+<ul>
+<li>Composing posts, replies, reposts, "I Dig!" reactions, editing, and deleting your own messages.</li>
+<li>Creating, editing, and sharing your own lists; list schemas; nested lists; the connections graph; GitHub-backed list refresh.</li>
+<li>Documents, the document editor, and offline sync.</li>
+<li>Following and unfollowing users; follower and following lists; mutual follows; private-account requests.</li>
+<li>Notifications (sidebar badge, tray, and system notifications).</li>
+<li>Organizations and member management.</li>
+<li>Media attachments, scheduled posts, and cross-posting to Mastodon, Bluesky, and LinkedIn.</li>
+<li>OAuth identity linking (GitHub, Mastodon, Bluesky, LinkedIn).</li>
+<li>CSV exports.</li>
+<li>Settings polish: email change, account deletion, avatar upload.</li>
+</ul>
+
+<h2>Reporting an issue</h2>
+<p>If something the help book says should work doesn't, please file an issue on the project's repository with the steps you took, what you expected, and what you saw. Do not share your account credentials.</p>
+
+<p><a href="index.html#index">Back to Help home</a></p>
+
+<footer class="help-footer">
+<p>InterlinedList for macOS — Help book version 0.1.0.</p>
+</footer>
+</body>
+</html>

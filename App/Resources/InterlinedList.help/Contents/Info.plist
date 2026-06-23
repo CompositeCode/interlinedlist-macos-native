@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.interlinedlist.macos.help</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>InterlinedList Help</string>
+	<key>CFBundlePackageType</key>
+	<string>BNDL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleSignature</key>
+	<string>hbwr</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>HPDBookAccessPath</key>
+	<string>pgs/index.html</string>
+	<key>HPDBookIconPath</key>
+	<string>shrd/logo.png</string>
+	<key>HPDBookIndexPath</key>
+	<string>InterlinedList.helpindex</string>
+	<key>HPDBookKBProduct</key>
+	<string>InterlinedListMac1</string>
+	<key>HPDBookKBProductVersion</key>
+	<string>0.1.0</string>
+	<key>HPDBookTitle</key>
+	<string>InterlinedList Help</string>
+	<key>HPDBookType</key>
+	<string>3</string>
+</dict>
+</plist>

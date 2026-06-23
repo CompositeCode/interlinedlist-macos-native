@@ -25,7 +25,7 @@ description: Create and maintain InterlinedList documentation split across engin
 
 ## Required Checks
 - See ./assets/docs-track-matrix.md
-- See ./assets/docs-quality-checklist.md
+- See ./assets/docs-quality-checklist.md (includes project-specific gates for Help Book, coverage matrix, and read-only paths)
 
 ## Output
 1. Objective
