@@ -91,7 +91,11 @@ private struct SidebarDetailDispatcher: View {
         case .notifications:
             NotificationsPlaceholderView()
         case .lists:
-            ListsBrowserView()
+            // M3 (Wave 4.3) — sign-in routing:
+            //   • Signed-in users get `OwnedListsRootView` (Lists CRUD).
+            //   • Signed-out / unresolved sessions keep the M1 public
+            //     browser. The router checks `currentUserStore` directly.
+            ListsSidebarRouter()
         case .documents:
             DocumentsPlaceholderView()
         case .organizations:

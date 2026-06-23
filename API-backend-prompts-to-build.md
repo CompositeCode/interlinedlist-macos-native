@@ -112,6 +112,13 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 - **Impact.** M3 schema editor. We need to render a per-type input control (date picker for `date`, stepper for `number`, etc.) and validate before POSTing.
 - **Priority.** P2 — blocks the M3 schema editor's input controls.
 
+### 2.3a — Public list cloning endpoint
+
+- **Problem.** The macOS "Save to my lists" hook on a public-list detail page currently degrades to *metadata-only*: it creates an empty owned list with the source's title, description, and schema string. There is no documented endpoint to clone a public list's rows into the caller's owned-lists collection in one shot, so the user has to copy rows by hand.
+- **Proposal.** `POST /api/lists/clone` accepting `{ "sourceUsername": "...", "sourceSlug": "...", "asTitle": "...", "asSlug": "..." (optional), "isPublic": false }` and returning the newly created `OwnedList`. Server copies schema + every row (or returns a job id for async).
+- **Impact.** Phase 4 (M3) "Save to my lists" goes from metadata-only to full row clone. Without it, the macOS UI shows an inline note explaining the limit; with it, the feature ships as users expect.
+- **Priority.** P2.
+
 ### 2.3 — `lastRefreshedAt` + `refreshStatus` on GitHub-backed lists
 
 - **Problem.** A GitHub-backed list refresh is async (`POST /api/lists/[id]/refresh`), but the list metadata returned by `GET /api/lists/[id]` doesn't expose when the last refresh happened or whether one is in progress. The macOS toolbar wants to show "Refreshed 2 min ago" and disable the button while in-flight.
@@ -126,6 +133,8 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
   ```
 - **Impact.** M3 GitHub refresh UI. Currently manual-only per the user's plan answer, but the button needs to know enough to render its own state.
 - **Priority.** P2.
+
+**Companion ask &mdash; write side.** `POST /api/lists` currently does not accept a `gitHubSource` block on create. The macOS "New List" sheet surfaces `gitHubRepository / gitHubPath / gitHubBranch` fields but cannot pass them through. To ship the create-as-GitHub-backed flow, the create endpoint needs to accept the same `gitHubSource` shape proposed above for the read side. Without it, users have to create a plain list and then configure GitHub source separately (assuming a separate endpoint exists, which is also undocumented).
 
 ### 2.4 — Typed notification kinds + payload shape
 

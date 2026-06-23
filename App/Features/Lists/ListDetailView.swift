@@ -29,6 +29,8 @@ struct ListDetailView: View {
 
     @Environment(\.appEnvironment) private var environment
     @State private var viewModel: ListDetailViewModel?
+    @State private var saveSheetPresented: Bool = false
+    @State private var savedListName: String = ""
 
     var body: some View {
         Group {
@@ -40,12 +42,30 @@ struct ListDetailView: View {
             }
         }
         .navigationTitle(viewModel?.detail?.title ?? "List")
+        .toolbar {
+            ToolbarItem {
+                if let viewModel,
+                   environment?.currentUserStore.currentUserID != nil,
+                   viewModel.detail != nil {
+                    Button {
+                        savedListName = viewModel.detail?.title ?? ""
+                        saveSheetPresented = true
+                    } label: {
+                        Label("Save to my lists", systemImage: "tray.and.arrow.down")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $saveSheetPresented) {
+            saveSheet
+        }
         .task {
             if viewModel == nil, let environment {
                 let model = ListDetailViewModel(
                     lists: environment.lists,
                     username: username,
-                    slug: slug
+                    slug: slug,
+                    eventBus: environment.listsEventBus
                 )
                 viewModel = model
                 await model.load()
@@ -216,6 +236,50 @@ struct ListDetailView: View {
             .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Save sheet
+
+    @ViewBuilder
+    private var saveSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Save to my lists")
+                .font(.headline)
+            Text("Create a copy of this list in your account.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField("Name", text: $savedListName)
+                .textFieldStyle(.roundedBorder)
+            if let viewModel,
+               case .saved(let list) = viewModel.saveState {
+                Text("Saved as \"\(list.title)\".")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            } else if let viewModel,
+                      case .failed(let message) = viewModel.saveState {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+            HStack {
+                Button("Cancel", role: .cancel) {
+                    saveSheetPresented = false
+                }
+                Spacer()
+                Button("Save") {
+                    Task {
+                        await viewModel?.saveToMyLists(suggestedName: savedListName)
+                        if case .saved = viewModel?.saveState {
+                            saveSheetPresented = false
+                        }
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(savedListName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(16)
+        .frame(minWidth: 380)
     }
 
     // MARK: - Helpers

@@ -26,6 +26,7 @@ final class ListDetailViewModel {
     static let pageSize: Int = 50
 
     private let lists: ListsServicing
+    private let eventBus: ListsEventBus?
     private let username: String
     private let slug: String
 
@@ -34,6 +35,17 @@ final class ListDetailViewModel {
     /// The list's metadata (title, description, schema string). `nil`
     /// before the first successful load.
     private(set) var detail: ListDetail?
+
+    /// State of the "Save to my lists" affordance.
+    private(set) var saveState: SaveState = .idle
+
+    /// State machine for the public-list save hook (Wave 4.3).
+    enum SaveState: Equatable {
+        case idle
+        case saving
+        case saved(OwnedList)
+        case failed(String)
+    }
 
     /// Rows loaded so far, in display order.
     private(set) var rows: [ListRow] = []
@@ -55,10 +67,40 @@ final class ListDetailViewModel {
 
     // MARK: - Init
 
-    init(lists: ListsServicing, username: String, slug: String) {
+    init(
+        lists: ListsServicing,
+        username: String,
+        slug: String,
+        eventBus: ListsEventBus? = nil
+    ) {
         self.lists = lists
         self.username = username
         self.slug = slug
+        self.eventBus = eventBus
+    }
+
+    /// Saves the currently-viewed public list to the signed-in user's
+    /// owned lists. v1 implementation: create an empty list mirroring
+    /// the source's title and description. Cloning the rows / schema
+    /// is not exposed by the API today (see
+    /// `/API-backend-prompts-to-build.md` — no documented public-list
+    /// clone endpoint), so this is a deliberate degradation.
+    func saveToMyLists(suggestedName: String) async {
+        guard let detail else { return }
+        saveState = .saving
+        do {
+            let created = try await lists.create(
+                title: suggestedName,
+                description: detail.description,
+                schema: detail.schemaDescription,
+                parentId: nil,
+                isPublic: false
+            )
+            eventBus?.post(.listCreated(created))
+            saveState = .saved(created)
+        } catch {
+            saveState = .failed(error.localizedDescription)
+        }
     }
 
     // MARK: - Intents

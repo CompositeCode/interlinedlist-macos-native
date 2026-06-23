@@ -39,6 +39,7 @@ struct InterlinedListApp: App {
         .windowToolbarStyle(.unified)
         .commands {
             ComposeCommands()
+            ListMenuCommands()
         }
 
         // Dedicated composer scene (PLAN.md §5). `Window` instead of
