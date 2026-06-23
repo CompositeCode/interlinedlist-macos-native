@@ -46,28 +46,28 @@ This matrix exists so that full coverage of the [InterlinedList API](https://int
 | `POST /api/messages/videos/upload` | Messages | Session or Bearer | MessagesService | M6 | ☑ | ◐⁴ |
 | `GET /api/lists` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
 | `POST /api/lists` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `GET /api/lists/[id]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `PUT /api/lists/[id]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `DELETE /api/lists/[id]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `GET /api/lists/[id]/schema` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `PUT /api/lists/[id]/schema` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `POST /api/lists/[id]/refresh` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `GET /api/lists/[id]/data` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `POST /api/lists/[id]/data` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `GET /api/lists/[id]/data/[rowId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `PATCH /api/lists/[id]/data/[rowId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `DELETE /api/lists/[id]/data/[rowId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `GET /api/lists/[id]/watchers` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `GET /api/lists/[id]/watchers/me` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `GET /api/lists/[id]/watchers/users` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `PUT /api/lists/[id]/watchers/[userId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `DELETE /api/lists/[id]/watchers/[userId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
+| `GET /api/lists/[id]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴⁹ |
+| `PUT /api/lists/[id]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴⁹ |
+| `DELETE /api/lists/[id]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `GET /api/lists/[id]/schema` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `PUT /api/lists/[id]/schema` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `POST /api/lists/[id]/refresh` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `GET /api/lists/[id]/data` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `POST /api/lists/[id]/data` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `GET /api/lists/[id]/data/[rowId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴⁹ |
+| `PATCH /api/lists/[id]/data/[rowId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `DELETE /api/lists/[id]/data/[rowId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `GET /api/lists/[id]/watchers` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴⁹ |
+| `GET /api/lists/[id]/watchers/me` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `GET /api/lists/[id]/watchers/users` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `PUT /api/lists/[id]/watchers/[userId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `DELETE /api/lists/[id]/watchers/[userId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
 | `GET /api/users/[username]/lists` | Lists (public) | None | ListsService | M1 | ☑ | ☑ |
 | `GET /api/users/[username]/lists/[id]` | Lists (public) | None | ListsService | M1 | ☑ | ☑ |
 | `GET /api/users/[username]/lists/[id]/data` | Lists (public) | None | ListsService | M1 | ☑ | ☑ |
-| `GET /api/lists/connections` | List Connections | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `POST /api/lists/connections` | List Connections | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `DELETE /api/lists/connections/[id]` | List Connections | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
+| `GET /api/lists/connections` | List Connections | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `POST /api/lists/connections` | List Connections | Session or Bearer | ListsService | M3 | ☑ | ☑ |
+| `DELETE /api/lists/connections/[id]` | List Connections | Session or Bearer | ListsService | M3 | ☑ | ☑ |
 | `GET /api/documents/sync` | Documents & Sync | Session or Bearer | DocumentSyncEngine (InterlinedPersistence) | M4 | ☑ | ◐⁴ |
 | `POST /api/documents/sync` | Documents & Sync | Session or Bearer | DocumentSyncEngine (InterlinedPersistence) | M4 | ☑ | ◐⁴ |
 | `GET /api/documents` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ◐⁴ |
@@ -124,6 +124,7 @@ This matrix exists so that full coverage of the [InterlinedList API](https://int
 6. `POST /api/auth/register` ships as `AuthService.register` and is exercised by the live `ContractTests` when `INTERLINEDLIST_EMAIL` / `INTERLINEDLIST_PASSWORD` are present, but has no stubbed unit-test cases yet (only `signIn` has dedicated unit tests in `AuthServiceTests`). Tested ☐ until at least happy + invalid + failure + empty/boundary unit tests are added (likely in the onboarding-feature wave).
 7. `GET /api/user/organizations` lives in `InterlinedKit.User.organizations()` (not `Organizations.*`) because the live API path is `/api/user/organizations`, not `/api/organizations`. Planned-service column corrected from `OrgService` to `UserService¹` in Wave 1 to match the actual implementation.
 8. **No public profile read endpoint exists on the live API.** PLAN.md §1 (Profile row) and §6 M1 ("user profiles") imply a `GET /api/users/[username]` route, but the 2026-06-21 kit-gap spike confirmed every reasonable variation (`/api/users/[username]`, `/api/user/[username]`, `/api/users/[username]/{profile,public}`, `/api/profile/[username]`, `/api/u/[username]`, `/api/public/users/[username]`, `/api/users/[username]/{followers,following}`) returns 404, while the username pattern is otherwise valid (`/api/users/[username]/lists` and `/api/user/[username]/messages` return 200 for the same handle). No such row appears in this matrix because the endpoint is not in the live reference. Decision [`0002-public-profile-fallback`](decisions/0002-public-profile-fallback.md) records the M1 fallback: `SocialService.profile(username:)` reduces to the embedded `{ id, username, displayName, avatar }` author object on the first message returned by `GET /api/user/[username]/messages`. When the upstream endpoint lands, add the row here and check it off against the direct implementation.
+9. **M3 reachable but not exercised by a tested App-layer view model this wave.** Per Wave 1 footnote 4, a row only flips ◐⁴ → ☑ when an App-layer consumer drives it end-to-end under test. Four Lists rows are wired through `ListsService` and reachable from the running app but their consuming UX was held back to a polish slice this wave: `GET /api/lists/[id]` and `PUT /api/lists/[id]` (the detail-rename / single-list-refresh paths — rename UX deferred), `GET /api/lists/[id]/data/[rowId]` (single-row hydration — `RowInspectorView` reads from the already-paginated `ListRowsViewModel.rows` array), and `GET /api/lists/[id]/watchers` (the watcher pagination envelope — `WatchersView` consumes `/users` only this wave). These rows stay ◐⁴ until the next M3 polish wave consumes them through a tested view model. The Wave 1 footnote-4 backfill rule still applies.
 
 ## Cross-check against PLAN.md §1 (2026-06-11)
 
@@ -134,6 +135,7 @@ This matrix exists so that full coverage of the [InterlinedList API](https://int
 
 ## Update history
 
+- **2026-06-23 — Wave 4 update (M3 Lists consumed end-to-end).** `InterlinedDomain` Lists write surface + schema DSL + `InterlinedPersistence` SwiftData lists cache shipped in commit `415c5c2`; App-layer Lists UI (owned-lists root, schema editor, rows table, row inspector, watchers, connections graph) shipped in commits `461e7df` + `155c955` (view models) + `099d8d9` (views, sidebar router, menu commands). Per the Wave 1 protocol in footnote 4, every M3-consumed row that was partial (◐⁴) and is exercised by a tested App-layer view model this wave is now fully tested (☑) end-to-end (Kit builder → Domain service → App view-model). **15 rows flipped ◐⁴ → ☑**: `DELETE /api/lists/[id]`, `GET /api/lists/[id]/schema`, `PUT /api/lists/[id]/schema`, `POST /api/lists/[id]/refresh`, `GET /api/lists/[id]/data`, `POST /api/lists/[id]/data`, `PATCH /api/lists/[id]/data/[rowId]`, `DELETE /api/lists/[id]/data/[rowId]`, `GET /api/lists/[id]/watchers/me`, `GET /api/lists/[id]/watchers/users`, `PUT /api/lists/[id]/watchers/[userId]`, `DELETE /api/lists/[id]/watchers/[userId]`, `GET /api/lists/connections`, `POST /api/lists/connections`, `DELETE /api/lists/connections/[id]`. **Four Lists rows stay ◐⁴ — held back** as documented in new footnote 9: `GET /api/lists/[id]`, `PUT /api/lists/[id]`, `GET /api/lists/[id]/data/[rowId]`, `GET /api/lists/[id]/watchers` (reachable via `ListsService` but not exercised by a tested view model this wave). `GET /api/lists` and `POST /api/lists` likewise stay ◐⁴ for this wave — their App-layer consumers (`OwnedListsViewModel.initialLoad` / `loadMore`, `NewListViewModel.submit` + `ListDetailViewModel.saveToMyLists`) exercise the request path but the M3 polish slice will pin the full happy + invalid + failure + empty/boundary quartets at the view-model layer before they flip. The three public-Lists rows (`GET /api/users/[username]/lists*`) were already ☑ from Wave 2. **Math: Implemented 92 of 98 (unchanged); Tested fully 20 → 35 of 98 (+15); Tested partial 71 → 56 of 98 (−15); Untested 7 of 98 (unchanged).** Footnote 9 added. No other footnotes touched.
 - **2026-06-22 — Wave 3 update (M2 posting consumed end-to-end).** Decision [`0003-kit-import-policy`](decisions/0003-kit-import-policy.md) recorded; `InterlinedDomain.MessagesService` gained the M2 write surface (`create`, `reply`, `repost`, `update(messageId:…)`, `delete(messageId:)`, `dig(messageId:)`, `undig(messageId:)`) per commit `c07ac8a`; App-layer Composer / inline-reply / optimistic-dig / repost / edit / delete UI landed in the follow-on commit (`InterlinedListTests` 44/44 passing). Per the Wave 1 protocol in footnote 4, every M2-consumed row that was partial (◐⁴) after Wave 2 is now fully tested (☑) end-to-end (Kit builder → Domain service → App view-model). Four rows flipped ◐⁴ → ☑: `PUT /api/messages/[id]`, `DELETE /api/messages/[id]`, `POST /api/messages/[id]/dig`, `DELETE /api/messages/[id]/dig`. `POST /api/messages` was already ☑ from Wave 1 (cross-post-fields builder coverage) and is re-exercised this wave by all three App-layer entry points (`create`, `reply`, `repost`) — row state unchanged. `GET /api/user` was already ☑ from Wave 2 and is additionally consumed this wave by the App-layer `CurrentUserStore` for ownership gating — row state unchanged. The cross-post / scheduled / media request fields on `POST /api/messages` remain M6 per footnote 2. **Implemented: 92 of 98 (unchanged). Tested: 20 of 98 fully (☑), 71 of 98 partial (◐⁴), 6 untested ☐ plus 1 untested-with-context ☐⁶.** No new footnotes added.
 - **2026-06-21 — Wave 2 update (M1 read-only core consumed).** Domain (`InterlinedDomain`) services + Persistence (`InterlinedPersistence`) SwiftData cache + App-layer Timeline / Lists / Profile UI landed for PLAN.md §6 M1. Per the Wave 1 protocol in footnote 4, every M1-consumed row was promoted from partial (◐⁴) to full (☑) at the domain-service layer. Ten rows flipped: `GET /api/messages`, `GET /api/messages/[id]/replies`, `GET /api/users/[username]/lists`, `GET /api/users/[username]/lists/[id]`, `GET /api/users/[username]/lists/[id]/data`, `GET /api/follow/[userId]/status`, `GET /api/follow/[userId]/followers`, `GET /api/follow/[userId]/following`, `GET /api/follow/[userId]/counts`, and `GET /api/user/[username]/messages`. (`GET /api/messages/[id]` was already ☑ from Wave 1 and is not in the flip count.) **Implemented: 92 of 98 (unchanged). Tested: 16 of 98 fully (☑), 75 of 98 partial (◐⁴), 6 untested ☐ plus 1 untested-with-context ☐⁶.** No new footnotes added.
 - **2026-06-21 — Public profile gap recorded.** 2026-06-21 kit-gap spike confirmed `GET /api/users/[username]` (and every reasonable variation) does not exist on the live API. Footnote 8 added; `GET /api/user/[username]/messages` row annotated with footnote 8 to mark its role as the M1 profile fallback carrier per decision [`0002-public-profile-fallback`](decisions/0002-public-profile-fallback.md). No row added to the matrix; no Implemented / Tested counts change.

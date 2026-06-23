@@ -306,3 +306,126 @@ Re-consumed but unchanged (☑ already):
 4. **`AsyncStream` deinit-cancel concession.** `CurrentUserStore`'s subscription Task uses `[weak self]`; deinit-time cancellation of the handle is not wired because Swift 6 Observation-macro semantics block `nonisolated` storage on the handle. The Task ends naturally on the next stream value after deallocation — acceptable for production. Fix path if it ever matters: wrap the handle in a separate non-observed helper class.
 5. **`TimelineViewModelTests.seedForTest` seeds state via `apply(event: .messageCreated)`.** Mild test-code smell — the long-term cleaner shape is an `internal` (test-only) `replaceMessagesForTest(_:)` under `#if DEBUG`. Not blocking, not done this wave.
 6. **SourceKit-only diagnostic noise after pbxproj mutation.** Adding the `InterlinedListTests` target via direct pbxproj edits left Xcode's SourceKit indexer reporting stale "No such module 'InterlinedDomain'" errors across every `App/**` file. `xcodebuild` was unaffected. Resolves with Xcode's **File → Packages → Reset Package Caches** or **Product → Clean Build Folder**. Noted here for future contributors who land pbxproj edits this way.
+
+---
+
+## Wave 4 — InterlinedDomain M3 write surface + Persistence lists cache + App-layer Lists UI (PLAN.md §6 M3)
+
+Wave 4 lands M3 Lists end-to-end: the `InterlinedDomain` Lists write surface (CRUD, schema DSL, row CRUD, watchers, connections, GitHub-source refresh) plus a `FollowCounts`-style domain projection for every Lists wire type; the `InterlinedPersistence` SwiftData lists cache; and the App-layer Lists UI (owned-lists root with disclosure tree, schema editor, rows table + row inspector, watchers panel, list-connections graph, public-list "Save to my lists" hook). Path ownership stayed inside `Packages/InterlinedDomain/**`, `Packages/InterlinedPersistence/**`, `App/**`, and `InterlinedList.xcodeproj/**` (no test-target additions this wave — `InterlinedListTests` re-uses the Wave 3 synchronized folder group, so new tests landed in `AppTests/` without pbxproj edits). `InterlinedKit` source paths were not touched (its 174/174 suite from Wave 1 is unchanged).
+
+### Decisions
+
+- **No new architectural decisions this wave.** Decision 0003 (kit-import policy) from Wave 3 remains the load-bearing rule for App-layer composition and was verified end-of-wave: the `import InterlinedKit` grep across `App/Features/**`, `App/Navigation/**`, and `App/MenuCommands/**` returned empty (the only kit import in `App/**` lives in `App/Composition/AppEnvironment.swift`, the documented permitted location). Every new Lists view model, view, and event-bus type in this wave consumes domain values only — `OwnedList`, `ListSchema`, `SchemaFieldType`, `ListRow`, `WatcherRole`, `ListConnection`, `GitHubListSource` — and never reaches into `InterlinedKit` DTOs.
+
+### 4.1 — InterlinedDomain Lists write surface + schema DSL + InterlinedPersistence lists cache — DONE
+
+- Commit: `415c5c2`.
+- **Domain models:** `OwnedList`, `OwnedListsPage`, `ListSchema`, `SchemaField`, `SchemaFieldType { text, number, boolean, date, url, email }`, `ListConnection`, `ListWatcher`, `WatcherStatus`, `WatcherRole { owner, editor, viewer, .other(String) }`, `GitHubListSource`, `OwnedListMappers`. The `WatcherRole.other(String)` case preserves unknown wire values so a future role added server-side does not crash the parser (a defensive shape NW-1 already leans on).
+- **Schema DSL:** `Schema/SchemaDSL.swift` — parse + serialize round-trip with a typed `SchemaDSLError`. Property-style tests cover round-trip, every field type, whitespace variants, duplicate field names, missing types, and trailing commas — the deepest test suite PLAN.md §7 calls out for the parser.
+- **`ListsService` write surface:** `myLists`, `detail`, `create`, `update`, `delete`, `schema`, `updateSchema`, `refresh`, row CRUD (`rows`, `addRow`, `updateRow`, `deleteRow`, `getRow`), watchers (`watchers`, `myWatcher`, `watcherUsers`, `setWatcher`, `removeWatcher`), connections (`connections`, `addConnection`, `removeConnection`). Every write routes through a `requireListManagement()` guard that consults `EntitlementsService.canManageLists`, throwing `ListsError.subscriberRequired` before any HTTP call. The default permissive flag stays on through M6 — this is defensive gating wired now so M6's entitlement toggle is a one-line policy change, not a search-and-replace across services.
+- **`EntitlementsService` extension:** gains `canManageLists` plus `init(customerStatus:canManageLists:)` test seam.
+- **`ListsStore` cache port** (domain-side protocol) added to keep the App layer from knowing about SwiftData directly.
+- **Persistence SwiftData lists cache:** new `@Model` records `ListRecord`, `ListsPageRecord`, `ListSchemaRecord`, `SchemaFieldRecord`, `ListRowRecord`, `ListConnectionRecord`, `ListWatcherRecord`; `RowDataCodec` (a JSON-blob codec for the dynamic `[String: ListCellValue]` row shape — keeps `InterlinedPersistence` free of any `InterlinedKit` import); `SwiftDataListsStore` actor with `inMemory()` + `onDisk(at:)` factories and a cascading `removeList` that evicts rows / schema / watchers / connections / page-index entries. `NullListsStore` no-op for hostile boot conditions, matching the M1 `NullMessageStore` pattern.
+- **Test counts:** Domain **99 → 181 (+82)**, including the property-style schema DSL suite and the per-method `ListsService` quartets. Persistence **13 → 30 (+17)**, including round-trip, cascading delete, page-index isolation, and the row-data codec round-trip. Kit unchanged at **174**.
+- **Endpoint consumption:** the 21 Lists endpoint rows (incl. 3 List Connections) are reachable at the domain-service layer after this commit, but per the Wave 1 deviation-6 rule, they remain ◐⁴ in the coverage matrix until the App layer consumes them end-to-end — which happens in 4.3 below.
+
+### 4.3 — App-layer Lists UI — DONE
+
+- Commits: `461e7df` + `155c955` (view models + `ListsEventBus` + `AppEnvironment` wiring, user-committed), `099d8d9` (views, sidebar router, menu commands).
+- **`OwnedListsRootView`** — `NavigationSplitView` with a sidebar disclosure tree that honors `OwnedList.parentID` for nested lists. Toolbar: New List (⇧⌘N), Refresh (calls `refresh` on a GitHub-backed list), Edit Schema, Share (watchers), Connections. Context-menu Delete uses `.confirmationDialog`. List-row metadata (visibility badge, last-refreshed time when present, child count) renders from the domain model only.
+- **`NewListSheetView`** — title, description, schema DSL string, parent picker, visibility toggle. GitHub-source fields (`gitHubRepository`, `gitHubPath`, `gitHubBranch`) are surface-only this wave pending the `POST /api/lists` write-side companion documented in [API-backend-prompts-to-build.md](../API-backend-prompts-to-build.md) item 2.3.
+- **`SchemaEditorView`** — per-field form builder over `ListSchema`: name, type picker (`SchemaFieldType`), nullable toggle, `.onMove` reorder, full validation before submit. Read-only when the current user's `WatcherRole` does not include schema-edit rights (decided locally from `GET /api/lists/[id]/watchers/me`).
+- **`ListRowsView` + `RowInspectorView`** — typed input cells per `SchemaFieldType` (date picker for `date`, stepper for `number`, etc.), cards/list view toggle, optimistic add/update/delete with snapshot rollback on failure. **A dynamic-column SwiftUI `Table` was the original target but deferred** — see deviation 1 below.
+- **`WatchersView`** — role editor only this wave (no invite-by-handle), with an explicit infobox citing NW-1 and the API-backend-prompts item 1.5 user-lookup ask. Optimistic role-change and remove with snapshot rollback.
+- **`ListConnectionsView`** — pure SwiftUI `Canvas` + gesture handlers (drag-to-move nodes, drag-from-node-to-node to add an edge, tap-to-remove an edge). No `AppKit` import. Layout is a **deterministic radial v1**: nodes are placed on a circle at equal angular intervals from a stable hash of `OwnedList.id`, so the same set of lists always renders in the same arrangement. A `TODO(M3.x)` marker in `ListConnectionsViewModel` flags the force-directed upgrade for a polish wave.
+- **`ListsSidebarRouter`** — ownership gating: signed-in users see `OwnedListsRootView`; signed-out users see the M1 `ListsBrowserView` (preserved). Reads from `CurrentUserStore` (Wave 3).
+- **Public-list "Save to my lists" hook** — `ListDetailView` + `ListDetailViewModel.saveToMyLists` create an owned list with the source's title, description, and schema string. **Metadata-only v1** — row-level cloning waits on the [API-backend-prompts-to-build.md](../API-backend-prompts-to-build.md) item 2.3a clone endpoint. The UI surfaces this limit inline.
+- **Menu integration:** `ListMenuCommands` adds a Lists menu with "New List" on ⇧⌘N (avoiding the ⌘N collision with the Wave 3 `ComposeCommands`). `MainWindowView` routes `.lists` through `ListsSidebarRouter`.
+- **Cross-window write propagation:** new `ListsEventBus` (actor-backed pub/sub, mirroring the Wave 3 `ComposerEventBus` shape) broadcasts list/row/watcher/connection mutations so the owned-lists root, the rows view, the schema editor, the watchers panel, and the connections graph all stay coherent without re-fetching.
+- **SwiftUI-only constraint enforced.** `grep -R "import AppKit" App/` returned empty at the gate — every Lists view in this wave is pure SwiftUI, including the connections-graph canvas. This is the explicit policy choice the agent and orchestrator agreed to before the wave started; the deterministic radial layout is what made it feasible without an AppKit drop-down.
+- **Decision 0003 compliance.** `grep -R "import InterlinedKit" App/Features App/Navigation App/MenuCommands` returned empty at the gate. The only kit import in `App/**` remains the documented permitted one in `App/Composition/AppEnvironment.swift`. The wave's view models all consume domain values via the 4.1 `OwnedList` / `ListSchema` / `ListRow` / `WatcherRole` / `ListConnection` projections.
+- **App tests:** **44 → 106 (+62)** — new view-model suites: `OwnedListsViewModelTests` (14), `NewListViewModelTests` (4), `SchemaEditorViewModelTests` (10), `ListRowsViewModelTests` (14), `WatchersViewModelTests` (9), `ListConnectionsViewModelTests` (11), plus the `StubListsService` test double under `AppTests/Support/`. The 44 Wave 3 tests are unchanged and still passing.
+
+### Wave 4 gate — PASSED (2026-06-23)
+
+- App build: `xcodebuild -scheme InterlinedList -destination 'platform=macOS' build` → **BUILD SUCCEEDED**.
+- App tests: `xcodebuild -scheme InterlinedList -destination 'platform=macOS' test` → **106/106 passing** in `InterlinedListTests`.
+- Domain tests: `swift test --package-path Packages/InterlinedDomain` → **181/181 passing**.
+- Persistence tests: `swift test --package-path Packages/InterlinedPersistence` → **30/30 passing**.
+- Kit tests: `swift test --package-path Packages/InterlinedKit` → **174/174 passing** (unchanged; no Kit source paths touched).
+- Path-ownership check: changes confined to `Packages/InterlinedDomain/**`, `Packages/InterlinedPersistence/**`, `App/**`, `InterlinedList.xcodeproj/**` (no new targets — `AppTests/` synchronized group from Wave 3 absorbed the new tests), and `docs/**` for this wave-end update — no overlaps with Wave 1, Wave 2, or Wave 3 paths; conflict rules held.
+- Decision-0003 compliance check: `grep -R "import InterlinedKit" App/Features App/Navigation App/MenuCommands` → empty. The only `App/**` kit import remains the permitted composition-root one.
+- SwiftUI-only check: `grep -R "import AppKit" App/` → empty. Connections graph uses SwiftUI `Canvas`.
+
+### Test counts per suite (run 2026-06-23)
+
+| Suite | Tests | Notes |
+| --- | ---: | --- |
+| `InterlinedListTests.OwnedListsViewModelTests` | 14 | Initial load + load-more pagination, refresh, delete with snapshot rollback, parent-id nesting, error surfacing. |
+| `InterlinedListTests.NewListViewModelTests` | 4 | Title/schema validation, GitHub-source field carry-through, submit success and failure paths. |
+| `InterlinedListTests.SchemaEditorViewModelTests` | 10 | Field add / remove / reorder, type-change validation, save success and failure, read-only gating from `myWatcher`. |
+| `InterlinedListTests.ListRowsViewModelTests` | 14 | Paged load, add / update / delete with optimistic snapshot + rollback, typed cell coercion per `SchemaFieldType`. |
+| `InterlinedListTests.WatchersViewModelTests` | 9 | Load `watchers/users`, optimistic `setRole` + restore-on-failure, optimistic `remove` + restore-on-failure. |
+| `InterlinedListTests.ListConnectionsViewModelTests` | 11 | Load, add-connection, remove-connection, deterministic radial layout placement, gesture-translation pure functions. |
+| `InterlinedListTests` Wave-3 carry-over | 44 | Unchanged — `ComposerViewModelTests` (9), `RepostSheetViewModelTests` (4), `TimelineViewModelTests` (13), `MessageDetailViewModelTests` (14), `CurrentUserStoreTests` (4). |
+| **`InterlinedListTests` total** | **106** | All passing. |
+| `InterlinedDomainTests` (full) | 181 | +82 cases this wave: `OwnedListsServiceTests` (the full quartet across CRUD / schema / rows / watchers / connections / refresh), `SchemaDSLTests` (property-style), `EntitlementsServiceTests` (canManageLists). |
+| `InterlinedPersistenceTests` (full) | 30 | +17 cases this wave: `SwiftDataListsStoreTests` covering round-trip, cascading delete, page-index isolation, and `RowDataCodec` round-trip. |
+| `InterlinedKitTests` (full) | 174 | Unchanged from Wave 1. |
+| **Grand total across all targets** | **491** | All passing; 0 failures. |
+
+### Coverage matrix delta (after this update)
+
+The M3 consumption rule (Wave 1 deviation 6, reiterated in matrix footnote 4) applied: every M3-consumed row exercised by a tested App-layer view model this wave flips ◐⁴ → ☑. Four Lists rows are reachable through `ListsService` but were not exercised by a tested view model this wave; they stay ◐⁴ under new footnote 9. Two more (`GET /api/lists`, `POST /api/lists`) stay ◐⁴ until the M3 polish slice pins the full happy + invalid + failure + empty/boundary quartets at the view-model layer.
+
+| | Before Wave 4 | After Wave 4 |
+| --- | ---: | ---: |
+| Implemented (☑) | 92 / 98 | **92 / 98** |
+| Tested fully (☑) | 20 / 98 | **35 / 98** |
+| Tested partial (◐⁴) | 71 / 98 | **56 / 98** |
+| Untested (☐) | 7 / 98 | **7 / 98** |
+
+Rows flipped ◐⁴ → ☑ this wave (**15 total**, all M3-consumed end-to-end):
+
+- Lists (owned): `DELETE /api/lists/[id]` (`OwnedListsViewModel.deleteList`).
+- Lists (owned): `GET /api/lists/[id]/schema` (`ListRowsViewModel.initialLoad` + `SchemaEditorView.loadSchema`).
+- Lists (owned): `PUT /api/lists/[id]/schema` (`SchemaEditorViewModel.save`).
+- Lists (owned): `POST /api/lists/[id]/refresh` (`OwnedListsViewModel.refreshList`).
+- Lists (owned): `GET /api/lists/[id]/data` (`ListRowsViewModel.initialLoad` / `loadMore`).
+- Lists (owned): `POST /api/lists/[id]/data` (`ListRowsViewModel.addRow`).
+- Lists (owned): `PATCH /api/lists/[id]/data/[rowId]` (`ListRowsViewModel.updateRow`).
+- Lists (owned): `DELETE /api/lists/[id]/data/[rowId]` (`ListRowsViewModel.deleteRows`).
+- Lists (watchers): `GET /api/lists/[id]/watchers/me` (`SchemaEditorView.loadSchema` for role gating).
+- Lists (watchers): `GET /api/lists/[id]/watchers/users` (`WatchersViewModel.load`).
+- Lists (watchers): `PUT /api/lists/[id]/watchers/[userId]` (`WatchersViewModel.setRole`).
+- Lists (watchers): `DELETE /api/lists/[id]/watchers/[userId]` (`WatchersViewModel.remove`).
+- List Connections: `GET /api/lists/connections` (`ListConnectionsViewModel.load`).
+- List Connections: `POST /api/lists/connections` (`ListConnectionsViewModel.addConnection`).
+- List Connections: `DELETE /api/lists/connections/[id]` (`ListConnectionsViewModel.removeConnection`).
+
+Held back at ◐⁴ this wave (new footnote 9):
+
+- `GET /api/lists/[id]` — reachable via `ListsService.detail`; not driven by a tested view model. Detail-rename UX deferred to a polish slice.
+- `PUT /api/lists/[id]` — reachable via `ListsService.update`; rename UX deferred.
+- `GET /api/lists/[id]/data/[rowId]` — `RowInspectorView` reads from `ListRowsViewModel.rows` (already paginated), so the single-row hydration endpoint is not on a tested path this wave.
+- `GET /api/lists/[id]/watchers` — `WatchersView` consumes `/watchers/users` only this wave; the alternative watcher-pagination envelope is reachable through the service but not exercised by a tested view model.
+
+Held back at ◐⁴ pending polish-slice quartet coverage:
+
+- `GET /api/lists` — `OwnedListsViewModel.initialLoad` / `loadMore` exercise the request path; full quartet of view-model tests lands in the polish slice.
+- `POST /api/lists` — `NewListViewModel.submit` + `ListDetailViewModel.saveToMyLists` exercise the request path; full quartet lands in the polish slice.
+
+The three public-Lists rows (`GET /api/users/[username]/lists`, `GET /api/users/[username]/lists/[id]`, `GET /api/users/[username]/lists/[id]/data`) were already ☑ from Wave 2 and remain ☑.
+
+### Deviations and follow-ups
+
+1. **Dynamic-column SwiftUI `Table` deferred.** PLAN.md §1 calls out a SwiftUI `Table` grid view for lists rows. The dynamic-column `Table` constructor lives behind macOS 14.4 (`TableColumnForEach`), while the project deployment target is macOS 14.0. Rather than bump the target mid-wave, `ListRowsView` renders a `List` of typed-cell rows for v1. Follow-up: revisit when the deployment target moves (or build a column-builder workaround), tracked as TODO in `ListRowsView`.
+2. **Connections graph layout is deterministic radial v1.** `ListConnectionsViewModel` ships a stable hash-positioned radial arrangement so the same set of lists always renders in the same place. A `TODO(M3.x)` marker flags the upgrade to a force-directed (or simulated annealing) layout for a polish wave. Drag-to-move, drag-to-add-edge, and tap-to-remove-edge are already wired, so the upgrade is layout-only.
+3. **GitHub-source create fields are surface-only.** `NewListSheetView` surfaces `gitHubRepository`, `gitHubPath`, `gitHubBranch` but the create endpoint does not yet accept a `gitHubSource` block — see [API-backend-prompts-to-build.md](../API-backend-prompts-to-build.md) item 2.3 companion ask. The fields are stubbed off pending the write-side endpoint shape.
+4. **"Save to my lists" is metadata-only.** The hook copies title / description / schema string but not the rows. Row-level cloning waits on [API-backend-prompts-to-build.md](../API-backend-prompts-to-build.md) item 2.3a (`POST /api/lists/clone`). The UI surfaces the limit inline so the user is not surprised.
+5. **Watcher invite-by-handle deliberately omitted.** Per [NEXT-WORK.md NW-1](../NEXT-WORK.md), the invite flow waits on [API-backend-prompts-to-build.md](../API-backend-prompts-to-build.md) item 1.5 (`GET /api/users/lookup` or `/search`). `WatchersView` ships role-edit-only with an inline infobox explaining the wait. The `ListsService.setWatcher(listId:userId:role:)` domain method is fully wired and tested — only the user-lookup leg is missing.
+6. **In-place rename / edit context-menu wiring held back.** A list's rename action and the edit-list-metadata context-menu item are deliberately deferred to an M3 polish slice. `ListsService.update` is wired and reachable; the App-layer UX is the only thing missing. This is the same row-level deferral that keeps `PUT /api/lists/[id]` at ◐⁴ in the coverage matrix.
+7. **Four `◐⁴` Lists rows held back per coverage-matrix footnote 9.** `GET /api/lists/[id]`, `PUT /api/lists/[id]`, `GET /api/lists/[id]/data/[rowId]`, `GET /api/lists/[id]/watchers` — all reachable through the service, none on a tested view-model path this wave. The Wave 1 footnote-4 backfill rule still applies; they flip when the polish slice consumes them.
+8. **Stale SourceKit index after new files were added.** Same pattern as Wave 3 deviation 6. Adding the Lists view models, views, event bus, and `StubListsService` test double left Xcode's SourceKit indexer reporting stale "No such module" errors on first reopen. `xcodebuild` was unaffected. Resolves with **File → Packages → Reset Package Caches** or **Product → Clean Build Folder**. Carrying the note forward so contributors who land file additions know not to chase ghosts.
+9. **Auth transport secrets activated; CI contract job is staged but inert.** As of 2026-06-23 ~15:50 UTC the `INTERLINEDLIST_EMAIL` and `INTERLINEDLIST_PASSWORD` repo secrets are set, and the new `.github/workflows/contract-tests.yml` workflow is committed on `dev`. The workflow does **not** yet trigger because `workflow_dispatch` and `schedule` only register against the default branch (`main`); GitHub will not surface the manual-run button or schedule the job until `dev` merges to `main`. The `ContractTests` cases in `InterlinedKitTests` continue to `XCTSkip` locally when the env vars are absent (unchanged behavior since Wave 1). No action needed this wave — flagging here so the next merge-to-`main` consciously activates the contract job.
+
