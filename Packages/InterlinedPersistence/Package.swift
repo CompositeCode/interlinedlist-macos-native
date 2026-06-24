@@ -13,13 +13,15 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(path: "../InterlinedDomain")
+        .package(path: "../InterlinedDomain"),
+        .package(path: "../InterlinedKit")
     ],
     targets: [
         .target(
             name: "InterlinedPersistence",
             dependencies: [
-                .product(name: "InterlinedDomain", package: "InterlinedDomain")
+                .product(name: "InterlinedDomain", package: "InterlinedDomain"),
+                .product(name: "InterlinedKit", package: "InterlinedKit")
             ],
             path: "Sources/InterlinedPersistence",
             swiftSettings: [
@@ -29,7 +31,10 @@ let package = Package(
         ),
         .testTarget(
             name: "InterlinedPersistenceTests",
-            dependencies: ["InterlinedPersistence"],
+            dependencies: [
+                "InterlinedPersistence",
+                .product(name: "InterlinedKit", package: "InterlinedKit")
+            ],
             path: "Tests/InterlinedPersistenceTests",
             swiftSettings: [
                 .swiftLanguageMode(.v6),

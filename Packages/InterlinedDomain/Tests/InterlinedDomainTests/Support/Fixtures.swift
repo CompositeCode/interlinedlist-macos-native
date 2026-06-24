@@ -303,6 +303,127 @@ enum Fixtures {
         return "[\(objects)]"
     }
 
+    // MARK: - Documents (M4) fixtures
+
+    /// A single `DocumentDTO` object body.
+    static func documentObject(
+        id: String,
+        title: String = "Welcome",
+        content: String? = "# Hello",
+        folderId: String? = nil,
+        isPublic: Bool? = false,
+        updatedAt: String? = createdAtISO,
+        deleted: Bool? = nil
+    ) -> String {
+        let contentJSON = content.map { "\"\($0)\"" } ?? "null"
+        let folderJSON = folderId.map { "\"\($0)\"" } ?? "null"
+        let publicJSON = isPublic.map { $0 ? "true" : "false" } ?? "null"
+        let updatedJSON = updatedAt.map { "\"\($0)\"" } ?? "null"
+        let deletedJSON = deleted.map { $0 ? "true" : "false" } ?? "null"
+        return """
+        {
+          "id": "\(id)",
+          "title": "\(title)",
+          "content": \(contentJSON),
+          "folderId": \(folderJSON),
+          "isPublic": \(publicJSON),
+          "createdAt": "\(createdAtISO)",
+          "updatedAt": \(updatedJSON),
+          "deleted": \(deletedJSON)
+        }
+        """
+    }
+
+    /// `{ "data": [...], "pagination": {...} }` envelope for documents.
+    static func paginatedDocuments(
+        ids: [String],
+        total: Int? = nil,
+        limit: Int = 20,
+        offset: Int = 0,
+        hasMore: Bool = false
+    ) -> String {
+        let objects = ids.map { documentObject(id: $0) }.joined(separator: ",")
+        let totalValue = total ?? ids.count
+        return """
+        {
+          "data": [\(objects)],
+          "pagination": {
+            "total": \(totalValue),
+            "limit": \(limit),
+            "offset": \(offset),
+            "hasMore": \(hasMore)
+          }
+        }
+        """
+    }
+
+    /// A single `DocumentFolderDTO` object body.
+    static func folderObject(
+        id: String,
+        name: String = "Inbox",
+        parentId: String? = nil,
+        deleted: Bool? = nil
+    ) -> String {
+        let parentJSON = parentId.map { "\"\($0)\"" } ?? "null"
+        let deletedJSON = deleted.map { $0 ? "true" : "false" } ?? "null"
+        return """
+        {
+          "id": "\(id)",
+          "name": "\(name)",
+          "parentId": \(parentJSON),
+          "createdAt": "\(createdAtISO)",
+          "updatedAt": "\(createdAtISO)",
+          "deleted": \(deletedJSON)
+        }
+        """
+    }
+
+    /// `{ "data": [...], "pagination": {...} }` envelope for folders.
+    static func paginatedFolders(
+        ids: [String],
+        total: Int? = nil,
+        limit: Int = 20,
+        offset: Int = 0,
+        hasMore: Bool = false
+    ) -> String {
+        let objects = ids.map { folderObject(id: $0) }.joined(separator: ",")
+        let totalValue = total ?? ids.count
+        return """
+        {
+          "data": [\(objects)],
+          "pagination": {
+            "total": \(totalValue),
+            "limit": \(limit),
+            "offset": \(offset),
+            "hasMore": \(hasMore)
+          }
+        }
+        """
+    }
+
+    /// `GET /api/documents/sync` envelope.
+    static func documentSyncResponse(
+        syncedAt: String? = createdAtISO,
+        documents: [String] = [],
+        folders: [String] = []
+    ) -> String {
+        let syncedJSON = syncedAt.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "syncedAt": \(syncedJSON),
+          "folders": [\(folders.joined(separator: ","))],
+          "documents": [\(documents.joined(separator: ","))]
+        }
+        """
+    }
+
+    /// `POST /api/documents/[id]/images/upload` response envelope.
+    static func documentImageUploadResponse(url: String) -> String {
+        """
+        { "url": "\(url)" }
+        """
+    }
+
     /// The `GET /api/user` envelope: `{ "user": { ... } }`.
     static func userEnvelope(
         id: String = "user-ada",
