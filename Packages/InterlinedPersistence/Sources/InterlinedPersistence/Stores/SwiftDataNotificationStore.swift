@@ -247,7 +247,7 @@ public actor SwiftDataNotificationStore {
         }
     }
 
-    private func mergeUpsert(_ notifications: [InterlinedDomain.Notification], context: ModelContext) {
+    private func mergeUpsert(_ notifications: [DomainNotification], context: ModelContext) {
         for notification in notifications {
             let id = notification.id
             do {
