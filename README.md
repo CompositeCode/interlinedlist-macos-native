@@ -46,7 +46,7 @@ The project is greenfield. Scope, architecture, milestones, and branding are pin
 | **M6** &mdash; Subscriber & orgs | Media attachments, scheduled posts, cross-posting, OAuth linking, organizations | Pending |
 | **M7** &mdash; Ship | CSV exports, Settings polish, sandbox + notarization, Sparkle, accessibility, brand QA | Pending |
 
-Endpoint coverage today: **92 / 98 implemented**, **20 / 98 fully tested**, **71 / 98 partial**. See [docs/api-coverage.md](docs/api-coverage.md) for the row-by-row matrix.
+Endpoint coverage today: **92 / 98 implemented**, **55 / 98 fully tested**, **36 / 98 partial**. See [docs/api-coverage.md](docs/api-coverage.md) for the row-by-row matrix.
 
 ## Architecture
 

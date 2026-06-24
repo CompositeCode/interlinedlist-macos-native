@@ -18,7 +18,7 @@ This page summarizes what the InterlinedList macOS app can do today and what is 
 ## Limits worth knowing about today
 
 - **Profiles without public messages.** The current release builds a profile from the user's most recent public message. Users who have never posted publicly cannot be shown as a profile yet — you see a "no public messages yet" empty state. This is expected, not an error; it lifts when richer profile data is available.
-- **Following scope on the timeline.** The timeline scope picker offers All and Mine today; the Following scope arrives with M5.
+- **Following scope on the timeline.** The timeline scope picker offers All and Mine today; a Following scope (timeline filtered to accounts you follow) is coming in a future update — the social roster and follow actions shipped with M5, but the timeline-side filter is not wired yet.
 - **Watcher invites on lists.** You can rename roles or remove existing watchers on any list you own, but inviting a new user by handle is coming in a future update — the backend lookup endpoint the share sheet needs is not yet available.
 - **Connections graph layout.** The list-connections graph currently uses a stable radial arrangement. An animated force-directed layout will land in a follow-up.
 - **GitHub-backed list refresh is manual.** Use the toolbar Refresh button on a GitHub-sourced list to pull the latest rows. Automatic background refresh will arrive in a later update.
