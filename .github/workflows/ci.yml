@@ -33,7 +33,7 @@ jobs:
       matrix:
         package: [InterlinedKit, InterlinedDomain, InterlinedPersistence]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # macos-15 images ship Xcode 16.x; select 16.2 explicitly so the Swift
       # version matches local dev. Fallback if 16.2 is ever dropped from the
@@ -59,7 +59,7 @@ jobs:
     name: "xcodebuild: InterlinedList"
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Select Xcode ${{ env.XCODE_VERSION }}
         uses: maxim-lobanov/setup-xcode@v1
