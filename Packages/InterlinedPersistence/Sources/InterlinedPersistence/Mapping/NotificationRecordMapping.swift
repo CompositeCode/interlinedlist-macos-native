@@ -1,5 +1,4 @@
-import struct Foundation.Date
-import struct Foundation.URL
+import Foundation
 import InterlinedDomain
 
 /// Internal mapping between SwiftData `NotificationRecord` and the domain
@@ -8,12 +7,11 @@ import InterlinedDomain
 /// types cross the boundary (critical under Swift 6 strict concurrency).
 ///
 /// Foundation also declares a `Notification` type, which shadows the
-/// domain's `Notification` under a plain `import Foundation`. We import
-/// only the Foundation types we actually need (`Date` / `URL`) so plain
-/// `Notification` resolves unambiguously to the domain value. The
-/// file-scoped `DomainNotification` typealias keeps the rest of the file
-/// readable without dragging Foundation's `Notification` into scope.
-typealias DomainNotification = Notification
+/// domain's `Notification` under plain `import Foundation`. The module-
+/// qualified form `InterlinedDomain.Notification` resolves unambiguously
+/// to the domain value (the namespace marker enum is named
+/// `InterlinedDomain_Module` for exactly this reason — see
+/// `InterlinedDomain/InterlinedDomain.swift`).
 
 /// Tag strings stored in `NotificationRecord.targetKind` discriminating the
 /// `NotificationTarget` enum case. The strings are deliberately stable —
@@ -29,7 +27,7 @@ enum NotificationTargetTag {
 extension NotificationRecord {
 
     /// Build a new record from a domain `Notification`.
-    convenience init(from notification: DomainNotification) {
+    convenience init(from notification: InterlinedDomain.Notification) {
         let target = notification.target
         let (kindTag, idValue, urlValue) = NotificationRecord.encode(target: target)
         self.init(
@@ -53,7 +51,7 @@ extension NotificationRecord {
     /// Copy fresh field values from a domain `Notification` into an existing
     /// managed record — the upsert path. Every mutable field gets touched so
     /// stale state cannot leak through.
-    func apply(_ notification: DomainNotification) {
+    func apply(_ notification: InterlinedDomain.Notification) {
         // `id` is the primary key.
         kindRaw = notification.kind.rawValue
         actorID = notification.actor?.id
@@ -72,7 +70,7 @@ extension NotificationRecord {
     }
 
     /// Hydrate the row into a domain `Notification` value.
-    func toNotification() -> DomainNotification {
+    func toNotification() -> InterlinedDomain.Notification {
         let actor: UserSummary? = actorID.map { id in
             UserSummary(
                 id: id,
@@ -81,7 +79,7 @@ extension NotificationRecord {
                 avatarURL: actorAvatarURLString.flatMap(URL.init(string:))
             )
         }
-        return DomainNotification(
+        return InterlinedDomain.Notification(
             id: id,
             kind: NotificationKind(rawValue: kindRaw),
             actor: actor,

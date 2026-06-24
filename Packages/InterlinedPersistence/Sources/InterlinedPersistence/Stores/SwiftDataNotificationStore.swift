@@ -1,13 +1,12 @@
-import struct Foundation.Date
-import struct Foundation.URL
+import Foundation
 import SwiftData
 import os
 import InterlinedDomain
 
-/// Foundation also declares a `Notification` type. We import only the
-/// Foundation members we use (`Date`, `URL`) so plain `Notification`
-/// resolves unambiguously to the `InterlinedDomain.Notification` value.
-typealias DomainNotification = Notification
+// Foundation also declares a `Notification` type. The store references
+// the domain value as `InterlinedDomain.Notification` to disambiguate; the
+// namespace marker enum was renamed to `InterlinedDomain_Module` in M5 so
+// the module name is available for plain `Module.Type` lookups.
 
 /// SwiftData-backed notification tray cache (PLAN.md §1 "Notifications", §5
 /// stale-while-revalidate, §6 M5).
@@ -125,14 +124,14 @@ public actor SwiftDataNotificationStore {
     }
 
     /// One cached notification by id, or `nil` when not cached.
-    public func cachedNotification(id: String) async -> DomainNotification? {
+    public func cachedNotification(id: String) async -> InterlinedDomain.Notification? {
         let context = self.context
         return byIDNotification(id: id, context: context)
     }
 
     /// Insert-or-update a batch of rows in the by-id index. Used by the
     /// service after a tray refresh; also exercised by tests directly.
-    public func upsert(_ notifications: [DomainNotification]) async {
+    public func upsert(_ notifications: [InterlinedDomain.Notification]) async {
         let context = self.context
         mergeUpsert(notifications, context: context)
         do {
@@ -235,7 +234,7 @@ public actor SwiftDataNotificationStore {
         }
     }
 
-    private func byIDNotification(id: String, context: ModelContext) -> DomainNotification? {
+    private func byIDNotification(id: String, context: ModelContext) -> InterlinedDomain.Notification? {
         do {
             let descriptor = FetchDescriptor<NotificationRecord>(
                 predicate: #Predicate { record in record.id == id }
@@ -247,7 +246,7 @@ public actor SwiftDataNotificationStore {
         }
     }
 
-    private func mergeUpsert(_ notifications: [DomainNotification], context: ModelContext) {
+    private func mergeUpsert(_ notifications: [InterlinedDomain.Notification], context: ModelContext) {
         for notification in notifications {
             let id = notification.id
             do {

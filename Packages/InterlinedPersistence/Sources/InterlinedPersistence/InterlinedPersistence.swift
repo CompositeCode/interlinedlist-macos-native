@@ -28,5 +28,5 @@ public enum InterlinedPersistence {
     /// The kit/domain version this persistence layer was built against. Surfaced
     /// so accidental local-package version skew shows up at a glance — same
     /// pattern as `InterlinedDomain.builtAgainstKitVersion`.
-    public static let builtAgainstDomainVersion: String = InterlinedDomain.builtAgainstKitVersion
+    public static let builtAgainstDomainVersion: String = InterlinedDomain_Module.builtAgainstKitVersion
 }

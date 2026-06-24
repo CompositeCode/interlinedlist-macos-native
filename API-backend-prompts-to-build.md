@@ -144,6 +144,13 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 
 **Companion ask &mdash; write side.** `POST /api/lists` currently does not accept a `gitHubSource` block on create. The macOS "New List" sheet surfaces `gitHubRepository / gitHubPath / gitHubBranch` fields but cannot pass them through. To ship the create-as-GitHub-backed flow, the create endpoint needs to accept the same `gitHubSource` shape proposed above for the read side. Without it, users have to create a plain list and then configure GitHub source separately (assuming a separate endpoint exists, which is also undocumented).
 
+### 2.3b — `POST /api/follow/[userId]` should return the resulting relationship
+
+- **Problem.** The follow-action response is a small `{ success?, message? }` envelope that does not reliably distinguish "now following" (public account) from "request pending" (private account). The macOS `SocialService.follow(userId:)` works around this by issuing a follow-up `GET /api/follow/[userId]/status` read after every action — one extra round-trip per follow.
+- **Proposal.** Extend the `POST /api/follow/[userId]` response with a `relationship` block: `{ "following": Bool, "pendingRequest": Bool, "followedBy": Bool }` (same shape `/api/follow/[userId]/status` returns).
+- **Impact.** Halves the latency of every follow action and removes a redundant network round-trip on a user-initiated path.
+- **Priority.** P2 &mdash; measurable UX win; not a blocker because the workaround is in place.
+
 ### 2.4 — Typed notification kinds + payload shape
 
 - **Problem.** `GET /api/notifications` returns a tray envelope but the per-notification `type` enum isn't documented. Native macOS notifications (UNNotificationContent) need to render type-specific copy and route to the right window on activation.
