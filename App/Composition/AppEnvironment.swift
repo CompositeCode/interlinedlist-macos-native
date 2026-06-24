@@ -68,6 +68,23 @@ final class AppEnvironment: ObservableObject {
     /// `NullListsStore` if the in-memory container cannot be built.
     let listsStore: ListsStore
 
+    /// The documents read / write / sync service the M4 Documents UI
+    /// binds against (PLAN.md §6 M4). Exposed as the protocol so test
+    /// doubles substitute in.
+    let documentsService: DocumentsServicing
+
+    /// The owner of `/api/documents/sync` — the M4 offline backbone
+    /// (PLAN.md §3, §6 M4). The App layer reaches in directly for the
+    /// `syncNow()` button on the toolbar; the rest of the App talks to
+    /// the service surface above.
+    let documentSyncEngine: DocumentSyncEngine
+
+    /// The shared sync event stream the documents UI subscribes to so
+    /// open windows refresh on `deltaApplied`, banner on
+    /// `conflictResolved`, and drop optimistic chrome on `pushed`. Held
+    /// here so the test composition can substitute a hand-driven stream.
+    let documentSyncEvents: AsyncStream<DocumentSyncEvent>
+
     /// Designated initializer used by tests and previews that want to
     /// inject a fully synthetic service graph. Production code calls
     /// `live()` instead.
@@ -79,7 +96,10 @@ final class AppEnvironment: ObservableObject {
         currentUserStore: CurrentUserStore,
         composerEventBus: ComposerEventBus,
         listsEventBus: ListsEventBus,
-        listsStore: ListsStore
+        listsStore: ListsStore,
+        documentsService: DocumentsServicing,
+        documentSyncEngine: DocumentSyncEngine,
+        documentSyncEvents: AsyncStream<DocumentSyncEvent>
     ) {
         self.messages = messages
         self.lists = lists
@@ -89,6 +109,9 @@ final class AppEnvironment: ObservableObject {
         self.composerEventBus = composerEventBus
         self.listsEventBus = listsEventBus
         self.listsStore = listsStore
+        self.documentsService = documentsService
+        self.documentSyncEngine = documentSyncEngine
+        self.documentSyncEvents = documentSyncEvents
     }
 
     /// Builds the production service graph:
@@ -139,6 +162,27 @@ final class AppEnvironment: ObservableObject {
         let composerEventBus = ComposerEventBus()
         let listsEventBus = ListsEventBus()
         let listsStore = Self.makeListsStore()
+        // M4 Documents (PLAN.md §6 M4). The sync engine owns
+        // `/api/documents/sync`; the service wraps single-shot CRUD +
+        // delegates sync to the engine. View models read only the
+        // domain protocol, so swapping the transport / store later is
+        // a one-line change. Persistence is best-effort: if the
+        // in-memory SwiftData container can't be constructed at all,
+        // the no-op `NullDocumentStore` keeps the service usable for
+        // online-only CRUD and the sync engine effectively becomes
+        // a noop.
+        let documentStore = Self.makeDocumentStore()
+        let documentTransport = KitDocumentSyncTransport(api: api)
+        let documentSyncEngine = DocumentSyncEngine(
+            transport: documentTransport,
+            store: documentStore,
+            clock: { Date() }
+        )
+        let documentsService = DocumentsService(
+            api: api,
+            sync: documentSyncEngine
+        )
+        let documentSyncEvents = documentSyncEngine.events
         return AppEnvironment(
             messages: messages,
             lists: lists,
@@ -147,7 +191,10 @@ final class AppEnvironment: ObservableObject {
             currentUserStore: currentUserStore,
             composerEventBus: composerEventBus,
             listsEventBus: listsEventBus,
-            listsStore: listsStore
+            listsStore: listsStore,
+            documentsService: documentsService,
+            documentSyncEngine: documentSyncEngine,
+            documentSyncEvents: documentSyncEvents
         )
     }
 
@@ -172,6 +219,20 @@ final class AppEnvironment: ObservableObject {
             return inMemory
         }
         return NullListsStore()
+    }
+
+    /// Returns an in-memory `SwiftDataDocumentStore`, falling back to a
+    /// `NullDocumentStore` when SwiftData refuses to construct one
+    /// (sandbox edge cases). The sync engine is built around the
+    /// `DocumentStore` protocol so the fallback keeps the engine
+    /// constructable; in that degraded mode every call is a no-op.
+    /// On-disk persistence drops in by swapping the factory for
+    /// `SwiftDataDocumentStore.onDisk(at:)`.
+    private static func makeDocumentStore() -> DocumentStore {
+        if let inMemory = try? SwiftDataDocumentStore.inMemory() {
+            return inMemory
+        }
+        return NullDocumentStore()
     }
 }
 

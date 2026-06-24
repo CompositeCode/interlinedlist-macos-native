@@ -12,6 +12,7 @@
 		24D2BC406897058D83E90425 /* InterlinedPersistence in Frameworks */ = {isa = PBXBuildFile; productRef = 6B41CE7F9049DE79ADF5F310 /* InterlinedPersistence */; };
 		AB10000000000000000000A1 /* InterlinedDomain in Frameworks */ = {isa = PBXBuildFile; productRef = AB20000000000000000000A1 /* InterlinedDomain */; };
 		AB10000000000000000000A2 /* InterlinedKit in Frameworks */ = {isa = PBXBuildFile; productRef = AB20000000000000000000A2 /* InterlinedKit */; };
+		TX20000000000000000000T3 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = TX10000000000000000000T2 /* Textual */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -72,6 +73,7 @@
 				4875FC868DEAD10754CA3266 /* InterlinedKit in Frameworks */,
 				A2F99A68629A6FFE570F17B6 /* InterlinedDomain in Frameworks */,
 				24D2BC406897058D83E90425 /* InterlinedPersistence in Frameworks */,
+				TX20000000000000000000T3 /* Textual in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -136,6 +138,7 @@
 				E82F17947DA800A8ACFC24FA /* InterlinedKit */,
 				F55A3043259B18AED6834ECA /* InterlinedDomain */,
 				6B41CE7F9049DE79ADF5F310 /* InterlinedPersistence */,
+				TX10000000000000000000T2 /* Textual */,
 			);
 			productName = InterlinedList;
 			productReference = D78BA91D9ADE434F0CE71AD7 /* InterlinedList.app */;
@@ -198,6 +201,7 @@
 				6F34A6361811E23D19FA2B71 /* XCLocalSwiftPackageReference "Packages/InterlinedKit" */,
 				8BBD2221E1F94562CA6C4031 /* XCLocalSwiftPackageReference "Packages/InterlinedDomain" */,
 				8B2688EE389528EC0E8CC4A0 /* XCLocalSwiftPackageReference "Packages/InterlinedPersistence" */,
+				TX00000000000000000000T1 /* XCRemoteSwiftPackageReference "textual" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C7037A342339022835F93EFA /* Products */;
@@ -306,7 +310,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -365,7 +369,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = macosx;
@@ -396,7 +400,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.interlinedlist.macos;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -427,7 +431,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.interlinedlist.macos;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -446,7 +450,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.interlinedlist.macos.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -467,7 +471,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.interlinedlist.macos.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -526,6 +530,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		TX00000000000000000000T1 /* XCRemoteSwiftPackageReference "textual" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/textual";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		E82F17947DA800A8ACFC24FA /* InterlinedKit */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -546,6 +561,11 @@
 		AB20000000000000000000A2 /* InterlinedKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = InterlinedKit;
+		};
+		TX10000000000000000000T2 /* Textual */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = TX00000000000000000000T1 /* XCRemoteSwiftPackageReference "textual" */;
+			productName = Textual;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

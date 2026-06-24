@@ -97,7 +97,11 @@ private struct SidebarDetailDispatcher: View {
             //     browser. The router checks `currentUserStore` directly.
             ListsSidebarRouter()
         case .documents:
-            DocumentsPlaceholderView()
+            // M4 (Wave 5.3) — Documents UI lands. The folder tree +
+            // documents list + Markdown editor/Textual preview replace
+            // the M0 placeholder. The placeholder remains in the
+            // codebase as a preview fallback while we iterate.
+            DocumentsRootView()
         case .organizations:
             OrganizationsPlaceholderView()
         case .profile:

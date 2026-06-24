@@ -12,7 +12,7 @@
   <a href="https://github.com/CompositeCode/interlinedlist-macos-native/actions/workflows/ci.yml"><img src="https://github.com/CompositeCode/interlinedlist-macos-native/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
   <a href="https://github.com/CompositeCode/interlinedlist-macos-native/actions/workflows/ci.yml?query=branch%3Adev"><img src="https://github.com/CompositeCode/interlinedlist-macos-native/actions/workflows/ci.yml/badge.svg?branch=dev" alt="CI status (dev)"></a>
   <img src="https://img.shields.io/badge/Swift-6.0-orange.svg" alt="Swift 6.0">
-  <img src="https://img.shields.io/badge/macOS-14%2B-blue.svg" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/macOS-15%2B-blue.svg" alt="macOS 15+">
   <img src="https://img.shields.io/badge/Xcode-16.2-1575F9.svg" alt="Xcode 16.2">
 </p>
 
@@ -40,8 +40,8 @@ The project is greenfield. Scope, architecture, milestones, and branding are pin
 | **M0** &mdash; Foundation | Xcode project, three SPM packages, CI, auth, Keychain, brand assets | Shipped |
 | **M1** &mdash; Read-only core | Timeline (all/mine/tag), threads, public list browsing, profile header | Shipped |
 | **M2** &mdash; Posting | Composer (⌘N), replies, digs, reposts, edit/delete own messages | Shipped |
-| **M3** &mdash; Lists | CRUD, schema DSL editor, rows table, nesting, connections graph, watchers, GitHub refresh | Next |
-| **M4** &mdash; Documents | Folder tree, Markdown editor/preview, image upload, delta sync engine | Pending |
+| **M3** &mdash; Lists | CRUD, schema DSL editor, rows table, nesting, connections graph, watchers, GitHub refresh | Shipped |
+| **M4** &mdash; Documents | Folder tree, Markdown editor/preview, image upload, delta sync engine | Shipped |
 | **M5** &mdash; Social & notifications | Follow/unfollow, requests, mutuals, notifications tray, dock badge | Pending |
 | **M6** &mdash; Subscriber & orgs | Media attachments, scheduled posts, cross-posting, OAuth linking, organizations | Pending |
 | **M7** &mdash; Ship | CSV exports, Settings polish, sandbox + notarization, Sparkle, accessibility, brand QA | Pending |
@@ -72,7 +72,7 @@ See [PLAN.md §3](PLAN.md) for the rules at each boundary &mdash; in particular 
 
 Requirements:
 
-- macOS 14 (Sonoma) or later
+- macOS 15 (Sequoia) or later (see [Decision 0004](docs/decisions/0004-markdown-library-and-macos15.md))
 - Xcode 16.2 / Swift 6.0.3
 
 Build and test:

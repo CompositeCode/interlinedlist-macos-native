@@ -34,12 +34,25 @@ struct InterlinedListApp: App {
                     // default.
                     environment.currentUserStore.start()
                     _ = try? await environment.currentUserStore.restore()
+                    // M4 — kick off one document sync cycle on launch
+                    // (PLAN.md §6 M4 — "background sync engine; this is
+                    // the app's offline backbone"). Errors are
+                    // swallowed: a launch-time sync failure should not
+                    // block the UI from rendering, and the toolbar's
+                    // manual "Sync Now" button covers the recovery
+                    // path. Detached so the launch surface returns
+                    // immediately and the rest of `task` is not
+                    // delayed by the network round-trip.
+                    Task.detached { [environment] in
+                        _ = try? await environment.documentSyncEngine.syncNow()
+                    }
                 }
         }
         .windowToolbarStyle(.unified)
         .commands {
             ComposeCommands()
             ListMenuCommands()
+            DocumentsMenuCommands()
         }
 
         // Dedicated composer scene (PLAN.md §5). `Window` instead of

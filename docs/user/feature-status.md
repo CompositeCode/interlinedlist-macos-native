@@ -10,7 +10,7 @@ This page summarizes what the InterlinedList macOS app can do today and what is 
 | M1 — Read-only core | Timeline (All / Mine, tag filter), message threads, public list browsing, basic profile header. | Shipped. |
 | M2 — Posting | Composer window, Markdown, tags, visibility, replies, "I Dig!" reactions, reposts, edit and delete your own messages. | Shipped. |
 | M3 — Lists | Create, edit, delete your own lists; schema editor; rows table; nested lists; sharing and watchers; connections graph; GitHub-backed list refresh. | Shipped. |
-| M4 — Documents | Folder tree, Markdown editor and preview, image upload, offline sync. | Not yet. |
+| M4 — Documents | Folder tree, Markdown editor and preview, image upload, offline sync. | Shipped. |
 | M5 — Social and notifications | Follow / unfollow; follower and following lists; mutual follows; private-account follow requests; notifications tray; system notifications; dock badge. | Not yet. |
 | M6 — Subscriber and orgs | Media attachments (with client-side resize), scheduled posts, cross-posting (Mastodon / Bluesky / LinkedIn), OAuth identity linking, organizations and member roles, entitlement gating. | Not yet. |
 | M7 — Ship | CSV exports, Settings polish (email change, account deletion, avatar), sandboxing and hardened runtime, notarization, Sparkle updates, accessibility audit, brand QA pass. | Not yet. |
@@ -23,6 +23,9 @@ This page summarizes what the InterlinedList macOS app can do today and what is 
 - **Connections graph layout.** The list-connections graph currently uses a stable radial arrangement. An animated force-directed layout will land in a follow-up.
 - **GitHub-backed list refresh is manual.** Use the toolbar Refresh button on a GitHub-sourced list to pull the latest rows. Automatic background refresh will arrive in a later update.
 - **"Save to my lists" copies metadata only.** From a public list, the Save action creates an owned list with the same title, description, and schema, but does not yet copy the rows. Row-level cloning lands when the backend ships its clone endpoint.
+- **Document sync is manual or on launch.** The Documents window syncs once automatically when the app opens, and the toolbar **Sync Now** button (also Documents > Sync Now, ⌥⌘S) pulls remote changes and pushes any local edits on demand. Background periodic sync arrives in a later update.
+- **Document images are resized before upload.** If a screenshot or photo dropped into a document is above the upload limit, the app resizes and re-compresses it client-side before sending. Images that still cannot fit after compression surface a clear "image is too large" error instead of failing silently.
+- **macOS 15 (Sequoia) is now the minimum.** The Documents Markdown preview uses the [Textual](https://github.com/gonzalezreal/textual) library, whose pure-SwiftUI rendering requires macOS 15 (see [Decision 0004](../decisions/0004-markdown-library-and-macos15.md)).
 
 ## Related pages
 
