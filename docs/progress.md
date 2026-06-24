@@ -429,3 +429,117 @@ The three public-Lists rows (`GET /api/users/[username]/lists`, `GET /api/users/
 8. **Stale SourceKit index after new files were added.** Same pattern as Wave 3 deviation 6. Adding the Lists view models, views, event bus, and `StubListsService` test double left Xcode's SourceKit indexer reporting stale "No such module" errors on first reopen. `xcodebuild` was unaffected. Resolves with **File → Packages → Reset Package Caches** or **Product → Clean Build Folder**. Carrying the note forward so contributors who land file additions know not to chase ghosts.
 9. **Auth transport secrets activated; CI contract job is staged but inert.** As of 2026-06-23 ~15:50 UTC the `INTERLINEDLIST_EMAIL` and `INTERLINEDLIST_PASSWORD` repo secrets are set, and the new `.github/workflows/contract-tests.yml` workflow is committed on `dev`. The workflow does **not** yet trigger because `workflow_dispatch` and `schedule` only register against the default branch (`main`); GitHub will not surface the manual-run button or schedule the job until `dev` merges to `main`. The `ContractTests` cases in `InterlinedKitTests` continue to `XCTSkip` locally when the env vars are absent (unchanged behavior since Wave 1). No action needed this wave — flagging here so the next merge-to-`main` consciously activates the contract job.
 
+---
+
+## Wave 5 — InterlinedDomain M4 Documents slice + Persistence sync engine + App-layer Documents UI (PLAN.md §6 M4)
+
+Wave 5 lands M4 Documents end-to-end: the `InterlinedDomain` Documents slice (models, mappers, `DocumentsService` full CRUD + folders + image upload, `ImagePrep` pipeline, `DocumentSyncTransport` seam), the `InterlinedPersistence` SwiftData document cache + outbox + `DocumentSyncEngine` actor (pull delta → server-wins conflict resolution → outbox push → cursor advance), and the App-layer Documents UI (three-column root, folder tree, list per folder, Markdown editor + Textual-rendered preview, conflict banner, sync-status indicator, menu commands). The wave also lands the first third-party SPM dependency in App-target history (`gonzalezreal/textual` @ 0.5.0) and the corollary macOS deployment-target bump (14 → 15), both atomically, per [Decision 0004](decisions/0004-markdown-library-and-macos15.md). Path ownership stayed inside `Packages/InterlinedDomain/**`, `Packages/InterlinedPersistence/**`, `App/**`, `InterlinedList.xcodeproj/**` (pbxproj edits only — Textual SPM dep + macOS 15 across the 6 build configurations + `AppTests/` synchronized group from Wave 3 absorbed the new tests with no target additions), `docs/decisions/0004-markdown-library-and-macos15.md`, `README.md` (badge + Building requirements), `docs/user/feature-status.md` (M4 → Shipped + three Limits bullets, set in Wave 5.3), and `docs/**` for this wave-end update. **`InterlinedKit` source paths were not touched this wave** (its 174/174 suite from Wave 1 is unchanged) — verified by `git show --stat daf1eef babb6d2`.
+
+### Decisions
+
+- **2026-06-23 — Decision 0004 recorded and accepted.** `gonzalezreal/textual` chosen as the App target's **first third-party SPM dependency** (Markdown preview rendering for the M4 Documents editor); MarkdownUI is in maintenance mode, MarkdownView transitively imports AppKit through Highlightr, Splash is stale, swift-markdown is parser-only. Textual's platform floor forces a **macOS deployment target bump 14 → 15 (Sonoma → Sequoia)** across all four locations (xcodeproj + three `Package.swift` manifests). The bump is acceptable for a v1 desktop client because Sequoia shipped September 2024 (2+ years before this decision) and aligns with the load-bearing SwiftUI-only constraint (the only candidate library whose dependency tree never reaches into AppKit). Textual is pinned at `from: "0.5.0"` (`.upToNextMajor`); see [decisions/0004-markdown-library-and-macos15.md](decisions/0004-markdown-library-and-macos15.md). The decision was locked in ahead of Wave 5.3 by the orchestrator after the Wave 5.1 swift-engineer subagent began running.
+
+### 5.1 — InterlinedDomain Documents slice + Persistence sync engine — DONE
+
+- Commit: `daf1eef`.
+- **Domain models:** `Document`, `FolderNode`, `DocumentSyncEvent`, `DocumentChange`, `DocumentMappers`. The Documents domain slice has been fully decoupled from `InterlinedKit` DTOs at the consumer surface per decision 0003 — view models only ever see domain values.
+- **Caching port:** `DocumentStore` protocol with a clean port shape so the App layer never knows about SwiftData directly (same pattern as `MessageStore` from Wave 2 and `ListsStore` from Wave 4).
+- **`ImagePrep` pipeline:** passthrough → 1200 px downscale → lossless re-encode (HEIC then PNG) → JPEG quality ladder (`0.9 → 0.5`). Pure CoreGraphics / ImageIO; **no `import AppKit`**. Surfaces a typed "image too large" error when no rung of the quality ladder fits the upload budget.
+- **`DocumentsService`:** full CRUD (`documents(in:limit:offset:)`, `document(id:)`, `create`, `update`, `delete`), folders (`folders`, `folder(id:)`, `createFolder`, `renameFolder`, `deleteFolder`), `uploadImage` (multipart via `ImagePrep`), plus the sync passthroughs `pullDelta` / `pushChange` consumed by the engine.
+- **`DocumentSyncTransport` seam:** a protocol surface the engine talks to, so the App layer's `KitDocumentSyncTransport` (Wave 5.3) lives in the composition root while the engine itself stays kit-import-free.
+- **Persistence SwiftData document cache + outbox:** new `@Model` records `DocumentRecord` (with a `localEditedAt` dirty bit), `FolderRecord`, `OutboxEntryRecord`, `SyncStateRecord`; `DocumentRecordMapping` and `DocumentChangeCodec` (a JSON-blob codec for outbox change payloads — keeps `InterlinedPersistence` free of any wire-format awareness inside the record types). `SwiftDataDocumentStore` actor with `inMemory()` + `onDisk(at:)` factories and a cascading folder delete that evicts contained documents.
+- **`DocumentSyncEngine` actor:** the core M4 mechanic. `syncNow` runs `pull delta → server-wins conflict resolution (local preserved as "<id>-localcopy-<UUID>") → outbox push → cursor advance`. Emits an `AsyncStream<DocumentSyncEvent>` with strictly ordered `conflictResolved → deltaApplied → pushed` events; downstream buffer is `bufferingNewest(64)` so a slow observer can never block the engine. The server-wins policy with local-copy preservation is the safe default in the absence of a document version/etag from the server ([API-backend-prompts-to-build.md](../API-backend-prompts-to-build.md) item 3.1) — without an `If-Match` header the engine cannot tell a true conflict from a normal write, so every disagreement preserves the local copy.
+- **Persistence `Package.swift` gained a `InterlinedKit` dependency** so `DocumentsError.syncFailed(underlying: APIError)` can carry the kit error type up to the App-layer banner. Decision 0003 is App-layer-only (it forbids `import InterlinedKit` in `App/Features/**`, `App/Navigation/**`, `App/MenuCommands/**`); a Persistence-layer kit import for typed error carriage is in policy.
+- **Test counts:** Domain **181 → 244 (+63)** including `DocumentMappersTests` (18), `ImagePrepTests` (8), `DocumentsServiceTests` (32), and expanded `Fixtures`. Persistence **30 → 70 (+40)** including `SwiftDataDocumentStoreTests` and `DocumentSyncEngineTests` with a 50-trial randomized soak covering interleaved pull / push / conflict orderings. Kit unchanged at **174**.
+- **Endpoint consumption:** the 14 Documents & Sync rows are reachable at the domain-service / engine layer after this commit, but per the Wave 1 deviation-6 rule, they remain ◐⁴ in the coverage matrix until the App layer consumes them end-to-end — which happens in 5.3 below.
+
+### 5.3 — App-layer Documents UI + macOS 15 bump + Textual SPM dep — DONE
+
+- Commit: `babb6d2`.
+- **Infrastructure (decision 0004) landed atomically.** `MACOSX_DEPLOYMENT_TARGET = 15.0` across all **3 `Package.swift` manifests** + all **6 pbxproj build configurations** (Debug/Release for `InterlinedList`, `InterlinedListTests`, and the `MARKETING_VERSION` configurations) + `App/Resources/Info.plist` (`LSMinimumSystemVersion`). The bump went in as one commit-able unit ahead of any Textual usage, with `xcodebuild build` verified green before the dep add.
+- **Textual SPM dep added.** `https://github.com/gonzalezreal/textual` @ `0.5.0` (`.upToNextMajor`), linked only to the `InterlinedList` app target — the three SPM packages remain free of third-party deps. Resolved cleanly with `xcodebuild -resolvePackageDependencies` → `textual 0.5.0 resolved`. Transitive deps (`swiftui-math`, `swift-concurrency-extras`) verified pure-SwiftUI — the SwiftUI-only check (`grep -R "import AppKit" App/`) returned empty at the gate.
+- **Composition root + lifecycle.** `AppEnvironment` exposes `documentsService`, `documentSyncEngine`, and the `documentSyncEvents` `AsyncStream`. `KitDocumentSyncTransport` wraps `APIClient` for the engine — the **only** App-layer file allowed to `import InterlinedKit` per decision 0003, and it sits in `App/Composition/`. `InterlinedListApp` on-launch `.task` fires `syncNow()` detached after `currentUserStore.restore()` (errors swallowed; manual sync via the toolbar remains).
+- **Documents feature** (`App/Features/Documents/`):
+  - `DocumentsRootView` — three-column `NavigationSplitView` with toolbar (New Document, Sync Now, status indicator).
+  - `DocumentsSidebarView` + `FolderTreeViewModel` — disclosure tree with create / rename / delete folders, optimistic with snapshot rollback on failure.
+  - `DocumentsListView` + `DocumentsListViewModel` — list per folder, CRUD + `deltaApplied` event handling (so a sync result that touches the open folder updates in place), pagination heuristic.
+  - `DocumentEditorView` + `DocumentEditorViewModel` — vanilla SwiftUI `TextEditor` for editing, `Textual.StructuredText(markdown:)` for preview, 1.5 s debounced auto-save (clock injectable for tests), drag-and-drop + `.fileImporter` image upload routed through `DocumentsService.uploadImage` → `ImagePrep`.
+  - `ConflictBannerView` — banner surfaces `conflictResolved` events that match the currently-open document; "Open local copy" action navigates to the preserved-as copy.
+  - `SyncStatusView` + `SyncStatusViewModel` — `Idle / Syncing / LastSynced(at:) / Failed(message:)` state machine; toolbar manual-sync button.
+- **Menu commands.** `DocumentsMenuCommands` adds the Documents menu with **New Document (⌥⌘N)** and **Sync Now (⌥⌘S)** — both posted via `NotificationCenter` to avoid collisions with the Wave 3 Composer (⌘N) and the existing menu surface. `MainWindowView` routes `.documents` to `DocumentsRootView`.
+- **SwiftUI-only constraint verified.** `grep -R "import AppKit" App/` returned empty at the gate; `grep -R "import AppKit" Packages/` returned empty at the gate. Textual's dependency tree contributes zero AppKit imports.
+- **Decision 0003 compliance verified.** `grep -R "import InterlinedKit" App/Features App/Navigation App/MenuCommands` returned empty at the gate. The only `App/**` kit import is the documented permitted one in `App/Composition/AppEnvironment.swift` (+ the new `KitDocumentSyncTransport.swift` in the same composition-root directory). The wave's view models all consume domain values via the 5.1 `Document` / `FolderNode` / `DocumentChange` / `DocumentSyncEvent` projections.
+- **App tests:** **106 → 150 (+44)** — new view-model suites: `FolderTreeViewModelTests` (11), `DocumentsListViewModelTests` (12), `DocumentEditorViewModelTests` (10), `SyncStatusViewModelTests` (5), `ConflictBannerViewModelTests` (6), plus the `StubDocumentsService` test double under `AppTests/Support/`. The 106 Wave 4 tests are unchanged and still passing.
+- **Docs touches inside this wave's commit (Wave 5.3 owned).** `README.md` macOS badge `14+` → `15+` and Building requirements bumped; `docs/user/feature-status.md` M4 row flipped to **Shipped** and three new Limits bullets added (document sync is manual / on-launch, document images are resized client-side before upload, macOS 15 is now the minimum). Verified at this wave gate; not re-touched here.
+
+### Wave 5 gate — PASSED (2026-06-23)
+
+- App build: `xcodebuild -scheme InterlinedList -destination 'platform=macOS' build` → **BUILD SUCCEEDED** on the macOS 15 deployment target.
+- App tests: `xcodebuild -scheme InterlinedList -destination 'platform=macOS' test` → **150/150 passing** in `InterlinedListTests`.
+- Domain tests: `swift test --package-path Packages/InterlinedDomain` → **244/244 passing**.
+- Persistence tests: `swift test --package-path Packages/InterlinedPersistence` → **70/70 passing** (incl. the 50-trial `DocumentSyncEngineTests` randomized soak).
+- Kit tests: `swift test --package-path Packages/InterlinedKit` → **174/174 passing** (unchanged; no Kit source paths touched this wave — verified by `git show --stat daf1eef babb6d2`, neither commit lists any file under `Packages/InterlinedKit/Sources/**`).
+- SPM resolution: `xcodebuild -resolvePackageDependencies` → **textual 0.5.0 resolved** cleanly (first third-party dep in App-target history).
+- Path-ownership check: changes confined to `Packages/InterlinedDomain/**`, `Packages/InterlinedPersistence/**`, `App/**`, `InterlinedList.xcodeproj/**` (pbxproj edits only — Textual SPM dep + macOS 15 across the 6 build configurations), `docs/decisions/0004-markdown-library-and-macos15.md`, `README.md`, `docs/user/feature-status.md`, and `docs/**` for this wave-end update — no overlaps with Wave 1 through Wave 4 paths; conflict rules held.
+- Decision-0003 compliance check: `grep -R "import InterlinedKit" App/Features App/Navigation App/MenuCommands` → empty. The only `App/**` kit imports remain the permitted composition-root ones (`AppEnvironment.swift` + `KitDocumentSyncTransport.swift`).
+- SwiftUI-only check: `grep -R "import AppKit" App/` → empty; `grep -R "import AppKit" Packages/` → empty. Textual's dependency tree (`swiftui-math`, `swift-concurrency-extras`) contributes no AppKit imports.
+- macOS-14-residue check: `grep -R "macOS(.v14)" Packages/` → empty; `grep -R "MACOSX_DEPLOYMENT_TARGET = 14" InterlinedList.xcodeproj/project.pbxproj` → empty. The bump is uniform across the 4 location classes.
+
+### Test counts per suite (run 2026-06-23)
+
+| Suite | Tests | Notes |
+| --- | ---: | --- |
+| `InterlinedListTests.FolderTreeViewModelTests` | 11 | Initial load, create / rename / delete folders with optimistic snapshot + rollback, error surfacing. |
+| `InterlinedListTests.DocumentsListViewModelTests` | 12 | Reload, pagination heuristic, create / delete document with optimistic rollback, `deltaApplied` event handling for the open folder. |
+| `InterlinedListTests.DocumentEditorViewModelTests` | 10 | Debounced auto-save with injected clock, manual `saveNow`, drag-and-drop / file-importer image upload through `ImagePrep`, save-failure surfacing. |
+| `InterlinedListTests.SyncStatusViewModelTests` | 5 | `Idle / Syncing / LastSynced / Failed` state-machine transitions; manual-sync trigger. |
+| `InterlinedListTests.ConflictBannerViewModelTests` | 6 | `conflictResolved` event filtering (matches open document id), "Open local copy" action wiring, banner dismiss. |
+| `InterlinedListTests` Wave-4 carry-over | 106 | Unchanged — `OwnedListsViewModelTests` (14), `NewListViewModelTests` (4), `SchemaEditorViewModelTests` (10), `ListRowsViewModelTests` (14), `WatchersViewModelTests` (9), `ListConnectionsViewModelTests` (11), plus the 44 Wave-3 carry-over. |
+| **`InterlinedListTests` total** | **150** | All passing. |
+| `InterlinedDomainTests` (full) | 244 | +63 cases this wave: `DocumentMappersTests` (18), `ImagePrepTests` (8), `DocumentsServiceTests` (32), Fixtures expanded. |
+| `InterlinedPersistenceTests` (full) | 70 | +40 cases this wave: `SwiftDataDocumentStoreTests` covering round-trip / cascading folder-delete / outbox FIFO; `DocumentSyncEngineTests` covering pull / push / conflict-preservation / cursor advance plus a 50-trial randomized interleaving soak. |
+| `InterlinedKitTests` (full) | 174 | Unchanged from Wave 1 (no Kit source paths touched). |
+| **Grand total across all targets** | **638** | All passing; 0 failures. |
+
+### Coverage matrix delta (after this update)
+
+The M4 consumption rule (Wave 1 deviation 6, reiterated in matrix footnote 4) applied: every M4-consumed Documents & Sync row exercised by a tested App-layer view model this wave flips ◐⁴ → ☑. Two detail-read rows are reachable through their domain-service methods but Wave 5.3 view models open documents / folders via the list payload rather than re-reading by id; those stay ◐⁴ under new footnote 10.
+
+| | Before Wave 5 | After Wave 5 |
+| --- | ---: | ---: |
+| Implemented (☑) | 92 / 98 | **92 / 98** |
+| Tested fully (☑) | 35 / 98 | **47 / 98** |
+| Tested partial (◐⁴) | 56 / 98 | **44 / 98** |
+| Untested (☐) | 7 / 98 | **7 / 98** |
+
+Rows flipped ◐⁴ → ☑ this wave (**12 total**, all M4-consumed end-to-end Kit builder → Domain service → App view-model):
+
+- Sync: `GET /api/documents/sync` (`KitDocumentSyncTransport.pullDelta` via `DocumentSyncEngine.syncNow` via `SyncStatusViewModel.syncNow`).
+- Sync: `POST /api/documents/sync` (`KitDocumentSyncTransport.pushChange` via `DocumentSyncEngine.syncNow` outbox push).
+- Documents: `GET /api/documents` (`DocumentsService.documents(in:limit:offset:)` when folder is nil → `DocumentsListViewModel.reload`).
+- Documents: `POST /api/documents` (`DocumentsService.create` → `DocumentsListViewModel.createDocument`).
+- Documents: `PATCH /api/documents/[id]` (`DocumentsService.update` → `DocumentEditorViewModel.saveNow`).
+- Documents: `DELETE /api/documents/[id]` (`DocumentsService.delete` → `DocumentsListViewModel.deleteDocument`).
+- Documents: `POST /api/documents/[id]/images/upload` (`DocumentsService.uploadImage` → `DocumentEditorViewModel.uploadImage`; `ImagePrep` exercised in the upload path).
+- Folders: `GET /api/documents/folders` (`DocumentsService.folders` → `FolderTreeViewModel.initialLoad`).
+- Folders: `POST /api/documents/folders` (`DocumentsService.createFolder` → `FolderTreeViewModel.createFolder`).
+- Folders: `PATCH /api/documents/folders/[id]` (`DocumentsService.renameFolder` → `FolderTreeViewModel.renameFolder`).
+- Folders: `DELETE /api/documents/folders/[id]` (`DocumentsService.deleteFolder` → `FolderTreeViewModel.deleteFolder`).
+- Folders: `GET /api/documents/folders/[id]/documents` (`DocumentsService.documents(in:limit:offset:)` when folderID != nil → `DocumentsListViewModel.reload`).
+
+Held back at ◐⁴ this wave (new footnote 10):
+
+- `GET /api/documents/[id]` — reachable via `DocumentsService.document(id:)`; Wave 5.3 view models open documents from the list / sync-delta payload rather than re-reading by id. Held pending a polish slice that consumes the by-id read path (e.g. a deep-link or quick-look hydrator).
+- `GET /api/documents/folders/[id]` — reachable via `DocumentsService.folder(id:)`; same pattern as above.
+
+### Deviations and follow-ups
+
+1. **Markdown toolbar inserts at end-of-buffer, not at cursor.** SwiftUI `TextEditor` on macOS 15 does not expose the selection binding required to insert at the caret; `TextSelection` for `TextEditor` landed in macOS 26. The toolbar buttons (bold / italic / link / heading) currently append the wrapped or stubbed Markdown at the end of the document body. Follow-up: revisit when the deployment target moves to macOS 26 or when a SwiftUI-only selection workaround surfaces.
+2. **Drag-drop accepts `Data` only this wave.** The drag-drop handler in `DocumentEditorView` accepts `Data` payloads (rasterized images from screenshots, the browser, the Finder preview, etc.). A `URL.self` branch — for dragging a file by reference, where the dropped item is a file URL pointing at an on-disk image — is a v1.x add. Follow-up: extend `DocumentEditorViewModel.uploadImage` to accept a `URL` input and route through the same `ImagePrep` pipeline after a `Data(contentsOf:)` read.
+3. **"Open local copy" silently fails across folder boundaries.** When the sync engine resolves a conflict by preserving the local copy as `<id>-localcopy-<UUID>`, the conflict banner's "Open local copy" action calls a refresh on the **currently loaded folder**. If the preserved copy was written into a different folder (because the document's `folderId` changed in the server payload), the refresh returns the same set and the navigation silently does nothing. **Backend ask filed this wave:** [API-backend-prompts-to-build.md](../API-backend-prompts-to-build.md) item **3.7 — Sync conflict event needs folderId** (P3). Have the sync delta API confirm `folderId` is included on every preserved-copy creation so the engine can route the banner action correctly.
+4. **Two Documents & Sync rows held at ◐⁴ per coverage-matrix footnote 10.** `GET /api/documents/[id]` and `GET /api/documents/folders/[id]` — both reachable through their domain-service methods, neither on a tested view-model path this wave (Wave 5.3 view models read from the list payload and the sync delta). The Wave 1 footnote-4 backfill rule still applies; they flip when a polish slice consumes them.
+5. **Persistence package now imports InterlinedKit.** `Packages/InterlinedPersistence/Package.swift` gained an `InterlinedKit` dependency this wave so `DocumentsError.syncFailed(underlying: APIError)` (returned by `DocumentSyncEngine`) can carry the kit error type up to the App-layer banner. Decision 0003's "no kit imports" rule is **App-layer-only** (it forbids `import InterlinedKit` in `App/Features/**`, `App/Navigation/**`, `App/MenuCommands/**`); a Persistence-layer kit import for typed error carriage is in policy and was not flagged at the gate.
+6. **macOS 15 deployment target bump cuts off Sonoma users.** Users on macOS 14 (Sonoma) can no longer install the app after this wave. The risk is captured in [Decision 0004's risk register](decisions/0004-markdown-library-and-macos15.md#risk-register); the trade-off was deliberate (Sequoia is 2+ years old at this point, and the SwiftUI-only constraint left Textual as the only acceptable Markdown library, which forces the bump). Documented user-side in `docs/user/feature-status.md`.
+7. **Stale SourceKit index after the pbxproj mutation.** Same pattern as Wave 3 deviation 6 and Wave 4 deviation 8. Adding the Textual SPM dep + the deployment-target bump + the new Documents view-model files left Xcode's SourceKit indexer reporting stale "No such module" / "No such product" errors on first reopen. `xcodebuild` was unaffected. Resolves with **File → Packages → Reset Package Caches** or **Product → Clean Build Folder**. Carrying the note forward.
+8. **Auth transport secrets activated; CI contract job still inert on `dev`.** Carry-over from Wave 4 deviation 9 — no change this wave. As of 2026-06-23 ~15:50 UTC the `INTERLINEDLIST_EMAIL` / `INTERLINEDLIST_PASSWORD` repo secrets are set, and `.github/workflows/contract-tests.yml` is committed on `dev`; the workflow does not yet trigger because `workflow_dispatch` and `schedule` only register against the default branch (`main`). The contract job will activate when `dev` merges to `main`. Still outstanding as of this gate.
+

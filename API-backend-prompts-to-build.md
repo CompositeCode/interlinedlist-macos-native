@@ -199,6 +199,13 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 - **Impact.** M6 composer cross-post checkbox states.
 - **Priority.** P3.
 
+### 3.7 — Sync conflict event needs folderId
+
+- **Problem.** `DocumentSyncEngine.events` emits `conflictResolved(original:, preservedAs:)` when the server-wins policy preserves a local copy as `<id>-localcopy-<UUID>`, but the engine does not know which folder the preserved-as document landed in. The macOS conflict-banner **"Open local copy"** action calls a refresh on the *currently loaded folder*, which silently fails when the preserved copy is in a different folder than the document the user has open. The user sees the banner action click, but nothing navigates.
+- **Proposal.** Have the sync delta API (`GET /api/documents/sync` and `POST /api/documents/sync`) return `folderId` on every document — or at minimum on the preserved-copy creation events. The read side (`GET /api/documents/[id]`) already exposes `folderId`; this ask is to confirm the sync response shape includes it for both unchanged and newly-preserved documents so the engine can route the banner action across folders without a second round-trip.
+- **Impact.** M4 "Open local copy" UX completes successfully across folder boundaries; the engine can either pre-load the destination folder or surface a one-click "Reveal in <Folder Name>" affordance.
+- **Priority.** P3 — degrades gracefully today; the user can switch folders manually and the preserved copy is reachable from the destination folder's list.
+
 ---
 
 ## Out of scope (deliberate)
