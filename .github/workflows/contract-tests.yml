@@ -44,7 +44,7 @@ jobs:
           xcode-version: ${{ env.XCODE_VERSION }}
 
       - name: Cache SPM build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: Packages/InterlinedKit/.build
           key: spm-contract-${{ runner.os }}-${{ hashFiles('Packages/InterlinedKit/Package.swift') }}
