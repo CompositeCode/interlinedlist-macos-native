@@ -10,6 +10,14 @@
 // time session restore so the ownership-gated edit / delete UI knows
 // who the signed-in user is. Sign-out / re-sign-in still go through
 // the Onboarding window (M0/M7).
+//
+// M5 adds the `@NSApplicationDelegateAdaptor` so the dock-tile badge
+// can be written for unread notifications (PLAN.md §5 — "dock badge
+// for unread"). This is the narrow AppKit exception documented in
+// Decision 0005; the adapter is installed here so the AppDelegate's
+// lifecycle aligns with the SwiftUI scene's. The notifications
+// unread-badge coordinator subscribes to the event bus and writes
+// the badge through the adapter.
 
 import SwiftUI
 
@@ -19,6 +27,16 @@ struct InterlinedListApp: App {
     /// Composition root constructed once for the app's lifetime.
     /// `@StateObject` so the same instance survives view-tree rebuilds.
     @StateObject private var environment = AppEnvironment.live()
+
+    /// Narrow AppKit adapter (Decision 0005). Owned by the SwiftUI App
+    /// scene; the only call site is the dock-badge writer inside the
+    /// notifications coordinator.
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
+    /// Coordinator that turns notifications-bus events into dock-badge
+    /// writes. `@State` so the launch `.task` can subscribe once and
+    /// keep the same instance across view rebuilds.
+    @State private var dockBadge: NotificationsUnreadBadgeCoordinator?
 
     var body: some Scene {
         WindowGroup {
@@ -46,6 +64,23 @@ struct InterlinedListApp: App {
                     Task.detached { [environment] in
                         _ = try? await environment.documentSyncEngine.syncNow()
                     }
+                    // M5 — subscribe to notifications events and write
+                    // the dock-tile badge through the AppDelegate
+                    // (Decision 0005). The coordinator listens on
+                    // `NotificationsEventBus`; the tray view model
+                    // posts `trayRefreshed(...)` after every successful
+                    // load so the badge stays in sync without polling.
+                    if dockBadge == nil {
+                        let delegate = appDelegate
+                        let coordinator = NotificationsUnreadBadgeCoordinator(
+                            bus: environment.notificationsEventBus,
+                            writeBadge: { @MainActor count in
+                                delegate.updateDockBadge(unreadCount: count)
+                            }
+                        )
+                        dockBadge = coordinator
+                        coordinator.start()
+                    }
                 }
         }
         .windowToolbarStyle(.unified)
@@ -53,6 +88,8 @@ struct InterlinedListApp: App {
             ComposeCommands()
             ListMenuCommands()
             DocumentsMenuCommands()
+            NotificationsMenuCommands()
+            SocialMenuCommands()
         }
 
         // Dedicated composer scene (PLAN.md §5). `Window` instead of

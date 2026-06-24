@@ -85,6 +85,33 @@ final class AppEnvironment: ObservableObject {
     /// here so the test composition can substitute a hand-driven stream.
     let documentSyncEvents: AsyncStream<DocumentSyncEvent>
 
+    /// The notifications tray + mark-read service the M5 tray UI binds
+    /// against (PLAN.md §1 "Notifications", §6 M5). Exposed as the
+    /// protocol so test doubles substitute in.
+    let notificationsService: NotificationsServicing
+
+    /// Cross-window event bus for the M5 Notifications + Social
+    /// Requests features (PLAN.md §6 M5 — dock badge, tray, requests).
+    /// Tray writes, mark-read mutations, and request approve/reject
+    /// flows post to this bus so other open windows (dock badge
+    /// coordinator, requests panel, inline tray rows) update in place
+    /// without a refetch.
+    let notificationsEventBus: NotificationsEventBus
+
+    /// Cache of follower / following / mutual counts per user
+    /// (PLAN.md §5 — stale-while-revalidate). The M5 profile header
+    /// paints instantly from the cache before the network refresh
+    /// lands. Exposed as the concrete actor; the App layer reads it
+    /// through value-typed projections (`CachedFollowCounts`) so the
+    /// store never escapes its isolation domain.
+    let followCountsStore: SwiftDataFollowCountsStore?
+
+    /// Reads the M5 follow-relationship state without forcing the
+    /// view layer to import `InterlinedKit` (see
+    /// `FollowRelationshipReader.swift` for the rationale). Exposed
+    /// as the protocol so tests substitute a stub.
+    let followRelationshipReader: FollowRelationshipReading
+
     /// Designated initializer used by tests and previews that want to
     /// inject a fully synthetic service graph. Production code calls
     /// `live()` instead.
@@ -99,7 +126,11 @@ final class AppEnvironment: ObservableObject {
         listsStore: ListsStore,
         documentsService: DocumentsServicing,
         documentSyncEngine: DocumentSyncEngine,
-        documentSyncEvents: AsyncStream<DocumentSyncEvent>
+        documentSyncEvents: AsyncStream<DocumentSyncEvent>,
+        notificationsService: NotificationsServicing,
+        notificationsEventBus: NotificationsEventBus,
+        followCountsStore: SwiftDataFollowCountsStore?,
+        followRelationshipReader: FollowRelationshipReading
     ) {
         self.messages = messages
         self.lists = lists
@@ -112,6 +143,10 @@ final class AppEnvironment: ObservableObject {
         self.documentsService = documentsService
         self.documentSyncEngine = documentSyncEngine
         self.documentSyncEvents = documentSyncEvents
+        self.notificationsService = notificationsService
+        self.notificationsEventBus = notificationsEventBus
+        self.followCountsStore = followCountsStore
+        self.followRelationshipReader = followRelationshipReader
     }
 
     /// Builds the production service graph:
@@ -183,6 +218,15 @@ final class AppEnvironment: ObservableObject {
             sync: documentSyncEngine
         )
         let documentSyncEvents = documentSyncEngine.events
+        // M5 — Notifications + Social write surface (PLAN.md §6 M5).
+        // `NotificationsService` already exists with the read + mark
+        // surfaces; the App-layer event bus + dock-badge coordinator
+        // are wired in `InterlinedListApp` so subscription lifetimes
+        // align with the SwiftUI scene's `.task`.
+        let notificationsService = NotificationsService(api: api)
+        let notificationsEventBus = NotificationsEventBus()
+        let followCountsStore = Self.makeFollowCountsStore()
+        let followRelationshipReader = SocialFollowRelationshipReader(social: social)
         return AppEnvironment(
             messages: messages,
             lists: lists,
@@ -194,7 +238,11 @@ final class AppEnvironment: ObservableObject {
             listsStore: listsStore,
             documentsService: documentsService,
             documentSyncEngine: documentSyncEngine,
-            documentSyncEvents: documentSyncEvents
+            documentSyncEvents: documentSyncEvents,
+            notificationsService: notificationsService,
+            notificationsEventBus: notificationsEventBus,
+            followCountsStore: followCountsStore,
+            followRelationshipReader: followRelationshipReader
         )
     }
 
@@ -233,6 +281,15 @@ final class AppEnvironment: ObservableObject {
             return inMemory
         }
         return NullDocumentStore()
+    }
+
+    /// Returns an in-memory `SwiftDataFollowCountsStore`, or `nil` if
+    /// SwiftData refuses to construct one (sandbox edge cases). The
+    /// M5 profile view treats the cache as best-effort — a `nil` store
+    /// simply means counts always come from the network with no
+    /// stale-while-revalidate paint.
+    private static func makeFollowCountsStore() -> SwiftDataFollowCountsStore? {
+        try? SwiftDataFollowCountsStore.inMemory()
     }
 }
 

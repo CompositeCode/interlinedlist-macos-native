@@ -12,7 +12,10 @@
 
 import SwiftUI
 
-/// Sidebar sections shown in the main window. Order mirrors PLAN.md §5.
+/// Sidebar sections shown in the main window. Order mirrors PLAN.md §5
+/// with the M5 addition of `Connections` (the followers/following/
+/// requests roster panel — added in Wave 6.3 to surface the
+/// dedicated Requests management UI alongside the inline tray rows).
 enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
     case timeline = "Timeline"
     case scheduled = "Scheduled"
@@ -21,6 +24,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
     case documents = "Documents"
     case organizations = "Organizations"
     case profile = "Profile"
+    case connections = "Connections"
 
     var id: String { rawValue }
 
@@ -34,6 +38,7 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
         case .documents: return "doc.text"
         case .organizations: return "building.2"
         case .profile: return "person.crop.circle"
+        case .connections: return "person.2"
         }
     }
 }
@@ -56,6 +61,22 @@ struct MainWindowView: View {
                 Text("Select a section")
                     .foregroundStyle(.secondary)
             }
+        }
+        // M5 menu deep-links — `NotificationsMenuCommands` and
+        // `SocialMenuCommands` post these so the sidebar can swap
+        // selection without the menu commands needing to know about
+        // the view tree.
+        .onReceive(NotificationCenter.default.publisher(for: .notificationsShow)) { _ in
+            selection = .notifications
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .socialShowFollowers)) { _ in
+            selection = .connections
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .socialShowFollowing)) { _ in
+            selection = .connections
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .socialShowRequests)) { _ in
+            selection = .connections
         }
     }
 }
@@ -89,7 +110,7 @@ private struct SidebarDetailDispatcher: View {
             // dedicated window scene, so the stand-in is inline here.)
             ScheduledPlaceholderView()
         case .notifications:
-            NotificationsPlaceholderView()
+            NotificationsRootView()
         case .lists:
             // M3 (Wave 4.3) — sign-in routing:
             //   • Signed-in users get `OwnedListsRootView` (Lists CRUD).
@@ -106,6 +127,11 @@ private struct SidebarDetailDispatcher: View {
             OrganizationsPlaceholderView()
         case .profile:
             ProfileRootView()
+        case .connections:
+            // M5 (Wave 6.3) — followers / following / requests panel.
+            // Routed from the menu (`SocialMenuCommands`) and from
+            // the sidebar.
+            SocialRosterRootView()
         }
     }
 }

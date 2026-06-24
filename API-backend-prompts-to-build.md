@@ -221,6 +221,13 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 - **Impact.** M4 "Open local copy" UX completes successfully across folder boundaries; the engine can either pre-load the destination folder or surface a one-click "Reveal in <Folder Name>" affordance.
 - **Priority.** P3 — degrades gracefully today; the user can switch folders manually and the preserved copy is reachable from the destination folder's list.
 
+### 3.8 — Domain-typed follow-relationship read
+
+- **Problem.** `GET /api/follow/[userId]/status` returns the raw DTO `{ following, followedBy, pendingRequest }`. The macOS `SocialServicing.status(of:)` protocol surfaces this DTO directly, which means an App-layer view model that wants the relationship has to either reference `FollowStatusDTO` (violating Decision 0003) or use a Composition-root adapter (`SocialFollowRelationshipReader` — what Wave 6.3 actually does). The adapter ships, but it's a smell.
+- **Proposal.** Migrate `SocialServicing.status(of:)` to return the domain `FollowRelationship` directly. The mapping is total and lossless and already lives in `FollowMappers.swift`. Then `App/Composition/FollowRelationshipReader.swift` becomes dead code and is deleted.
+- **Impact.** Removes one Composition-root adapter; App-layer view models depend purely on the domain protocol.
+- **Priority.** P3 — clean-up; doesn't block any user-visible behavior.
+
 ---
 
 ## Out of scope (deliberate)

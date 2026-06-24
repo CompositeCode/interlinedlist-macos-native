@@ -45,7 +45,13 @@ struct ProfileRootView: View {
             // building the view model in `.task` is the canonical
             // pattern.
             if viewModel == nil, let environment {
-                viewModel = ProfileViewModel(social: environment.social)
+                viewModel = ProfileViewModel(
+                    social: environment.social,
+                    relationshipReader: environment.followRelationshipReader,
+                    currentUserID: { [weak environment] in
+                        environment?.currentUserStore.currentUserID
+                    }
+                )
             }
         }
     }
@@ -118,7 +124,12 @@ struct ProfileRootView: View {
         } else if viewModel.profile == nil, viewModel.isLoading {
             loadingState
         } else if let profile = viewModel.profile {
-            profileSection(profile: profile, counts: viewModel.counts)
+            profileSection(
+                profile: profile,
+                counts: viewModel.counts,
+                mutuals: viewModel.mutuals,
+                followButton: viewModel.followButton
+            )
         } else {
             // Defensive: loadedUsername is set, no error, no profile,
             // not loading. Should be unreachable under the current view
@@ -129,9 +140,19 @@ struct ProfileRootView: View {
     }
 
     @ViewBuilder
-    private func profileSection(profile: UserProfile, counts: FollowCounts?) -> some View {
+    private func profileSection(
+        profile: UserProfile,
+        counts: FollowCounts?,
+        mutuals: MutualCounts?,
+        followButton: FollowButtonViewModel?
+    ) -> some View {
         ScrollView {
-            ProfileHeaderView(profile: profile, counts: counts)
+            ProfileHeaderView(
+                profile: profile,
+                counts: counts,
+                mutuals: mutuals,
+                followButton: followButton
+            )
         }
     }
 

@@ -30,6 +30,38 @@ struct ProfileHeaderView: View {
     /// flight or after it failed (the failure is soft — see
     /// `ProfileViewModel.loadProfile`).
     let counts: FollowCounts?
+    /// Mutual-follow counts for the profile (PLAN.md §1 "Follow system
+    /// / mutuals", §6 M5). `nil` while the call is in flight or after
+    /// it failed.
+    let mutuals: MutualCounts?
+    /// Drives the M5 follow button. `nil` for the M1 read-only paths
+    /// that don't need the button (previews, fallback scaffolding).
+    /// When non-nil, the button is rendered inline against the
+    /// view model's `relationship` state.
+    let followButton: FollowButtonViewModel?
+
+    /// M1 read-only initialiser, kept for previews / older call sites
+    /// that don't have the M5 follow-button surface wired yet.
+    init(profile: UserProfile, counts: FollowCounts?) {
+        self.profile = profile
+        self.counts = counts
+        self.mutuals = nil
+        self.followButton = nil
+    }
+
+    /// M5 initialiser exposing the mutual-counts row and the follow
+    /// button.
+    init(
+        profile: UserProfile,
+        counts: FollowCounts?,
+        mutuals: MutualCounts?,
+        followButton: FollowButtonViewModel?
+    ) {
+        self.profile = profile
+        self.counts = counts
+        self.mutuals = mutuals
+        self.followButton = followButton
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -56,6 +88,9 @@ struct ProfileHeaderView: View {
                         .textSelection(.enabled)
                 }
                 Spacer()
+                if let followButton {
+                    FollowButton(viewModel: followButton)
+                }
             }
 
             // Bio: only render when non-nil and non-empty. Per decision
@@ -72,6 +107,14 @@ struct ProfileHeaderView: View {
             // for a profile whose count we never fetched.
             if let counts {
                 countsRow(counts: counts)
+            }
+
+            // Mutuals row: rendered only when the mutual call succeeded
+            // AND at least one mutual exists. A `0 / 0` mutual band
+            // would be visual clutter — the user is reading a profile,
+            // not auditing zeros.
+            if let mutuals, mutuals.mutualFollowers + mutuals.mutualFollowing > 0 {
+                mutualsRow(mutuals: mutuals)
             }
 
             // JoinedAt: only render when non-nil. Per decision 0002, this
@@ -155,6 +198,36 @@ struct ProfileHeaderView: View {
             )
         }
         .font(.callout)
+    }
+
+    @ViewBuilder
+    private func mutualsRow(mutuals: MutualCounts) -> some View {
+        // PLAN.md §1 "Follow system / mutuals": "X mutual followers / Y
+        // you both follow". Rendered inline below the counts row so the
+        // header reads top-down: identity → counts → mutuals.
+        HStack(spacing: 16) {
+            if mutuals.mutualFollowers > 0 {
+                HStack(spacing: 4) {
+                    Image(systemName: "person.2.fill")
+                        .foregroundStyle(.secondary)
+                    Text("\(mutuals.mutualFollowers) mutual \(mutuals.mutualFollowers == 1 ? "follower" : "followers")")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if mutuals.mutualFollowing > 0 {
+                HStack(spacing: 4) {
+                    Image(systemName: "person.crop.circle.badge.checkmark")
+                        .foregroundStyle(.secondary)
+                    Text("\(mutuals.mutualFollowing) you both follow")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .font(.footnote)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(mutuals.mutualFollowers) mutual followers, \(mutuals.mutualFollowing) you both follow"
+        )
     }
 
     @ViewBuilder

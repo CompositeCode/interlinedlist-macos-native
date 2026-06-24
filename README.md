@@ -42,7 +42,7 @@ The project is greenfield. Scope, architecture, milestones, and branding are pin
 | **M2** &mdash; Posting | Composer (⌘N), replies, digs, reposts, edit/delete own messages | Shipped |
 | **M3** &mdash; Lists | CRUD, schema DSL editor, rows table, nesting, connections graph, watchers, GitHub refresh | Shipped |
 | **M4** &mdash; Documents | Folder tree, Markdown editor/preview, image upload, delta sync engine | Shipped |
-| **M5** &mdash; Social & notifications | Follow/unfollow, requests, mutuals, notifications tray, dock badge | Pending |
+| **M5** &mdash; Social & notifications | Follow/unfollow, requests, mutuals, notifications tray, dock badge | Shipped |
 | **M6** &mdash; Subscriber & orgs | Media attachments, scheduled posts, cross-posting, OAuth linking, organizations | Pending |
 | **M7** &mdash; Ship | CSV exports, Settings polish, sandbox + notarization, Sparkle, accessibility, brand QA | Pending |
 

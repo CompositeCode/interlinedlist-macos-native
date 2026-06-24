@@ -58,6 +58,13 @@ final class ProfileViewModel {
     /// stays set so the header still renders.
     private(set) var counts: FollowCounts?
 
+    /// Mutual-follow counts for the loaded profile, fetched via
+    /// `social.mutual(of:)` after the profile resolves (PLAN.md §1
+    /// "Follow system / mutuals", §6 M5). `nil` until the call returns
+    /// or after it failed — like `counts`, the mutual fetch is a soft
+    /// follow-up that does not surface its error to the view.
+    private(set) var mutuals: MutualCounts?
+
     /// True while either the profile load or the counts follow-up is in
     /// flight. The view shows a single progress indicator for both.
     private(set) var isLoading: Bool = false
@@ -71,11 +78,32 @@ final class ProfileViewModel {
     /// and dropped, with the profile staying rendered.
     private(set) var error: Error?
 
+    /// The follow-button view model, configured after each successful
+    /// profile load. `nil` until the first load completes so the view
+    /// renders nothing in place of the button (avoids a flicker of
+    /// "Follow" before we know whether the target is the current user).
+    private(set) var followButton: FollowButtonViewModel?
+
     // MARK: - Init
 
-    init(social: SocialServicing) {
+    init(
+        social: SocialServicing,
+        relationshipReader: FollowRelationshipReading,
+        currentUserID: @MainActor @escaping () -> String?
+    ) {
         self.social = social
+        self.relationshipReader = relationshipReader
+        self.currentUserIDProvider = currentUserID
     }
+
+    /// Reads the signed-in user's id when configuring the follow
+    /// button. A closure rather than a stored value so the view model
+    /// always sees the latest session state (the user can sign in /
+    /// out while the profile view is open).
+    private let currentUserIDProvider: @MainActor () -> String?
+
+    /// The relationship reader handed through to the follow button.
+    private let relationshipReader: FollowRelationshipReading
 
     // MARK: - Intents
 
@@ -94,6 +122,7 @@ final class ProfileViewModel {
         loadedUsername = trimmed
         profile = nil
         counts = nil
+        mutuals = nil
         error = nil
         isLoading = true
         defer { isLoading = false }
@@ -114,6 +143,31 @@ final class ProfileViewModel {
                 print("ProfileViewModel: counts follow-up failed for \(resolved.id): \(error)")
                 #endif
             }
+            // Mutual-follow follow-up (PLAN.md §1 "Follow system /
+            // mutuals", §6 M5). Same soft-error policy as `counts`:
+            // failure is logged and dropped so the profile header
+            // keeps rendering.
+            do {
+                mutuals = try await social.mutual(of: resolved.id)
+            } catch {
+                #if DEBUG
+                print("ProfileViewModel: mutual follow-up failed for \(resolved.id): \(error)")
+                #endif
+            }
+            // Configure the M5 follow button once we know the
+            // resolved userId. The button hides itself when the
+            // target is the signed-in user (self-profile) or when no
+            // session has resolved yet (current-user id is nil per
+            // the M2 ownership-gating rule).
+            let button = FollowButtonViewModel(
+                social: social,
+                reader: relationshipReader
+            )
+            followButton = button
+            await button.configure(
+                targetUserID: resolved.id,
+                currentUserID: currentUserIDProvider()
+            )
         } catch {
             self.error = error
         }
@@ -134,6 +188,8 @@ final class ProfileViewModel {
         loadedUsername = nil
         profile = nil
         counts = nil
+        mutuals = nil
+        followButton = nil
         error = nil
         isLoading = false
     }
