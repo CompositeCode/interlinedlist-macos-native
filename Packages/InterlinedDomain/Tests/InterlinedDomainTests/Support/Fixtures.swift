@@ -324,6 +324,97 @@ enum Fixtures {
         followersEnvelope(ids: ids, collectionKey: "following")
     }
 
+    /// `GET /api/follow/[userId]/mutual` envelope — counts only.
+    static func mutualCountsEnvelope(
+        mutualFollowers: Int,
+        mutualFollowing: Int
+    ) -> String {
+        """
+        { "mutualFollowers": \(mutualFollowers), "mutualFollowing": \(mutualFollowing) }
+        """
+    }
+
+    /// `POST /api/follow/[userId]` / approve / reject / remove confirmation.
+    static func followActionResponse(success: Bool = true, message: String? = nil) -> String {
+        let messageJSON = message.map { "\"\($0)\"" } ?? "null"
+        return """
+        { "success": \(success), "message": \(messageJSON) }
+        """
+    }
+
+    /// `GET /api/follow/requests` envelope — bare `{ requests: [...] }`, no
+    /// pagination wrapper (verified live 2026-06-24).
+    static func followRequestsEnvelope(
+        ids: [String],
+        followIdPrefix: String = "f-"
+    ) -> String {
+        let objects = ids.map { id in
+            followUserObject(id: id, followId: "\(followIdPrefix)\(id)", status: "pending")
+        }.joined(separator: ",")
+        return """
+        { "requests": [\(objects)] }
+        """
+    }
+
+    // MARK: - Notifications (M5) fixtures
+
+    /// One `NotificationDTO` object body. `metadata` is supplied as raw JSON
+    /// so per-kind shape variations can be exercised directly.
+    static func notificationObject(
+        id: String,
+        type: String? = "dig",
+        title: String? = "Someone dug your post",
+        body: String? = nil,
+        actionUrl: String? = nil,
+        metadataJSON: String = "{}",
+        createdAt: String? = createdAtISO,
+        readAt: String? = nil
+    ) -> String {
+        let typeJSON = type.map { "\"\($0)\"" } ?? "null"
+        let titleJSON = title.map { "\"\($0)\"" } ?? "null"
+        let bodyJSON = body.map { "\"\($0)\"" } ?? "null"
+        let actionJSON = actionUrl.map { "\"\($0)\"" } ?? "null"
+        let createdJSON = createdAt.map { "\"\($0)\"" } ?? "null"
+        let readJSON = readAt.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "id": "\(id)",
+          "type": \(typeJSON),
+          "title": \(titleJSON),
+          "body": \(bodyJSON),
+          "actionUrl": \(actionJSON),
+          "metadata": \(metadataJSON),
+          "createdAt": \(createdJSON),
+          "readAt": \(readJSON)
+        }
+        """
+    }
+
+    /// `GET /api/notifications?scope=tray` envelope:
+    /// `{ unreadCount, items: [...] }`.
+    static func notificationTrayEnvelope(
+        unreadCount: Int,
+        items: [String]
+    ) -> String {
+        """
+        {
+          "unreadCount": \(unreadCount),
+          "items": [\(items.joined(separator: ","))]
+        }
+        """
+    }
+
+    /// `PATCH /api/notifications/[id]/read` envelope: `{ ok: true }`.
+    static let notificationReadResponse: String = #"{ "ok": true }"#
+
+    /// `POST /api/notifications/mark-all-read` envelope:
+    /// `{ ok: true, updated: Int }`.
+    static func notificationMarkAllReadResponse(updated: Int) -> String {
+        """
+        { "ok": true, "updated": \(updated) }
+        """
+    }
+
     // MARK: - Documents (M4) fixtures
 
     /// A single `DocumentDTO` object body.

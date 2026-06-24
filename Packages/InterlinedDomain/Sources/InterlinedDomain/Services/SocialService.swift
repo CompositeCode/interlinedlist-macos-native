@@ -96,10 +96,44 @@ public protocol SocialServicing: Sendable {
     /// `followers`.
     func following(of userId: String, limit: Int, offset: Int) async throws -> UsersPage
 
-    // M5: follow(userId:), unfollow(userId:), approve(userId:), reject(userId:),
-    // remove(userId:), and the pending-requests inbox. Endpoint builders are
-    // already in `Follow` — wiring them in M5 alongside the request-approval
-    // UI work.
+    // MARK: - M5 write surface (PLAN.md §6 M5)
+
+    /// Sends a follow request for `userId`. Returns a typed `FollowAction`
+    /// that distinguishes "now following (public account)" from "pending
+    /// approval (private account)" so the UI can render the right
+    /// confirmation copy without re-fetching.
+    ///
+    /// The wire response (`FollowActionResponse`) does not reliably carry
+    /// this distinction in a switchable form, so the implementation infers
+    /// the result by reading the relationship state immediately after the
+    /// call. One follow-up round-trip; acceptable for an action that is
+    /// already user-initiated.
+    func follow(userId: String) async throws -> FollowAction
+
+    /// Reverses a follow on `userId`. No typed outcome — either the call
+    /// succeeds (relationship cleared) or it throws.
+    func unfollow(userId: String) async throws
+
+    /// Approves a pending follow request from `userId` (the requester).
+    /// Used by the M5 requests inbox.
+    func approve(userId: String) async throws
+
+    /// Rejects a pending follow request from `userId`.
+    func reject(userId: String) async throws
+
+    /// Removes a follower (kicks `userId` off the caller's follower list).
+    /// The verb mirrors `Follow.remove` in the kit.
+    func removeFollower(userId: String) async throws
+
+    /// Loads the mutual-follow counts for `userId` (PLAN.md §1 "Follow
+    /// system / mutuals"). Returns the domain `MutualCounts`, not the
+    /// underlying `InterlinedKit.FollowMutualCountsDTO`, per decision 0003.
+    func mutual(of userId: String) async throws -> MutualCounts
+
+    /// Loads the pending inbound follow requests inbox. Returns mapped
+    /// domain `FollowRequest` values; the wire envelope (`{ requests: [...] }`)
+    /// is internal.
+    func requests() async throws -> [FollowRequest]
 }
 
 // MARK: - SocialService
@@ -171,6 +205,56 @@ public final class SocialService: SocialServicing {
     ) async throws -> UsersPage {
         let request = Follow.following(userId: userId, limit: limit, offset: offset)
         return try await fetchUsersPage(request: request)
+    }
+
+    // MARK: - M5 write surface (PLAN.md §6 M5)
+
+    public func follow(userId: String) async throws -> FollowAction {
+        _ = try await api.send(Follow.follow(userId: userId))
+        // The action endpoint returns a small `{ success?, message? }`
+        // envelope that is not reliably switchable across deployments. To
+        // distinguish "now following" from "request pending", re-read the
+        // relationship state and project from the typed flags.
+        //
+        // This is one extra round-trip per follow tap; acceptable because
+        // (a) the action is user-initiated and not on a hot path, and
+        // (b) the App layer also needs the relationship state to re-render
+        // the follow button, so the cost is shared.
+        let statusDTO = try await api.send(Follow.status(userId: userId))
+        let relationship = FollowRelationship(from: statusDTO)
+        if relationship.isFollowing { return .approved }
+        if relationship.hasPendingRequest { return .pending }
+        // Defensive fallback: the server accepted the action but the
+        // relationship state lags. Treat as pending — the M5 UI shows
+        // "Requested" until the next refresh, which is a safe over-cautious
+        // default (and survives a slow eventual-consistency window).
+        return .pending
+    }
+
+    public func unfollow(userId: String) async throws {
+        _ = try await api.send(Follow.unfollow(userId: userId))
+    }
+
+    public func approve(userId: String) async throws {
+        _ = try await api.send(Follow.approve(userId: userId))
+    }
+
+    public func reject(userId: String) async throws {
+        _ = try await api.send(Follow.reject(userId: userId))
+    }
+
+    public func removeFollower(userId: String) async throws {
+        _ = try await api.send(Follow.remove(userId: userId))
+    }
+
+    public func mutual(of userId: String) async throws -> MutualCounts {
+        let dto = try await api.send(Follow.mutual(userId: userId))
+        return MutualCounts(from: dto)
+    }
+
+    public func requests() async throws -> [FollowRequest] {
+        let envelope = try await api.send(Follow.requests())
+        return envelope.requests.map(FollowRequest.init(from:))
     }
 
     // MARK: - Paginated consumption
