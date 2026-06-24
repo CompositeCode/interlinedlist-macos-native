@@ -90,12 +90,20 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 
 ## Priority 2 — strongly desired before M4–M6 ship
 
-### 2.1 — Confirm follower / following / mutual list envelope shape
+### 2.1 — Paginate `/api/follow/requests` to match the sibling list endpoints — *RESOLVED 2026-06-24 (live probe) + follow-up ask*
 
-- **Problem.** `GET /api/follow/[userId]/followers`, `…/following`, `…/mutual` — our [`FollowEndpoint`](Packages/InterlinedKit/Sources/InterlinedKit/Endpoints/FollowEndpoint.swift) currently types these as bare `[FollowUserDTO]`. Wave 1 deviation 5 records this is an assumption; the live shape is unconfirmed.
-- **Proposal.** Document the envelope. Strongly prefer `{ "data": [...], "pagination": { ... } }` matching the public-messages shape (confirmed: `{ total, limit, offset, hasMore }`) so paging is uniform. Either way: document.
-- **Impact.** M5 follower/following UIs. Without paging, follower lists for popular accounts break.
-- **Priority.** P2.
+- **Resolved.** The 2026-06-24 live probe pinned all the follow-list envelopes:
+  - `/api/follow/[id]/followers` → `{ followers: [...], pagination: { total, limit, offset, hasMore } }` ✓
+  - `/api/follow/[id]/following` → `{ following: [...], pagination: {...} }` ✓
+  - `/api/follow/[id]/mutual` → `{ mutualFollowers: int, mutualFollowing: int }` (counts, **not** a list)
+  - `/api/follow/requests` → `{ requests: [...] }` (no pagination)
+  - The kit was updated accordingly (commit *pending*; closes Wave 1 deviation 5).
+- **Remaining ask (low-priority).** `/api/follow/requests` does not yet support `limit` / `offset` / `pagination`. The macOS Requests panel will work fine for normal users (the route returns all pending requests), but for accounts with many incoming requests this would scale better with the same `{ requests, pagination }` shape that `followers` / `following` use. Either:
+  - **(a)** Add `?limit / ?offset` + `pagination` block to `/api/follow/requests`. Minimal additive change.
+  - **(b)** Introduce a normalized `{ items, pagination }` envelope across all three list endpoints (gated by `?envelope=v2` or an `Accept` header). Pays back if more list endpoints land later.
+  Recommend **(a)** — the macOS client uses three different view-models for these collections anyway, and the per-key unwrap is small.
+- **Impact.** Phase 6 (M5) Requests panel scales cleanly past the first page if (a) ships. Without it, the panel just shows the full set in one shot (server-side limit unknown).
+- **Priority.** P2 → **P3** (downgraded; no longer blocks M5).
 
 ### 2.2 — Document schema DSL field types and validation rules
 

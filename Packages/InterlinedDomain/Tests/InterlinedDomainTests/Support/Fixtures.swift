@@ -277,30 +277,51 @@ enum Fixtures {
         """
     }
 
-    /// A single `FollowUserDTO` object body.
+    /// A single `FollowUserDTO` object body, matching the live API shape
+    /// verified 2026-06-24: `{ id, username, displayName, avatar, followId,
+    /// createdAt, status }` (Wave 1 deviation 5 closed).
     static func followUserObject(
         id: String,
         username: String = "ada",
         displayName: String? = "Ada Lovelace",
-        avatarUrl: String? = "https://cdn.interlinedlist.com/ada.png"
+        avatar: String? = "https://cdn.interlinedlist.com/ada.png",
+        followId: String? = nil,
+        status: String? = "approved"
     ) -> String {
         let displayJSON = displayName.map { "\"\($0)\"" } ?? "null"
-        let avatarJSON = avatarUrl.map { "\"\($0)\"" } ?? "null"
+        let avatarJSON = avatar.map { "\"\($0)\"" } ?? "null"
+        let followIdJSON = followId.map { "\"\($0)\"" } ?? "null"
+        let statusJSON = status.map { "\"\($0)\"" } ?? "null"
         return """
         {
           "id": "\(id)",
           "username": "\(username)",
           "displayName": \(displayJSON),
-          "avatarUrl": \(avatarJSON)
+          "avatar": \(avatarJSON),
+          "followId": \(followIdJSON),
+          "status": \(statusJSON)
         }
         """
     }
 
-    /// The bare-array shape `GET /api/follow/[userId]/followers` and `/following`
-    /// return today.
-    static func followUserArray(ids: [String]) -> String {
+    /// The wrapped `{ followers: [...], pagination: {...} }` envelope.
+    static func followersEnvelope(
+        ids: [String],
+        collectionKey: String = "followers"
+    ) -> String {
         let objects = ids.map { followUserObject(id: $0) }.joined(separator: ",")
-        return "[\(objects)]"
+        let total = ids.count
+        return """
+        {
+          "\(collectionKey)": [\(objects)],
+          "pagination": {"total":\(total),"limit":50,"offset":0,"hasMore":false}
+        }
+        """
+    }
+
+    /// Convenience for the `/following` endpoint (same shape, different key).
+    static func followingEnvelope(ids: [String]) -> String {
+        followersEnvelope(ids: ids, collectionKey: "following")
     }
 
     // MARK: - Documents (M4) fixtures

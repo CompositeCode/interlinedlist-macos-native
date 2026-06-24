@@ -2,29 +2,37 @@ import Foundation
 
 // MARK: - FollowUserDTO
 
-/// A user as surfaced by the Follow group's follower/following/mutual lists.
-///
-/// Deliberately a **group-local, minimal** user shape (not the kit-wide user
-/// model, which is owned by another group) so this file is self-contained and
-/// merge-clean. The Domain layer maps it onto the canonical user model. Only
-/// `id` is required; the rest are optional because the API reference does not
-/// pin every field on these list rows.
+/// A user as surfaced by the Follow group's follower / following / requests
+/// list endpoints. Shape verified against the live API on 2026-06-24:
+/// `{ id, username, displayName, avatar, followId, createdAt }` plus a
+/// `status` field on the `followers` / `following` rows (`"approved"` |
+/// `"pending"`). `id` is the only field guaranteed non-nil; the rest are
+/// modelled as optional for forward compatibility.
 public struct FollowUserDTO: Codable, Sendable, Equatable, Identifiable {
     public let id: String
     public let username: String?
     public let displayName: String?
-    public let avatarUrl: String?
+    public let avatar: String?
+    public let followId: String?
+    public let createdAt: Date?
+    public let status: String?
 
     public init(
         id: String,
         username: String? = nil,
         displayName: String? = nil,
-        avatarUrl: String? = nil
+        avatar: String? = nil,
+        followId: String? = nil,
+        createdAt: Date? = nil,
+        status: String? = nil
     ) {
         self.id = id
         self.username = username
         self.displayName = displayName
-        self.avatarUrl = avatarUrl
+        self.avatar = avatar
+        self.followId = followId
+        self.createdAt = createdAt
+        self.status = status
     }
 }
 
@@ -56,47 +64,36 @@ public struct FollowCountsDTO: Codable, Sendable, Equatable {
     }
 }
 
-// MARK: - FollowMutualDTO
+// MARK: - FollowMutualCountsDTO
 
-/// `GET /api/follow/[userId]/mutual` — mutual-follow users plus a count. The
-/// API reference does not pin the exact shape; modelled tolerantly with an
-/// optional users array and count so decoding is resilient.
-public struct FollowMutualDTO: Codable, Sendable, Equatable {
-    public let mutual: [FollowUserDTO]?
-    public let count: Int?
+/// `GET /api/follow/[userId]/mutual` — **counts**, not a list. Shape verified
+/// against the live API on 2026-06-24: `{ mutualFollowers, mutualFollowing }`.
+/// Wave 1 had this typed as a list-of-users with optional count; that was
+/// wrong. The Domain layer maps this into the appropriate `FollowCounts`-like
+/// projection.
+public struct FollowMutualCountsDTO: Codable, Sendable, Equatable {
+    public let mutualFollowers: Int
+    public let mutualFollowing: Int
 
-    public init(mutual: [FollowUserDTO]? = nil, count: Int? = nil) {
-        self.mutual = mutual
-        self.count = count
+    public init(mutualFollowers: Int, mutualFollowing: Int) {
+        self.mutualFollowers = mutualFollowers
+        self.mutualFollowing = mutualFollowing
     }
 }
 
-// MARK: - FollowRequestDTO
+// MARK: - FollowRequestsResponse
 
-/// A pending follow request from `GET /api/follow/requests`. Tolerant fields:
-/// the requesting user plus optional metadata.
-public struct FollowRequestDTO: Codable, Sendable, Equatable, Identifiable {
-    public let id: String
-    public let userId: String?
-    public let username: String?
-    public let displayName: String?
-    public let avatarUrl: String?
-    public let createdAt: Date?
+/// `GET /api/follow/requests` — pending inbound follow requests. Shape
+/// verified against the live API on 2026-06-24: `{ requests: [...] }`. No
+/// pagination wrapper today — the route returns all pending requests.
+/// (Backend ask filed: add pagination here so this endpoint matches the
+/// `{ followers, pagination }` / `{ following, pagination }` shape used by
+/// the sibling list endpoints.)
+public struct FollowRequestsResponse: Codable, Sendable, Equatable {
+    public let requests: [FollowUserDTO]
 
-    public init(
-        id: String,
-        userId: String? = nil,
-        username: String? = nil,
-        displayName: String? = nil,
-        avatarUrl: String? = nil,
-        createdAt: Date? = nil
-    ) {
-        self.id = id
-        self.userId = userId
-        self.username = username
-        self.displayName = displayName
-        self.avatarUrl = avatarUrl
-        self.createdAt = createdAt
+    public init(requests: [FollowUserDTO]) {
+        self.requests = requests
     }
 }
 

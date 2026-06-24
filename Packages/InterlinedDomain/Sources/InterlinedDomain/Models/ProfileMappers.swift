@@ -19,7 +19,7 @@ extension UserSummary {
             id: dto.id,
             username: username,
             displayName: dto.displayName ?? username,
-            avatarURL: dto.avatarUrl.flatMap(URL.init(string:))
+            avatarURL: dto.avatar.flatMap(URL.init(string:))
         )
     }
 }
@@ -103,16 +103,19 @@ extension UserProfile {
 }
 
 extension UsersPage {
-    /// Maps the bare-array shape `GET /api/follow/[userId]/followers` and
-    /// `/following` return today. The cursor fields default to "no more",
-    /// matching the bare-array reality; if the kit later switches these to
-    /// `Paginated<FollowUserDTO>` a sibling initializer can be added without
-    /// changing call sites.
-    public init(from dtos: [FollowUserDTO]) {
+    /// Maps the `Paginated<FollowUserDTO>` envelope returned by
+    /// `GET /api/follow/[userId]/followers` and `/following` (Wave 1
+    /// deviation 5 closed 2026-06-24 — live envelope is
+    /// `{ followers: [...], pagination: {...} }`, decoded via the kit's
+    /// `paginationKey` mechanism).
+    public init(from paginated: Paginated<FollowUserDTO>) {
+        let nextOffset: Int? = paginated.pagination.hasMore
+            ? paginated.pagination.offset + paginated.items.count
+            : nil
         self.init(
-            users: dtos.map(UserSummary.init(from:)),
-            hasMore: false,
-            nextOffset: nil
+            users: paginated.items.map(UserSummary.init(from:)),
+            hasMore: paginated.pagination.hasMore,
+            nextOffset: nextOffset
         )
     }
 }

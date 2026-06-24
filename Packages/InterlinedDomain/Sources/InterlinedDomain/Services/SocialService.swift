@@ -160,14 +160,8 @@ public final class SocialService: SocialServicing {
         limit: Int,
         offset: Int
     ) async throws -> UsersPage {
-        // The kit returns the bare array shape today. Limit/offset are
-        // accepted for forward compatibility — when the kit switches to
-        // `Paginated<FollowUserDTO>` they will start being sent through.
-        // For M1 the parameters are unused at the wire layer but kept in the
-        // signature so callers do not need to change later.
-        _ = (limit, offset)
-        let dtos = try await api.send(Follow.followers(userId: userId))
-        return UsersPage(from: dtos)
+        let request = Follow.followers(userId: userId, limit: limit, offset: offset)
+        return try await fetchUsersPage(request: request)
     }
 
     public func following(
@@ -175,8 +169,32 @@ public final class SocialService: SocialServicing {
         limit: Int,
         offset: Int
     ) async throws -> UsersPage {
-        _ = (limit, offset)
-        let dtos = try await api.send(Follow.following(userId: userId))
-        return UsersPage(from: dtos)
+        let request = Follow.following(userId: userId, limit: limit, offset: offset)
+        return try await fetchUsersPage(request: request)
+    }
+
+    // MARK: - Paginated consumption
+
+    /// Mirrors `MessagesService.fetchTimelinePage`: `Paginated<T>` is not
+    /// `Decodable` directly (its collection key is runtime-known via
+    /// `Request.paginationKey`), so we read raw bytes and decode with
+    /// `PaginatedDecoder` against the builder's own key.
+    private func fetchUsersPage(
+        request: Request<Paginated<FollowUserDTO>>
+    ) async throws -> UsersPage {
+        let (data, _) = try await api.sendRaw(request)
+        guard let key = request.paginationKey else {
+            throw APIError.decoding(
+                type: "Paginated<FollowUserDTO>",
+                message: "Follow paginated request missing paginationKey"
+            )
+        }
+        let paginated = try PaginatedDecoder.decode(
+            FollowUserDTO.self,
+            collectionKey: key,
+            from: data,
+            decoder: decoder
+        )
+        return UsersPage(from: paginated)
     }
 }

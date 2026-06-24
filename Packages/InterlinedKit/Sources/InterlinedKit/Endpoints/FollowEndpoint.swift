@@ -1,8 +1,9 @@
 import Foundation
 
 /// Request builders for the **Follow / Social** API group — follow/unfollow,
-/// relationship status, follower/following/mutual lists, counts, request
-/// approval workflow (private accounts), and the pending-requests inbox.
+/// relationship status, follower/following/mutual counts, follower/following
+/// lists, request approval workflow (private accounts), and the pending-
+/// requests inbox.
 ///
 /// Follows the `Request.swift` conventions: one `public enum` namespace,
 /// factories returning `Request<DTO>`, explicit `AuthRequirement`, path-only
@@ -11,12 +12,16 @@ import Foundation
 /// Auth: all `.bearer` (decision 0001 — Bearer works on the whole follow
 /// surface despite the docs marking it session-only).
 ///
-/// The follower/following/mutual list endpoints' exact envelope is not pinned
-/// by the API reference; they are typed as bare arrays of `FollowUserDTO`,
-/// which is the most common InterlinedList shape for these collections. If the
-/// live API wraps them under `"data"` with a pagination envelope, switch the
-/// return type to `Paginated<FollowUserDTO>` with `paginationKey: "data"` —
-/// the builder signature is otherwise unchanged.
+/// **Envelopes pinned by the 2026-06-24 live probe** (closes Wave 1 deviation 5):
+///
+/// - `followers` and `following` return `Paginated<FollowUserDTO>` with
+///   `paginationKey: "followers"` / `"following"` and the standard
+///   `pagination` block (`total, limit, offset, hasMore`).
+/// - `mutual` returns `FollowMutualCountsDTO` (`{ mutualFollowers,
+///   mutualFollowing }`) — counts only, not a list.
+/// - `requests` returns `FollowRequestsResponse` (`{ requests: [...] }`)
+///   with no pagination wrapper. Backend ask filed to add pagination so
+///   this matches followers/following.
 public enum Follow {
 
     // MARK: - Follow / unfollow
@@ -38,14 +43,48 @@ public enum Follow {
         Request(method: .get, path: "/api/follow/\(userId)/status", auth: .bearer)
     }
 
-    /// `GET /api/follow/[userId]/followers`
-    public static func followers(userId: String) -> Request<[FollowUserDTO]> {
-        Request(method: .get, path: "/api/follow/\(userId)/followers", auth: .bearer)
+    /// `GET /api/follow/[userId]/followers` — paginated list under the
+    /// `followers` key. Supports `limit` (1–100, server default 50),
+    /// `offset` (≥ 0), and an optional `status` filter (`approved` |
+    /// `pending`).
+    public static func followers(
+        userId: String,
+        limit: Int? = nil,
+        offset: Int? = nil,
+        status: String? = nil
+    ) -> Request<Paginated<FollowUserDTO>> {
+        Request(
+            method: .get,
+            path: "/api/follow/\(userId)/followers",
+            query: [
+                .int("limit", limit),
+                .int("offset", offset),
+                .string("status", status)
+            ],
+            auth: .bearer,
+            paginationKey: "followers"
+        )
     }
 
-    /// `GET /api/follow/[userId]/following`
-    public static func following(userId: String) -> Request<[FollowUserDTO]> {
-        Request(method: .get, path: "/api/follow/\(userId)/following", auth: .bearer)
+    /// `GET /api/follow/[userId]/following` — paginated list under the
+    /// `following` key. Same query parameters as `followers`.
+    public static func following(
+        userId: String,
+        limit: Int? = nil,
+        offset: Int? = nil,
+        status: String? = nil
+    ) -> Request<Paginated<FollowUserDTO>> {
+        Request(
+            method: .get,
+            path: "/api/follow/\(userId)/following",
+            query: [
+                .int("limit", limit),
+                .int("offset", offset),
+                .string("status", status)
+            ],
+            auth: .bearer,
+            paginationKey: "following"
+        )
     }
 
     /// `GET /api/follow/[userId]/counts`
@@ -53,8 +92,9 @@ public enum Follow {
         Request(method: .get, path: "/api/follow/\(userId)/counts", auth: .bearer)
     }
 
-    /// `GET /api/follow/[userId]/mutual`
-    public static func mutual(userId: String) -> Request<FollowMutualDTO> {
+    /// `GET /api/follow/[userId]/mutual` — bare counts envelope
+    /// `{ mutualFollowers, mutualFollowing }`. Not a list.
+    public static func mutual(userId: String) -> Request<FollowMutualCountsDTO> {
         Request(method: .get, path: "/api/follow/\(userId)/mutual", auth: .bearer)
     }
 
@@ -75,13 +115,13 @@ public enum Follow {
         Request(method: .post, path: "/api/follow/\(userId)/remove", auth: .bearer)
     }
 
-    /// `GET /api/follow/requests` — pending inbound follow requests. The API
-    /// reference shows this wrapped in the `{ "data": [...], "pagination" }`
-    /// envelope.
+    /// `GET /api/follow/requests` — pending inbound follow requests under the
+    /// `requests` key, no pagination wrapper today. (Limit / offset accepted
+    /// for forward compatibility; the server currently ignores them.)
     public static func requests(
         limit: Int? = nil,
         offset: Int? = nil
-    ) -> Request<Paginated<FollowRequestDTO>> {
+    ) -> Request<FollowRequestsResponse> {
         Request(
             method: .get,
             path: "/api/follow/requests",
@@ -89,8 +129,7 @@ public enum Follow {
                 .int("limit", limit),
                 .int("offset", offset)
             ],
-            auth: .bearer,
-            paginationKey: "data"
+            auth: .bearer
         )
     }
 }

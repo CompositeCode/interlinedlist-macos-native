@@ -97,9 +97,10 @@ final class SocialServiceTests: XCTestCase {
     // MARK: - followers
 
     func test_givenFollowers_whenLoadingFollowers_thenMapsUserSummaries() async throws {
-        // Given
+        // Given — wrapped envelope `{ followers, pagination }` (Wave 1
+        // deviation 5 closed 2026-06-24).
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.followUserArray(ids: ["u-1", "u-2"]))
+        await api.enqueue(json: Fixtures.followersEnvelope(ids: ["u-1", "u-2"]))
         let service = SocialService(api: api)
 
         // When
@@ -109,7 +110,7 @@ final class SocialServiceTests: XCTestCase {
         XCTAssertEqual(page.users.map(\.id), ["u-1", "u-2"])
         XCTAssertEqual(page.users.first?.displayName, "Ada Lovelace")
         XCTAssertEqual(page.users.first?.avatarURL?.absoluteString, "https://cdn.interlinedlist.com/ada.png")
-        // Bare-array shape: cursor fields default to "no more".
+        // Fixture sets hasMore=false; cursor cleared.
         XCTAssertFalse(page.hasMore)
         XCTAssertNil(page.nextOffset)
         let recorded = await api.recorded
@@ -119,7 +120,7 @@ final class SocialServiceTests: XCTestCase {
     func test_givenNoFollowers_whenLoadingFollowers_thenReturnsEmptyPage() async throws {
         // Given — boundary: nobody follows this account.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.followUserArray(ids: []))
+        await api.enqueue(json: Fixtures.followersEnvelope(ids: []))
         let service = SocialService(api: api)
 
         // When
@@ -148,9 +149,9 @@ final class SocialServiceTests: XCTestCase {
     // MARK: - following
 
     func test_givenFollowing_whenLoadingFollowing_thenMapsUserSummaries() async throws {
-        // Given
+        // Given — wrapped envelope `{ following, pagination }`.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.followUserArray(ids: ["u-3"]))
+        await api.enqueue(json: Fixtures.followingEnvelope(ids: ["u-3"]))
         let service = SocialService(api: api)
 
         // When
