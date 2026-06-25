@@ -43,10 +43,10 @@ The project is greenfield. Scope, architecture, milestones, and branding are pin
 | **M3** &mdash; Lists | CRUD, schema DSL editor, rows table, nesting, connections graph, watchers, GitHub refresh | Shipped |
 | **M4** &mdash; Documents | Folder tree, Markdown editor/preview, image upload, delta sync engine | Shipped |
 | **M5** &mdash; Social & notifications | Follow/unfollow, requests, mutuals, notifications tray, dock badge | Shipped |
-| **M6** &mdash; Subscriber & orgs | Media attachments, scheduled posts, cross-posting, OAuth linking, organizations | Pending |
+| **M6** &mdash; Subscriber & orgs | Media attachments, scheduled posts, cross-posting, OAuth linking, organizations | Shipped |
 | **M7** &mdash; Ship | CSV exports, Settings polish, sandbox + notarization, Sparkle, accessibility, brand QA | Pending |
 
-Endpoint coverage today: **92 / 98 implemented**, **55 / 98 fully tested**, **36 / 98 partial**. See [docs/api-coverage.md](docs/api-coverage.md) for the row-by-row matrix.
+Endpoint coverage today: **97 / 98 implemented**, **66 / 98 fully tested**, **25 / 98 partial**. See [docs/api-coverage.md](docs/api-coverage.md) for the row-by-row matrix.
 
 ## Architecture
 

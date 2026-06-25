@@ -62,7 +62,7 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
     ]
   }
   ```
-- **Impact.** M6 cross-post UI. Required to render the post-publish status sheet ("Posted to Mastodon ✓ — Bluesky failed: rate limited").
+- **Impact.** M6 cross-post UI. Required to render the post-publish status sheet ("Posted to Mastodon ✓ — Bluesky failed: rate limited"). The M6 composer ships the cross-post toggles but **not** the per-platform status sheet; tracked in [`NEXT-WORK.md`](NEXT-WORK.md) NW-2.
 - **Priority.** P1 — feature is dead-on-arrival without it.
 
 ### 1.5 — User lookup by handle for list-watcher invites
@@ -72,8 +72,8 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
   - **(a)** `GET /api/users/lookup?handle=<username>` (no auth required for public profiles; require auth for private) returning `{ "id": "...", "username": "...", "displayName": "...", "avatar": "url or null", "isPrivate": bool }` &mdash; minimal projection, single-hit lookup.
   - **(b)** `GET /api/users/search?q=<prefix>&limit=10` (auth required) returning a paginated array of the same minimal projection &mdash; supports type-ahead autocomplete in the share sheet.
   Strongly prefer **(b)** for native UX; if only (a) ships, the macOS UI degrades to "type the exact handle, hit Enter to resolve."
-- **Impact.** Unblocks the M3 share-sheet invite flow. Without this, the macOS client ships M3 with **role editing for existing watchers only** &mdash; new invites are deferred to a follow-up wave (tracked in `/NEXT-WORK.md`).
-- **Priority.** P1 &mdash; the invite UX is core to "share a list with someone" and shipping M3 without it leaves a visible gap.
+- **Impact.** Unblocks the M3 share-sheet invite flow. Without this, the macOS client ships M3 with **role editing for existing watchers only** &mdash; new invites are deferred to a follow-up wave (tracked in [`NEXT-WORK.md`](NEXT-WORK.md) NW-1). **Second consumer (Wave 7):** the M6 Organizations UI has the same gap &mdash; org member-add ships **by raw userId** because there is no handle&rarr;userId lookup, so adding a person by `@handle` is blocked on this exact endpoint. Tracked in [`NEXT-WORK.md`](NEXT-WORK.md) NW-6. Whichever lookup shape lands here unblocks both the list-watcher invite (NW-1) and the org member-add-by-handle (NW-6).
+- **Priority.** P1 &mdash; the invite UX is core to "share a list with someone" and shipping M3 without it leaves a visible gap; M6 orgs share the blocker.
 
 ### 1.6 — Rate-limit headers on every authenticated response
 
@@ -168,6 +168,19 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 - **Impact.** M6 media attachments. Pre-upload client-side resize uses the limit; post-upload error UX uses the limit in messaging.
 - **Priority.** P2.
 
+**Wave 7 note (2026-06-25).** The M6 media-upload paths shipped with the limits **hard-coded as constants in the domain layer**, tagged `TODO(backend ask P2.5)`. `ImagePrep` resizes against the hard-coded 1200 px / 1.4 MB image budget and the 3 MB video budget; when this ask lands the constants are replaced with the discovered values (and the `TODO` removed). Consumed by [`NEXT-WORK.md`](NEXT-WORK.md) NW-2's neighbor work and the M6 composer.
+
+### 2.6 — Native OAuth identity-linking contract (callback or bearer link endpoint) — *maintainer question, Wave 7*
+
+- **Problem.** The [2026-06-24 OAuth spike (spike 0002)](docs/spikes/0002-oauth-identity-linking.md) confirmed a native macOS client **cannot complete** `GET /api/auth/{provider}/authorize?link=true` against the API as it exists: the `redirect_uri` is a **web** URL on `interlinedlist.com` (no custom scheme / universal link the app can register or intercept), the flow is **cookie-bound** (`HttpOnly` `oauth_state` + the logged-in web-session cookie at `/callback`) rather than Bearer-bound, and there is **no** code-exchange or `…/link` endpoint a native client can hit. So `ASWebAuthenticationSession` (the mechanism PLAN.md §4 names) has nothing to match against.
+- **Maintainer question (verbatim).** *"Will the API expose a native-callback (custom scheme/universal link) or a bearer-authenticated `POST /api/auth/{provider}/link`, or should macOS link by opening the web `…/authorize?link=true` flow in the default browser with no in-app completion?"*
+- **Proposal.** Either:
+  - **(preferred)** a **custom-scheme / universal-link callback** the macOS app can register, so `ASWebAuthenticationSession` completes the flow and the server associates the identity via a one-time code rather than the web session cookie; **or**
+  - a **bearer-authenticated `POST /api/auth/{provider}/link`** taking the provider code/token, tying the identity to the Bearer-token user directly.
+  If neither is on the roadmap, confirm the browser-handoff fallback is the intended macOS posture (it is what ships in M6).
+- **Impact.** Unblocks native in-app OAuth identity linking. **Status quo:** [Decision 0006](docs/decisions/0006-oauth-identity-linking-browser-handoff.md) ships the zero-upstream-change fallback in M6 — Settings > Linked accounts opens `…/authorize?link=true` in the default browser via SwiftUI `openURL`, no in-app completion. Tracked in [`NEXT-WORK.md`](NEXT-WORK.md) NW-5.
+- **Priority.** P2.
+
 ---
 
 ## Priority 3 — nice-to-have, improves polish
@@ -190,7 +203,7 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 
 - **Problem.** `GET /api/messages/scheduled` lists scheduled posts, but the docs do not show an endpoint to cancel one before its `scheduledAt` fires.
 - **Proposal.** `DELETE /api/messages/[id]` already works for scheduled posts? If so, document it. `PUT /api/messages/[id]` to reschedule (move the `scheduledAt`)? If supported, document.
-- **Impact.** M6 scheduled-posts UI ("Scheduled" sidebar section). Cancellation is the obvious user need.
+- **Impact.** M6 scheduled-posts UI ("Scheduled" sidebar section). Cancellation is the obvious user need. The M6 "Scheduled" section ships **read-only** (lists scheduled posts; no cancel / reschedule); tracked in [`NEXT-WORK.md`](NEXT-WORK.md) NW-3.
 - **Priority.** P3.
 
 ### 3.4 — Export progress / streaming for large CSVs
@@ -211,7 +224,7 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 
 - **Problem.** Spike confirmed `GET /api/auth/linkedin/status` returns `{ "configured": true, "redirectUri": "..." }` unauthenticated, which is great. We'd like an equivalent for Bluesky and Mastodon (per-instance) so the composer can disable cross-post checkboxes for unconfigured platforms before the user discovers it via failure.
 - **Proposal.** `GET /api/auth/bluesky/status`, `GET /api/auth/mastodon/status?instance=mastodon.social` returning the same `{ "configured": boolean }` shape.
-- **Impact.** M6 composer cross-post checkbox states.
+- **Impact.** M6 composer cross-post checkbox states. The M6 composer reflects **LinkedIn** readiness (via `GET /api/auth/linkedin/status`) but cannot pre-flight Bluesky / Mastodon; tracked in [`NEXT-WORK.md`](NEXT-WORK.md) NW-4.
 - **Priority.** P3.
 
 ### 3.7 — Sync conflict event needs folderId
@@ -239,4 +252,6 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 
 ## Update history
 
+- **2026-06-25 — Wave 7 (M6 Subscriber + orgs).** Added ask **2.6** (P2) — the native OAuth identity-linking contract maintainer question, filed verbatim from the [2026-06-24 OAuth spike (spike 0002)](docs/spikes/0002-oauth-identity-linking.md) and [Decision 0006](docs/decisions/0006-oauth-identity-linking-browser-handoff.md) (M6 ships the browser-handoff fallback). Cross-referenced the M6 consuming gaps from the new [`NEXT-WORK.md`](NEXT-WORK.md) entries: **1.4** ↔ NW-2 (cross-post per-platform status sheet), **3.3** ↔ NW-3 (scheduled cancel / reschedule), **3.6** ↔ NW-4 (Bluesky / Mastodon cross-post readiness), **2.6** ↔ NW-5 (native OAuth linking), and **1.5** ↔ NW-6 (org member-add-by-handle, now noted on 1.5 as a second consumer of the handle&rarr;userId lookup). Added the Wave 7 note on **2.5** that the M6 media-upload limits ship hard-coded (`TODO(backend ask P2.5)`) until the machine-readable limits land.
+- **2026-06-24** — Wave 6 (M5 Social + Notifications). Added ask **2.3b** (P2 — `POST /api/follow/[userId]` should return the resulting relationship, removing the follow-then-status round-trip) and ask **3.8** (P3 — domain-typed follow-relationship read, so the `FollowRelationshipReader` composition-root shim can be deleted). Marked ask **2.1** resolved (live probe pinned the follow-list envelopes) and downgraded its remaining pagination request to P3.
 - **2026-06-22** — Initial draft. Compiled from the Wave 0.3a auth spike, the Wave 2 public-profile spike (decision 0002), the 2026-06-22 unauthenticated probe, and PLAN.md §1 / §6 / §8.

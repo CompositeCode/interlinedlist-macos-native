@@ -669,3 +669,125 @@ Held back at ◐⁴ this wave (new footnote 11):
 8. **Stale SourceKit index after the new files were added.** Same pattern as Wave 3 deviation 6, Wave 4 deviation 8, Wave 5 deviation 7. Adding `App/Composition/AppDelegate.swift` + the new Social / Notifications view-model files + the new persistence stores left Xcode's SourceKit indexer reporting stale "No such module" / "No such type" errors on first reopen. `xcodebuild` was unaffected. Resolves with **File → Packages → Reset Package Caches** or **Product → Clean Build Folder**.
 9. **`dev` → `main` merge happened during this wave.** Commits `cae57cc`, `da13846`, `159f71a`, `085b91f` and `9a66154` landed on `main` directly (verified by `git log --oneline -15`; the previous `dev` branch's last commit `d1e3575` was the Wave 5 docs gate). Future commits should remain on `main` per the user's branching pattern; the Wave 4 deviation 9 / Wave 5 deviation 8 carry-over about the contract-tests workflow being inert on `dev` is **resolved by this merge** — `workflow_dispatch` and `schedule` triggers register against the default branch, which is now seeing the workflow file.
 
+---
+
+## Wave 7 — InterlinedDomain M6 Subscriber surface + Persistence org/identity stores + App-layer Orgs / Composer-M6 / Linked-accounts UI (PLAN.md §6 M6)
+
+Wave 7 lands M6 Subscriber + orgs end-to-end: the 7.0 OAuth spike + Kit gap closure (additive OAuth builders), the `InterlinedDomain` M6 slice (`OrgService` over all 9 Organizations endpoints, `UserService` identities / organizations + `identityLinkURL`, the subscriber-gated `MessagesService` M6 write surface — media / scheduled / cross-post), the `InterlinedPersistence` `SwiftDataOrgStore` + `SwiftDataLinkedIdentityStore`, the App-layer Organizations UI (`.organizations` route flipped off its placeholder), the M6 composer extensions + read-only Scheduled sidebar section (`.scheduled` route flipped), and the browser-handoff Linked-accounts pane in a real `SettingsRootView` (`.settings` scene off its placeholder). The wave's one new architectural decision — [Decision 0006](decisions/0006-oauth-identity-linking-browser-handoff.md) — records that **native OAuth identity-linking is blocked upstream** ([spike 0002](spikes/0002-oauth-identity-linking.md)) and ships the browser-handoff fallback, which deliberately needs **no AppKit / new-framework exception** (pure SwiftUI `@Environment(\.openURL)`).
+
+Path ownership stayed inside `Packages/InterlinedKit/**` (the additive 7.0 OAuth builders + the 7.3 `UserService.identityLinkURL`-supporting builder + the 7.2 entitlements-backstop test surface), `Packages/InterlinedDomain/**`, `Packages/InterlinedPersistence/**`, `App/**`, `docs/spikes/0002-oauth-identity-linking.md`, `docs/decisions/0006-oauth-identity-linking-browser-handoff.md`, and `docs/**` / `README.md` / `NEXT-WORK.md` / `API-backend-prompts-to-build.md` for the docs touches. No PLAN.md / ORCHESTRATION.md / `docs/decisions/0001`–`0005` edits (read-only).
+
+### Decisions
+
+- **2026-06-25 — Decision 0006 recorded and accepted.** Native OAuth identity-linking (PLAN.md §4's `ASWebAuthenticationSession` mechanism) is **deferred — blocked upstream**. The 7.0 spike ([spike 0002](spikes/0002-oauth-identity-linking.md)) live-probed all four providers' `/authorize` flows and found the callback is a **web** URL on `interlinedlist.com` (no custom scheme / universal link a native client can register or intercept), the flow is **cookie-bound** (not Bearer-bound), and there is no code-exchange or bearer `…/link` endpoint to complete against. The decision ships the zero-upstream-change **browser-handoff fallback**: a Settings → Linked accounts pane opens `…/authorize?link=true` in the default browser via SwiftUI `@Environment(\.openURL)`. Unlike Decision 0005 (which carved out one AppKit file for the dock badge), this decision **needs no AppKit / new-framework exception** — `openURL` is public SwiftUI and the kit-import policy (decision 0003) is preserved by the new `UserServicing.identityLinkURL(provider:instance:)` domain method. The maintainer question is filed verbatim as `API-backend-prompts-to-build.md` ask 2.6 and tracked in `NEXT-WORK.md` NW-5. See [decisions/0006-oauth-identity-linking-browser-handoff.md](decisions/0006-oauth-identity-linking-browser-handoff.md).
+
+### 7.0 — OAuth spike + InterlinedKit OAuth-builder gap closure — DONE
+
+- **Spike.** [`docs/spikes/0002-oauth-identity-linking.md`](spikes/0002-oauth-identity-linking.md) — unauthenticated, redirect-not-followed `curl` against the live API characterizing `GET /api/auth/{github,mastodon,bluesky,linkedin}/authorize` (+ `?link=true` / `?instance=` behavior) and `GET /api/auth/linkedin/status`. **Verdict: native OAuth identity-linking is blocked upstream** — `/authorize` 307s to a *web* `…/callback`, the flow is cookie-bound (`HttpOnly` `oauth_state` + the web session cookie), and there is no custom-scheme / universal-link callback or bearer `…/link` endpoint a native client can complete against.
+- **Kit gap closure (additive only).** `OAuthProvider` enum (`github` / `mastodon` / `bluesky` / `linkedin`, `.other(String)` for forward-compat) + `LinkedInStatusResponse` DTO (`DTOs/OAuthDTO.swift`); `Auth.authorize(provider:link:instance:) -> Request<EmptyResponse>` (public GET; `?link` / `?instance` query; `EmptyResponse` phantom because the endpoint replies 307 with no JSON body) and `Auth.linkedinStatus() -> Request<LinkedInStatusResponse>` (`Endpoints/AuthEndpoint.swift`). These make the five M6 OAuth coverage rows *buildable* but commit to **no UI** and **no new framework**.
+- **Kit test count:** **177 → 190 (+13)** from the OAuth builder suite (provider matrix, `?link` / `?instance` query encoding, `linkedinStatus` decode, `.other` round-trip).
+
+### 7.1 — InterlinedDomain M6 slice + Persistence org/identity stores — DONE
+
+- **Domain — OrgService.** `OrgService` over all **9** Organizations endpoints, with `Organization` / `OrgMember` / `OrgUser` / `OrgRole` (`.other(String)` for forward-compat, matching the defensive shape `WatcherRole` (Wave 4) and `NotificationKind` (Wave 6) introduced) / `OrgsPage` / `OrgMembersPage` / `OrgMappers`. Methods: list-all, `create`, `organization(id:)`, `update`, `members(of:)`, `addMember`, `setMemberRole`, `removeMember`, `users(of:)`.
+- **Domain — UserService.** `identities()` / `organizations()` projecting to `LinkedIdentity` / `IdentityProvider` (`.other(String)`); plus the new `identityLinkURL(provider:instance:) throws -> URL` (7.3) that resolves the Kit `Auth.authorize` builder against the configured base URL — keeps Decision 0003 intact so the App layer never touches a Kit type.
+- **Domain — MessagesService M6 write surface.** `createPost` (media references + `scheduledAt` + cross-post flags: Mastodon provider-ids / Bluesky / LinkedIn), `scheduledPosts()`, `uploadImage` / `uploadVideo` via the `ImagePrep` pipeline (reused from Wave 5). All subscriber-gated via `EntitlementsService` — non-subscribers get `MessagesError.subscriberRequired` before any network call. Media limits are **hard-coded constants tagged `TODO(backend ask P2.5)`** (machine-readable limits are not yet exposed; deviation 7 below).
+- **`EntitlementsService.canManageLists` left untouched.** Its flip belongs to a future M6 Lists-gating slice, not this wave (deviation 6 below).
+- **Persistence.** `SwiftDataOrgStore` (orgs + per-org members, flat orgID keying) + `SwiftDataLinkedIdentityStore` (single-user identity cache); enums persisted as `wireToken` (lossless round-trip, `.other` preserved). Scheduled-post caching is **deferred** — it reuses the existing `MessageRecord` / `SwiftDataMessageStore` since `scheduledAt` is already persisted there.
+- **Test counts (7.1 share):** Domain **+81** (OrgService / UserService / MessagesService M6); Persistence **+30** (`SwiftDataOrgStore` + `SwiftDataLinkedIdentityStore`).
+- **Endpoint consumption:** the M6 Organizations + identities + media-upload rows are reachable at the domain-service layer after this slice, but per the Wave 1 deviation-6 rule they remain ◐⁴ until the App layer consumes them end-to-end — which happens in 7.2 / 7.3 / 7.4 below.
+
+### 7.2 — App-layer composer M6 extensions + read-only Scheduled section + live-entitlements backstop — DONE
+
+- **Composer M6 extensions** (`App/Features/Compose/`). Media attach via `.fileImporter` + `.dropDestination` + `AsyncImage` thumbnails (SwiftUI-only — no AppKit); `DatePicker` scheduling; cross-post toggles (Mastodon provider-ids / Bluesky / LinkedIn); subscriber-gated UI (controls disabled + an upsell affordance when the current user is not a subscriber). The composer's `createPost` path carries the M6 request fields end-to-end (resolves coverage-matrix footnote 2).
+- **Read-only Scheduled sidebar section.** `ScheduledPostsRootView` + `ScheduledPostsViewModel` consuming `GET /api/messages/scheduled`; the `.scheduled` route flipped off its placeholder. **Read-only** — no cancel / reschedule (deviation 4; `NEXT-WORK.md` NW-3).
+- **Deliverable B — live entitlements backstop.** `MessagesService` gained an **additive** `entitlementsProvider: @Sendable () -> EntitlementsService` initializer so the domain subscriber gate evaluates the **live** current-user `customerStatus` at call time (wired via a `LiveEntitlements` box updated by `CurrentUserStore`) rather than a value captured at construction. PLAN §8's 403 / lapse refresh hook was added so a mid-session entitlement change is respected.
+- **Test counts (7.2 share):** Kit **+3** (`MessagesService` entitlements-backstop test surface), App `InterlinedListTests` **+24**.
+
+### 7.3 — App-layer Organizations UI — DONE
+
+- **Organizations feature** (`App/Features/Organizations/`). `OrganizationsRootView` + list / detail / member-roster with a role editor: `OrganizationsListViewModel` (lists the current user's orgs via `UserService.organizations()`), `OrganizationDetailViewModel` (`OrgService.organization(id:)` + `update`), `OrgMembersViewModel` (`members(of:)` + `addMember` + `setMemberRole` + `removeMember`). The `.organizations` sidebar route flipped off its placeholder.
+- **Member-add is by raw userId** — no handle→userId lookup, the **same gap as NW-1 / backend ask 1.5**. Role edit / remove work for existing members. Tracked as deviation 3 and `NEXT-WORK.md` NW-6.
+- **Domain — `identityLinkURL`.** Added this slice (`UserService.identityLinkURL(provider:instance:)`, Kit **+5** tests) to back the 7.4 Linked-accounts pane while keeping the App layer kit-import-free.
+
+### 7.4 — App-layer Linked-accounts (browser handoff) — DONE
+
+- **Decision 0006 fallback.** User-approved fallback since native linking is blocked. `SettingsRootView` **replaces** `SettingsPlaceholderView` in the `Settings{}` scene; its **Linked accounts** pane (`LinkedAccountsView` + `LinkedAccountsViewModel`) lists `UserService.identities()` and, per provider, offers **"Link account ↗"** that opens the web `…/authorize?link=true` in the default browser via SwiftUI `@Environment(\.openURL)` — **no AppKit, no new framework, no in-app completion.** Mastodon prompts for an instance domain first. After the browser flow, the pane refreshes `identities()`.
+- **Decision 0003 intact.** The link URL is built by the domain `UserService.identityLinkURL(provider:instance:)` (which resolves the Kit `Auth.authorize` builder against the base URL); the App layer never references a Kit type.
+- **Test counts (7.3 / 7.4 share):** App `InterlinedListTests` **+34**.
+
+### Wave 7 gate — PASSED (2026-06-25)
+
+- App build: `xcodebuild test -project InterlinedList.xcodeproj -scheme InterlinedList -destination 'platform=macOS'` → `Executed 278 tests, with 0 failures` / `** TEST SUCCEEDED **`.
+- Domain tests: `swift test --package-path Packages/InterlinedDomain` → **388/388 passing**.
+- Persistence tests: `swift test --package-path Packages/InterlinedPersistence` → **120/120 passing**.
+- Kit tests: `swift test --package-path Packages/InterlinedKit` → **190/190 passing**.
+- Decision-0003 compliance check: `grep -rEn "^[[:space:]]*import InterlinedKit" App/Features App/Navigation App/MenuCommands` → empty. The only `App/**` kit imports remain the permitted composition-root ones.
+- Decision-0005 amended AppKit check: `grep -rEn "^[[:space:]]*import AppKit" App/ | grep -v AppDelegate.swift` → empty. The browser-handoff Linked-accounts pane uses SwiftUI `openURL` only — it adds **no** new AppKit hit, consistent with Decision 0006.
+- SwiftUI-only check (Packages): `grep -R "import AppKit" Packages/` → empty.
+- Path-ownership check: changes confined to `Packages/InterlinedKit/**`, `Packages/InterlinedDomain/**`, `Packages/InterlinedPersistence/**`, `App/**`, `docs/spikes/0002-oauth-identity-linking.md`, `docs/decisions/0006-oauth-identity-linking-browser-handoff.md`, `README.md`, `NEXT-WORK.md`, `API-backend-prompts-to-build.md`, and `docs/**` for this wave-end update — no overlaps with prior-wave paths; conflict rules held.
+
+### Test counts per suite (run 2026-06-25)
+
+| Suite | Tests | Notes |
+| --- | ---: | --- |
+| `InterlinedListTests` (full) | 278 | 220 → 278 (+58): **+24** in 7.2 (composer M6 extensions, read-only Scheduled section view model, live-entitlements backstop wiring) and **+34** in 7.3 / 7.4 (`OrganizationsListViewModel` / `OrganizationDetailViewModel` / `OrgMembersViewModel`, `LinkedAccountsViewModel`). The 220 Wave-6 tests are unchanged and still passing. |
+| `InterlinedDomainTests` (full) | 388 | 299 → 388 (+89): **+81** in 7.1 (`OrgService` / `UserService` / `MessagesService` M6 quartets across all 9 Organizations endpoints, identities / organizations, `createPost` / `scheduledPosts` / `uploadImage` / `uploadVideo`, subscriber-gate paths), **+5** in 7.3 (`UserService.identityLinkURL`), **+3** in 7.2 (`MessagesService` entitlements-backstop). |
+| `InterlinedPersistenceTests` (full) | 120 | 90 → 120 (+30): `SwiftDataOrgStore` (orgs + per-org members, flat orgID keying, second-write-wins, per-org isolation, clear cascade) + `SwiftDataLinkedIdentityStore` (single-user identity cache, `wireToken` round-trip incl. `.other`, clear). |
+| `InterlinedKitTests` (full) | 190 | 177 → 190 (+13): the 7.0 OAuth builder suite (`Auth.authorize(provider:link:instance:)` provider matrix + `?link` / `?instance` query encoding, `Auth.linkedinStatus()` decode, `OAuthProvider.other` round-trip). Other Kit suites unchanged. |
+| **Grand total across all targets** | **976** | All passing; 0 failures. |
+
+### Coverage matrix delta (after this update)
+
+The M6 consumption rule (Wave 1 deviation 6, reiterated in matrix footnote 4) applied: every M6-consumed row exercised by a tested App-layer view model this wave flips ◐⁴ → ☑. Separately, the five OAuth rows flip **Implemented** ☐ → ☑ (Kit builders landed in 7.0) but their **Tested** column stays untested (☐¹²) **by design** — native completion is blocked upstream ([decision 0006](decisions/0006-oauth-identity-linking-browser-handoff.md)), the app browser-opens the `…/authorize` URL rather than sending it, so there is no app-side send to test. Two OrgService read rows stay ◐⁴ (new footnote 13).
+
+| | Before Wave 7 | After Wave 7 |
+| --- | ---: | ---: |
+| Implemented (☑) | 92 / 98 | **97 / 98** |
+| Tested fully (☑) | 55 / 98 | **66 / 98** |
+| Tested partial (◐⁴) | 36 / 98 | **25 / 98** |
+| Untested (☐) | 7 / 98 | **7 / 98** |
+
+**Implemented +5** (92 → 97): the four `GET /api/auth/{github,mastodon,bluesky,linkedin}/authorize` rows and `GET /api/auth/linkedin/status` gained Kit builders in 7.0. The single remaining unimplemented row is `POST /api/auth/login`⁵ (decision-0001 session-fallback login, still stubbed via `NullSessionEstablisher`).
+
+Rows flipped ◐⁴ → ☑ this wave (**11 total**, all M6-consumed end-to-end Kit builder → Domain service → App view-model):
+
+- User / Orgs: `GET /api/user/organizations` (`UserService.organizations` → `OrganizationsListViewModel`).
+- Orgs: `POST /api/organizations` (`OrgService.create` → `OrganizationsListViewModel`).
+- Orgs: `GET /api/organizations/[id]` (`OrgService.organization(id:)` → `OrganizationDetailViewModel`).
+- Orgs: `PATCH /api/organizations/[id]` (`OrgService.update` → `OrganizationDetailViewModel`).
+- Orgs: `GET /api/organizations/[id]/members` (`OrgService.members(of:)` → `OrgMembersViewModel`).
+- Orgs: `POST /api/organizations/[id]/members` (`OrgService.addMember` → `OrgMembersViewModel`, by raw userId).
+- Orgs: `PUT /api/organizations/[id]/members/[userId]` (`OrgService.setMemberRole` → `OrgMembersViewModel` role editor).
+- Orgs: `DELETE /api/organizations/[id]/members/[userId]` (`OrgService.removeMember` → `OrgMembersViewModel`).
+- User: `GET /api/user/identities` (`UserService.identities` → `LinkedAccountsViewModel`).
+- Messages: `POST /api/messages/images/upload` (`MessagesService.uploadImage` → `ComposerViewModel`; `ImagePrep` exercised).
+- Messages: `POST /api/messages/videos/upload` (`MessagesService.uploadVideo` → `ComposerViewModel`).
+
+Implemented but Tested-untested by design this wave (new footnote 12, ☐¹²):
+
+- `GET /api/auth/github/authorize`, `GET /api/auth/mastodon/authorize`, `GET /api/auth/bluesky/authorize`, `GET /api/auth/linkedin/authorize` — Kit builders exist; reached **indirectly** via `UserService.identityLinkURL` → `LinkedAccountsView` → SwiftUI `openURL` (browser-opened, not sent by the app). Native completion blocked upstream (spike 0002 / decision 0006).
+- `GET /api/auth/linkedin/status` — Kit builder exists but is currently **unconsumed**.
+
+Re-consumed but unchanged (☑ already from earlier waves):
+
+- `POST /api/messages` — already ☑ from Wave 1 (M6-field builder coverage, footnote 2). Its scheduled / cross-post / media request fields are now consumed end-to-end via `ComposerViewModel` this wave; **footnote 2 is resolved** (the M6-field carriage is closed rather than pending). Row state unchanged.
+- `GET /api/messages/scheduled` — already ☑ from Wave 1; re-consumed read-only this wave by `ScheduledPostsViewModel`. Row state unchanged.
+
+Held back at ◐⁴ this wave (new footnote 13):
+
+- `GET /api/organizations` (list-all variant) — reachable via `OrgService` but the Organizations UI lists the current user's orgs via `UserService.organizations()` (`GET /api/user/organizations`) instead, so the list-all path stays unconsumed.
+- `GET /api/organizations/[id]/users` — reachable via `OrgService.users(of:)` but the member roster renders from `GET /api/organizations/[id]/members` (`OrgMembersViewModel`), leaving the `/users` projection unconsumed.
+
+### Deviations and follow-ups
+
+1. **Native OAuth identity-linking is blocked upstream; M6 ships a browser handoff.** [Spike 0002](spikes/0002-oauth-identity-linking.md) found the `/authorize` callback is a web URL (no custom scheme / universal link), the flow is cookie-bound (not Bearer), and there is no bearer `…/link` endpoint. [Decision 0006](decisions/0006-oauth-identity-linking-browser-handoff.md) ships the zero-upstream-change fallback: Settings → Linked accounts opens `…/authorize?link=true` in the default browser via SwiftUI `openURL`, no in-app completion. Deliberately **no AppKit / new-framework exception** is created (contrast Decision 0005). Maintainer question filed verbatim as backend ask **2.6** (P2); resume design tracked in `NEXT-WORK.md` NW-5. The five OAuth coverage rows flip Implemented but stay Tested-☐¹² until the upstream contract lands.
+2. **`MessagesService` live-entitlements backstop (Deliverable B).** The domain subscriber gate evaluates the live current-user `customerStatus` at call time via an additive `entitlementsProvider: @Sendable () -> EntitlementsService` init (wired through a `LiveEntitlements` box updated by `CurrentUserStore`), so a mid-session entitlement change is respected rather than a value captured at construction. PLAN §8's 403 / lapse refresh hook was added. Additive — no existing call site changed.
+3. **Org member-add is by raw userId — no handle search.** `OrgMembersViewModel` → `OrgService.addMember` takes a `userId`; there is no handle→userId lookup. Same blocker as NW-1 / backend ask **1.5** (now noted on 1.5 as a second consumer). Role edit / remove work for existing members. Tracked in `NEXT-WORK.md` NW-6.
+4. **Scheduled section is read-only.** `ScheduledPostsRootView` lists `GET /api/messages/scheduled` but cannot cancel or reschedule a post before `scheduledAt` fires (no documented cancel / reschedule path). Backend ask **3.3** (P3); tracked in `NEXT-WORK.md` NW-3.
+5. **Two OrgService reads unconsumed this wave (coverage footnote 13).** `GET /api/organizations` (list-all — UI uses `UserService.organizations()` instead) and `GET /api/organizations/[id]/users` (`OrgService.users(of:)` — roster renders from `/members`). Both reachable, neither on a tested view-model path this wave; the Wave 1 footnote-4 backfill rule still applies. Tracked in `NEXT-WORK.md` NW-6.
+6. **`EntitlementsService.canManageLists` left untouched.** Its flip belongs to a future M6 Lists-gating slice, not this wave. The M6 subscriber gating shipped this wave covers the composer / media / scheduled / cross-post surface (`MessagesError.subscriberRequired`); list-management gating is a separate, deliberately deferred slice. No behavior change to `canManageLists` this wave.
+7. **M6 media limits hard-coded (`TODO(backend ask P2.5)`).** `ImagePrep` resizes against hard-coded 1200 px / 1.4 MB image and 3 MB video budgets because machine-readable upload limits are not exposed by the API (backend ask **2.5**, P2 — Wave 7 note added there). The constants are tagged `TODO(backend ask P2.5)` and replaced when the limits become discoverable.
+8. **Cross-post per-platform result + readiness gaps.** The composer sends cross-post targets but cannot render a per-platform "posted ✓ / failed" status sheet (backend ask **1.4**, P1; `NEXT-WORK.md` NW-2), and can only pre-flight LinkedIn readiness — not Bluesky / Mastodon (backend ask **3.6**, P3; `NEXT-WORK.md` NW-4). Both surfaced as `docs/user/feature-status.md` Limits bullets.
+9. **Stale SourceKit index after the new files were added.** Same recurring pattern as Wave 3 deviation 6, Wave 4 deviation 8, Wave 5 deviation 7, Wave 6 deviation 8. Adding the Organizations / Composer-M6 / Linked-accounts view-model files + the new persistence stores left Xcode's SourceKit indexer reporting stale "No such module" / "No such type" errors on first reopen. `xcodebuild` was unaffected. Resolves with **File → Packages → Reset Package Caches** or **Product → Clean Build Folder**. Carrying the note forward.
+
