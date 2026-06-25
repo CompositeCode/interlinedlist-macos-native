@@ -536,6 +536,248 @@ enum Fixtures {
         """
     }
 
+    // MARK: - Organizations (M6) fixtures
+
+    /// A single `OrganizationDTO` object body.
+    static func organizationObject(
+        id: String,
+        name: String = "Acme",
+        description: String? = "We make things",
+        isPublic: Bool? = true,
+        includeTimestamps: Bool = true
+    ) -> String {
+        let descJSON = description.map { "\"\($0)\"" } ?? "null"
+        let isPublicJSON = isPublic.map { $0 ? "true" : "false" } ?? "null"
+        let timestamps = includeTimestamps
+            ? ",\n  \"createdAt\": \"\(createdAtISO)\",\n  \"updatedAt\": \"\(createdAtISO)\""
+            : ""
+        return """
+        {
+          "id": "\(id)",
+          "name": "\(name)",
+          "description": \(descJSON),
+          "isPublic": \(isPublicJSON)\(timestamps)
+        }
+        """
+    }
+
+    /// The `{ "data": [...], "pagination": {...} }` envelope for orgs.
+    static func paginatedOrganizations(
+        ids: [String],
+        total: Int? = nil,
+        limit: Int = 20,
+        offset: Int = 0,
+        hasMore: Bool = false
+    ) -> String {
+        let objects = ids.map { organizationObject(id: $0) }.joined(separator: ",")
+        let totalValue = total ?? ids.count
+        return """
+        {
+          "data": [\(objects)],
+          "pagination": {
+            "total": \(totalValue),
+            "limit": \(limit),
+            "offset": \(offset),
+            "hasMore": \(hasMore)
+          }
+        }
+        """
+    }
+
+    /// A single `OrganizationMemberDTO` listing row (keyed by userId, no
+    /// membership-record id).
+    static func orgMemberObject(
+        userId: String,
+        role: String = "member",
+        active: Bool? = true
+    ) -> String {
+        let activeJSON = active.map { $0 ? "true" : "false" } ?? "null"
+        return """
+        {
+          "userId": "\(userId)",
+          "role": "\(role)",
+          "active": \(activeJSON),
+          "createdAt": "\(createdAtISO)"
+        }
+        """
+    }
+
+    /// The `{ "data": [...], "pagination": {...} }` envelope for members.
+    static func paginatedOrgMembers(
+        userIds: [String],
+        role: String = "member",
+        total: Int? = nil,
+        limit: Int = 20,
+        offset: Int = 0,
+        hasMore: Bool = false
+    ) -> String {
+        let objects = userIds.map { orgMemberObject(userId: $0, role: role) }.joined(separator: ",")
+        let totalValue = total ?? userIds.count
+        return """
+        {
+          "data": [\(objects)],
+          "pagination": {
+            "total": \(totalValue),
+            "limit": \(limit),
+            "offset": \(offset),
+            "hasMore": \(hasMore)
+          }
+        }
+        """
+    }
+
+    /// The `POST` / `PUT` member-mutation envelope:
+    /// `{ "message": "…", "membership": { … } }`.
+    static func orgMembershipResponse(
+        membershipId: String,
+        userId: String,
+        organizationId: String,
+        role: String,
+        active: Bool? = true,
+        message: String? = "ok"
+    ) -> String {
+        let messageJSON = message.map { "\"\($0)\"" } ?? "null"
+        let activeJSON = active.map { $0 ? "true" : "false" } ?? "null"
+        return """
+        {
+          "message": \(messageJSON),
+          "membership": {
+            "id": "\(membershipId)",
+            "userId": "\(userId)",
+            "organizationId": "\(organizationId)",
+            "role": "\(role)",
+            "active": \(activeJSON),
+            "createdAt": "\(createdAtISO)"
+          }
+        }
+        """
+    }
+
+    /// A single `OrganizationUserDTO` (user-with-role) object body.
+    static func orgUserObject(
+        id: String,
+        username: String? = "ada",
+        displayName: String? = "Ada Lovelace",
+        avatarUrl: String? = "https://cdn.interlinedlist.com/ada.png",
+        role: String? = "member"
+    ) -> String {
+        let usernameJSON = username.map { "\"\($0)\"" } ?? "null"
+        let displayJSON = displayName.map { "\"\($0)\"" } ?? "null"
+        let avatarJSON = avatarUrl.map { "\"\($0)\"" } ?? "null"
+        let roleJSON = role.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "id": "\(id)",
+          "username": \(usernameJSON),
+          "displayName": \(displayJSON),
+          "avatarUrl": \(avatarJSON),
+          "role": \(roleJSON)
+        }
+        """
+    }
+
+    /// A bare array of `OrganizationUserDTO` objects (the shape
+    /// `GET /api/organizations/[id]/users` returns).
+    static func orgUsersArray(_ entries: [(id: String, role: String?)]) -> String {
+        let objects = entries.map { orgUserObject(id: $0.id, role: $0.role) }.joined(separator: ",")
+        return "[\(objects)]"
+    }
+
+    // MARK: - User identities + organizations (M6) fixtures
+
+    /// A single `LinkedIdentityDTO` object body.
+    static func linkedIdentityObject(
+        id: String,
+        provider: String = "github",
+        providerUsername: String? = "ada",
+        profileUrl: String? = "https://github.com/ada",
+        avatarUrl: String? = "https://cdn/ada.png",
+        connectedAt: String? = createdAtISO,
+        lastVerifiedAt: String? = createdAtISO
+    ) -> String {
+        let usernameJSON = providerUsername.map { "\"\($0)\"" } ?? "null"
+        let profileJSON = profileUrl.map { "\"\($0)\"" } ?? "null"
+        let avatarJSON = avatarUrl.map { "\"\($0)\"" } ?? "null"
+        let connectedJSON = connectedAt.map { "\"\($0)\"" } ?? "null"
+        let verifiedJSON = lastVerifiedAt.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "id": "\(id)",
+          "provider": "\(provider)",
+          "providerUsername": \(usernameJSON),
+          "profileUrl": \(profileJSON),
+          "avatarUrl": \(avatarJSON),
+          "connectedAt": \(connectedJSON),
+          "lastVerifiedAt": \(verifiedJSON)
+        }
+        """
+    }
+
+    /// `GET /api/user/identities` envelope: `{ "identities": [...] }`.
+    static func identitiesEnvelope(_ objects: [String]) -> String {
+        """
+        { "identities": [\(objects.joined(separator: ","))] }
+        """
+    }
+
+    /// A single `UserOrganizationDTO` (membership-view) object body.
+    static func userOrganizationObject(
+        id: String,
+        name: String = "Acme",
+        role: String = "member",
+        isPublic: Bool? = true,
+        joinedAt: String? = createdAtISO
+    ) -> String {
+        let isPublicJSON = isPublic.map { $0 ? "true" : "false" } ?? "null"
+        let joinedJSON = joinedAt.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "id": "\(id)",
+          "name": "\(name)",
+          "isPublic": \(isPublicJSON),
+          "role": "\(role)",
+          "joinedAt": \(joinedJSON),
+          "createdAt": "\(createdAtISO)",
+          "updatedAt": "\(createdAtISO)"
+        }
+        """
+    }
+
+    /// `GET /api/user/organizations` envelope: `{ "organizations": [...] }`.
+    static func userOrganizationsEnvelope(_ objects: [String]) -> String {
+        """
+        { "organizations": [\(objects.joined(separator: ","))] }
+        """
+    }
+
+    // MARK: - Messages M6 fixtures
+
+    /// `GET /api/messages/scheduled` envelope: `{ "messages": [...] }` (no
+    /// pagination block).
+    static func scheduledMessagesEnvelope(ids: [String]) -> String {
+        let objects = ids.map {
+            messageObject(id: $0, scheduledAt: "2026-07-01T09:00:00Z")
+        }.joined(separator: ",")
+        return """
+        { "messages": [\(objects)] }
+        """
+    }
+
+    /// `POST /api/messages/images|videos/upload` envelope: `{ "url": "string" }`.
+    static func mediaUploadResponse(url: String) -> String {
+        """
+        { "url": "\(url)" }
+        """
+    }
+
+    /// A small valid PNG (1x1) the image-prep pipeline can decode, base64.
+    /// Used by the media-upload happy path so `ImagePrep.prepare` succeeds.
+    static var tinyPNGData: Data {
+        // 1x1 transparent PNG.
+        let base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        return Data(base64Encoded: base64)!
+    }
+
     /// The `GET /api/user` envelope: `{ "user": { ... } }`.
     static func userEnvelope(
         id: String = "user-ada",
