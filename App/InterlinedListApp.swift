@@ -104,7 +104,9 @@ struct InterlinedListApp: App {
         .windowResizability(.contentMinSize)
 
         Settings {
-            SettingsPlaceholderView()
+            SettingsRootView()
+                .environmentObject(environment)
+                .environment(\.appEnvironment, environment)
         }
     }
 }
