@@ -102,13 +102,10 @@ private struct SidebarDetailDispatcher: View {
         case .timeline:
             TimelineRootView()
         case .scheduled:
-            // Scheduled posts ship in M6 with cross-posting (PLAN.md §6).
-            // No dedicated folder exists yet; a tiny inline placeholder
-            // stands in until the scheduled-posts UI lands. (Previously
-            // this case reused `ComposePlaceholderView`; that file was
-            // removed in Wave 3 once the real composer landed in a
-            // dedicated window scene, so the stand-in is inline here.)
-            ScheduledPlaceholderView()
+            // M6 (Wave 7.2) — the read-only Scheduled posts list lands
+            // (PLAN.md §5 "Scheduled sidebar section", §6 M6). Replaces the
+            // inline placeholder.
+            ScheduledPostsRootView()
         case .notifications:
             NotificationsRootView()
         case .lists:
@@ -124,7 +121,10 @@ private struct SidebarDetailDispatcher: View {
             // codebase as a preview fallback while we iterate.
             DocumentsRootView()
         case .organizations:
-            OrganizationsPlaceholderView()
+            // M6 (Wave 7.3) — Organizations feature lands. The orgs list +
+            // detail + member roster with role editing replace the M0
+            // placeholder.
+            OrganizationsRootView()
         case .profile:
             ProfileRootView()
         case .connections:
@@ -133,19 +133,6 @@ private struct SidebarDetailDispatcher: View {
             // the sidebar.
             SocialRosterRootView()
         }
-    }
-}
-
-// MARK: - ScheduledPlaceholderView
-//
-// Tiny stand-in for the Scheduled sidebar section, which ships in M6
-// alongside cross-posting (PLAN.md §6 M6). Replaced when the real
-// scheduled-posts UI lands.
-private struct ScheduledPlaceholderView: View {
-    var body: some View {
-        Text("Scheduled")
-            .font(.title)
-            .foregroundStyle(.secondary)
     }
 }
 

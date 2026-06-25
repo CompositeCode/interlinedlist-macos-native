@@ -38,6 +38,12 @@ final class CurrentUserStore {
     /// substitute a stub without touching networking or actors.
     private let session: SessionManaging
 
+    /// Optional live-entitlements box the domain `MessagesService` gate reads
+    /// (Deliverable B / PLAN.md §8). When present, every resolved session state
+    /// publishes its `customerStatus` here so the off-actor domain gate tracks
+    /// the live account. `nil` in tests that don't exercise the domain backstop.
+    private let liveEntitlements: LiveEntitlements?
+
     /// The signed-in account, or `nil` when signed out / not yet
     /// resolved. The Timeline / Detail views gate edit / delete on
     /// this being non-nil and matching the message author.
@@ -60,8 +66,9 @@ final class CurrentUserStore {
     /// the Observation macro does not permit on a stored property.
     private var subscription: Task<Void, Never>?
 
-    init(session: SessionManaging) {
+    init(session: SessionManaging, liveEntitlements: LiveEntitlements? = nil) {
         self.session = session
+        self.liveEntitlements = liveEntitlements
     }
 
     /// Subscribes to the session state stream. Safe to call multiple
@@ -97,8 +104,11 @@ final class CurrentUserStore {
     }
 
     /// Applied on the main actor so the published `currentUser` change
-    /// stays UI-thread-safe.
+    /// stays UI-thread-safe. Also publishes the live `customerStatus` into
+    /// the entitlements box (when wired) so the off-actor domain gate
+    /// re-evaluates against the current account on its next call.
     private func apply(_ state: SessionState) {
         currentUser = state.currentUser
+        liveEntitlements?.update(user: state.currentUser)
     }
 }

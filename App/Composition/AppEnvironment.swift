@@ -48,6 +48,27 @@ final class AppEnvironment: ObservableObject {
     /// (PLAN.md §6 M2 rule: never "enabled but broken").
     let currentUserStore: CurrentUserStore
 
+    /// The current account's entitlements, computed live from
+    /// `currentUserStore.currentUser` (Deliverable B / PLAN.md §6 M6 — feature
+    /// gating). The composer reads this on every render to decide whether the
+    /// media / scheduled / cross-post controls are enabled. This is the
+    /// authoritative *UI* gate; the domain `MessagesService` enforces the same
+    /// status as a backstop. Read on the main actor — a pure value, no I/O.
+    var liveEntitlements: EntitlementsService {
+        EntitlementsService(user: currentUserStore.currentUser)
+    }
+
+    /// Re-resolves the signed-in account's `customerStatus` (PLAN.md §8 — a
+    /// gated call returning 403 means the subscription lapsed mid-session, so
+    /// the UI must re-gate). The composer calls this when a gated `createPost`
+    /// surfaces a 403; `restore()` flows the refreshed `CurrentUser` through
+    /// both the UI gate (`currentUserStore.currentUser`) and the domain backstop
+    /// (the `LiveEntitlements` box). Errors are intentionally swallowed — a
+    /// failed re-fetch leaves the prior (conservative) gate in place.
+    func refreshEntitlements() async {
+        _ = try? await currentUserStore.restore()
+    }
+
     /// Cross-window event bus the composer / repost sheet / detail
     /// view post to after a successful create / reply / repost /
     /// update / delete. Open Timeline / Detail views subscribe and
@@ -112,6 +133,17 @@ final class AppEnvironment: ObservableObject {
     /// as the protocol so tests substitute a stub.
     let followRelationshipReader: FollowRelationshipReading
 
+    /// The organizations surface the M6 Organizations feature binds
+    /// against (PLAN.md §1 "Organizations", §6 M6). Exposed as the
+    /// protocol so test doubles substitute in.
+    let orgService: OrgServicing
+
+    /// The account-self surface the M6 Settings > Linked-accounts pane
+    /// binds against — linked identities and (browser-handoff) OAuth
+    /// link URLs (PLAN.md §1 "Profile & account", §6 M6). Exposed as
+    /// the protocol so test doubles substitute in.
+    let userService: UserServicing
+
     /// Designated initializer used by tests and previews that want to
     /// inject a fully synthetic service graph. Production code calls
     /// `live()` instead.
@@ -130,7 +162,9 @@ final class AppEnvironment: ObservableObject {
         notificationsService: NotificationsServicing,
         notificationsEventBus: NotificationsEventBus,
         followCountsStore: SwiftDataFollowCountsStore?,
-        followRelationshipReader: FollowRelationshipReading
+        followRelationshipReader: FollowRelationshipReading,
+        orgService: OrgServicing,
+        userService: UserServicing
     ) {
         self.messages = messages
         self.lists = lists
@@ -147,6 +181,8 @@ final class AppEnvironment: ObservableObject {
         self.notificationsEventBus = notificationsEventBus
         self.followCountsStore = followCountsStore
         self.followRelationshipReader = followRelationshipReader
+        self.orgService = orgService
+        self.userService = userService
     }
 
     /// Builds the production service graph:
@@ -179,7 +215,18 @@ final class AppEnvironment: ObservableObject {
         )
         let api = APIClient(authTransport: authTransport)
         let store = Self.makeMessageStore()
-        let messages = MessagesService(api: api, store: store)
+        // Deliverable B (PLAN.md §8): the domain `MessagesService` gate must
+        // track the live account, not a `.free` snapshot taken at launch. The
+        // box starts `.free` (signed-out) and is updated by `CurrentUserStore`
+        // on every resolved session state, so a real subscriber is granted M6
+        // features once sign-in resolves and a mid-session lapse re-gates. The
+        // provider closure is evaluated by the service on every gated call.
+        let liveEntitlements = LiveEntitlements()
+        let messages = MessagesService(
+            api: api,
+            store: store,
+            entitlementsProvider: { liveEntitlements.current() }
+        )
         // Reuse the same kit-layer APIClient: M1 list browsing hits the
         // same Bearer-only public endpoints the timeline does, so a
         // second client would be redundant and would double up auth
@@ -193,7 +240,9 @@ final class AppEnvironment: ObservableObject {
         // sign-out clears the timeline cache.
         let auth = AuthService(api: api, tokenStore: tokenStore)
         let session = SessionService(auth: auth, api: api, cache: store)
-        let currentUserStore = CurrentUserStore(session: session)
+        // Hand the same box to the store so resolved sessions publish their
+        // `customerStatus` into the source the domain gate reads (Deliverable B).
+        let currentUserStore = CurrentUserStore(session: session, liveEntitlements: liveEntitlements)
         let composerEventBus = ComposerEventBus()
         let listsEventBus = ListsEventBus()
         let listsStore = Self.makeListsStore()
@@ -227,6 +276,14 @@ final class AppEnvironment: ObservableObject {
         let notificationsEventBus = NotificationsEventBus()
         let followCountsStore = Self.makeFollowCountsStore()
         let followRelationshipReader = SocialFollowRelationshipReader(social: social)
+        // M6 — Organizations + linked-accounts (PLAN.md §6 M6). Both reuse
+        // the same kit-layer `APIClient` like `lists` / `social` do: the org
+        // endpoints are Bearer and the user identity / org endpoints are the
+        // decision-0001 session allowlist, both already routed by the shared
+        // `authTransport`. `UserService` takes the default production base URL
+        // for the browser-handoff OAuth link flow.
+        let orgService = OrgService(api: api)
+        let userService = UserService(api: api)
         return AppEnvironment(
             messages: messages,
             lists: lists,
@@ -242,7 +299,9 @@ final class AppEnvironment: ObservableObject {
             notificationsService: notificationsService,
             notificationsEventBus: notificationsEventBus,
             followCountsStore: followCountsStore,
-            followRelationshipReader: followRelationshipReader
+            followRelationshipReader: followRelationshipReader,
+            orgService: orgService,
+            userService: userService
         )
     }
 

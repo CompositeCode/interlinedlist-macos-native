@@ -29,6 +29,11 @@ struct RecordedMessagesCall: Sendable, Equatable {
         case delete(messageId: String)
         case dig(messageId: String)
         case undig(messageId: String)
+        // M6 write surface (additive — see the M6 conformance block below).
+        case createPost(body: String, tags: [String], visibility: Visibility, imageURLs: [String], videoURLs: [String], scheduledAt: Date?, mastodonProviderIds: [String], crossPostToBluesky: Bool, crossPostToLinkedIn: Bool)
+        case scheduledPosts
+        case uploadImage(byteCount: Int)
+        case uploadVideo(byteCount: Int, contentType: String)
     }
     let kind: Kind
 }
@@ -50,6 +55,11 @@ actor StubMessagesService: MessagesServicing {
     private var messageOutcomes: [Result<Message, Error>] = []
     private var repliesOutcomes: [Result<[Message], Error>] = []
     private var timelineOutcomes: [Result<TimelinePage, Error>] = []
+    // M6 write-surface queues (additive — see the M6 conformance block below).
+    private var createPostOutcomes: [Result<Message, Error>] = []
+    private var scheduledPostsOutcomes: [Result<[Message], Error>] = []
+    private var uploadImageOutcomes: [Result<String, Error>] = []
+    private var uploadVideoOutcomes: [Result<String, Error>] = []
 
     private(set) var recorded: [RecordedMessagesCall] = []
 
@@ -84,6 +94,18 @@ actor StubMessagesService: MessagesServicing {
 
     func enqueueTimeline(success page: TimelinePage) { timelineOutcomes.append(.success(page)) }
     func enqueueTimeline(failure error: Error) { timelineOutcomes.append(.failure(error)) }
+
+    func enqueueCreatePost(success message: Message) { createPostOutcomes.append(.success(message)) }
+    func enqueueCreatePost(failure error: Error) { createPostOutcomes.append(.failure(error)) }
+
+    func enqueueScheduledPosts(success posts: [Message]) { scheduledPostsOutcomes.append(.success(posts)) }
+    func enqueueScheduledPosts(failure error: Error) { scheduledPostsOutcomes.append(.failure(error)) }
+
+    func enqueueUploadImage(success url: String) { uploadImageOutcomes.append(.success(url)) }
+    func enqueueUploadImage(failure error: Error) { uploadImageOutcomes.append(.failure(error)) }
+
+    func enqueueUploadVideo(success url: String) { uploadVideoOutcomes.append(.success(url)) }
+    func enqueueUploadVideo(failure error: Error) { uploadVideoOutcomes.append(.failure(error)) }
 
     // MARK: MessagesServicing — reads
 
@@ -167,6 +189,56 @@ actor StubMessagesService: MessagesServicing {
     func undig(messageId: String) async throws -> Message {
         recorded.append(.init(kind: .undig(messageId: messageId)))
         return try take(&undigOutcomes, label: "undig")
+    }
+
+    // MARK: MessagesServicing — M6 write surface
+    //
+    // Additive conformance added by the Wave 7.3/7.4 (Organizations +
+    // Linked-accounts) agent purely to keep the App test bundle compiling
+    // after the uncommitted M6 `MessagesServicing` expansion (createPost /
+    // scheduledPosts / uploadImage / uploadVideo). It mirrors the existing
+    // FIFO-queue style so the Composer agent — which owns the M6 messages /
+    // entitlements / scheduled wiring — can write tests against it directly.
+    // No existing behavior changed.
+
+    func createPost(
+        body: String,
+        tags: [String],
+        visibility: Visibility,
+        imageURLs: [String],
+        videoURLs: [String],
+        scheduledAt: Date?,
+        mastodonProviderIds: [String],
+        crossPostToBluesky: Bool,
+        crossPostToLinkedIn: Bool
+    ) async throws -> Message {
+        recorded.append(.init(kind: .createPost(
+            body: body,
+            tags: tags,
+            visibility: visibility,
+            imageURLs: imageURLs,
+            videoURLs: videoURLs,
+            scheduledAt: scheduledAt,
+            mastodonProviderIds: mastodonProviderIds,
+            crossPostToBluesky: crossPostToBluesky,
+            crossPostToLinkedIn: crossPostToLinkedIn
+        )))
+        return try take(&createPostOutcomes, label: "createPost")
+    }
+
+    func scheduledPosts() async throws -> [Message] {
+        recorded.append(.init(kind: .scheduledPosts))
+        return try take(&scheduledPostsOutcomes, label: "scheduledPosts")
+    }
+
+    func uploadImage(_ data: Data) async throws -> String {
+        recorded.append(.init(kind: .uploadImage(byteCount: data.count)))
+        return try take(&uploadImageOutcomes, label: "uploadImage")
+    }
+
+    func uploadVideo(_ data: Data, contentType: String) async throws -> String {
+        recorded.append(.init(kind: .uploadVideo(byteCount: data.count, contentType: contentType)))
+        return try take(&uploadVideoOutcomes, label: "uploadVideo")
     }
 
     // MARK: - Internals

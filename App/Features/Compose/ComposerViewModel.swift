@@ -1,17 +1,30 @@
 // ComposerViewModel
 //
 // Drives the composer window for new posts and edits (PLAN.md §6 M2 —
-// "Composer window"). The view is a thin shell: this owns the body
-// text, the tag-input string, the visibility toggle, the `isSubmitting`
-// flag, and the validation rule for empty body. On submit it calls
-// `MessagesServicing.create` for `.newPost` or `.update` for `.edit`,
-// then posts a `ComposerEvent` so any open Timeline / Detail screen
-// can mutate its rendered list in place.
+// "Composer window"; §6 M6 — media / scheduled / cross-post). The view
+// is a thin shell: this owns the body text, the tag-input string, the
+// visibility toggle, the M6 attachment / schedule / cross-post state,
+// the `isSubmitting` flag, and the validation rule for empty body.
 //
-// Reply and repost are *not* driven by this view model — reply lives
+// On submit:
+//   • `.edit` → `MessagesServicing.update` (M6 fields don't apply to an
+//     edit — the composer surfaces them only for new posts).
+//   • `.newPost` → upload each attachment to get its hosted URL, then
+//     `MessagesServicing.createPost` with the full M6 field set. The
+//     domain service gates media / schedule / cross-post before the HTTP
+//     call; this view model also gates the *UI* (controls disabled for
+//     non-subscribers) so the user never reaches an "enabled but broken"
+//     control (PLAN.md §6 M2 rule).
+//
+// On a gated `createPost` returning a 403 (subscription lapsed
+// mid-session, PLAN.md §8), `onSubscriberLapse` is invoked so the
+// composition root can re-fetch `customerStatus` and the UI re-gates.
+//
+// Reply and repost are not driven by this view model — reply lives
 // inline at the bottom of `MessageDetailView`, and repost goes through
-// a small sheet on the row. Both have their own view models so this
-// composer stays simple and focused on the "long-form" cases.
+// a small sheet on the row.
+//
+// Per Decision 0003 this view model consumes only `InterlinedDomain`.
 
 import Foundation
 import Observation
@@ -27,47 +40,107 @@ final class ComposerViewModel {
     private let eventBus: ComposerEventBus
     let mode: ComposerMode
 
+    /// The current account's entitlements, used for the *UI* gate (controls
+    /// disabled + upsell hint for non-subscribers). Authoritative for UX; the
+    /// domain `MessagesService` enforces the same status as a backstop.
+    private(set) var entitlements: EntitlementsService
+
+    /// Reads a local file's bytes at send time. Injected so tests can supply
+    /// bytes without touching the filesystem; production reads the file URL.
+    private let readData: @Sendable (URL) async throws -> Data
+
+    /// Invoked when a gated write surfaces a subscription lapse (403 /
+    /// `.subscriberRequired`) so the composition root can re-fetch
+    /// `customerStatus` and the UI re-gates (PLAN.md §8). Optional — `nil` in
+    /// tests that don't assert the refresh hook.
+    private let onSubscriberLapse: (@MainActor () async -> Void)?
+
     // MARK: - Editable state
 
-    /// Body text of the post. Markdown source — the composer treats it
-    /// as plain text for M2 (no toolbar) per PLAN.md §6 M2.
+    /// Body text of the post. Markdown source — treated as plain text here
+    /// (no toolbar) per PLAN.md §6 M2.
     var body: String
 
-    /// Free-form tag input. Tags are split on commas and whitespace,
-    /// `#` is stripped, and empty tokens are dropped. We hold the
-    /// user's raw input string so the cursor / typing experience is
-    /// not interrupted by re-normalisation while typing.
+    /// Free-form tag input. Split on commas / whitespace; `#` stripped;
+    /// empty tokens dropped. Held raw so typing isn't interrupted by
+    /// re-normalisation.
     var tagsInput: String
 
-    /// Public or private visibility. Defaults to public for new posts;
-    /// pre-populated from the original message for edits.
+    /// Public or private visibility.
     var visibility: Visibility
+
+    // MARK: - M6 editable state
+
+    /// Pending media attachments (local file URLs). Uploaded at send time.
+    private(set) var attachments: [ComposerAttachment] = []
+
+    /// Whether the post is scheduled for the future rather than posted now.
+    /// Toggling on seeds `scheduledAt` with a near-future default.
+    var isScheduled: Bool = false
+
+    /// The future publish time when `isScheduled`. Ignored when scheduling is
+    /// off. Defaults to one hour out so the picker opens on a valid value.
+    var scheduledAt: Date
+
+    /// Cross-post targets. Mastodon is a single enable + comma/space-separated
+    /// provider-id entry (v1 — see note in the file header / report). Bluesky
+    /// and LinkedIn are simple booleans the API takes directly.
+    var crossPostToMastodon: Bool = false
+    var mastodonProviderIdsInput: String = ""
+    var crossPostToBluesky: Bool = false
+    var crossPostToLinkedIn: Bool = false
 
     // MARK: - Read-only state
 
-    /// True while a `create` / `update` round-trip is in flight.
+    /// True while a submit round-trip (uploads + create / update) is in flight.
     private(set) var isSubmitting: Bool = false
 
     /// The last submission error. Cleared on the next submit.
     private(set) var error: Error?
 
-    /// Set to `true` after a successful publish; the window observes
-    /// this to dismiss itself. Stored rather than fired so a test can
-    /// inspect the post-success state without coupling to the
-    /// dismissal mechanism.
+    /// Set to `true` after a successful publish; the window observes this to
+    /// dismiss itself.
     private(set) var didFinish: Bool = false
+
+    // MARK: - Derived gating
+
+    /// Whether the account may use the subscriber-gated M6 controls. Drives the
+    /// disabled state + upsell hint in the view; the controls render visible-
+    /// but-disabled so the features stay discoverable (PLAN.md §6 M2 rule).
+    var canUseSubscriberFeatures: Bool {
+        entitlements.isSubscriber
+    }
+
+    /// Whether the M6 controls should appear at all. Edits don't expose media /
+    /// schedule / cross-post — those apply to a fresh post only.
+    var showsSubscriberControls: Bool {
+        if case .newPost = mode { return true }
+        return false
+    }
+
+    /// The primary-action label. Reflects the schedule-vs-post-now affordance
+    /// (PLAN.md §6 M6) for a new post; falls back to the mode's label for an
+    /// edit.
+    var publishButtonLabel: String {
+        if showsSubscriberControls, isScheduled {
+            return "Schedule"
+        }
+        return mode.publishButtonLabel
+    }
 
     // MARK: - Validation
 
-    /// Whether the current body would be accepted for submit.
-    ///
-    /// Empty body is rejected by the M2 composer per the task
-    /// requirements ("Validate non-empty body"). The domain layer does
-    /// not pre-validate — that's deliberate so reposts can carry an
-    /// empty body — but this composer is the new-post / edit surface,
-    /// where an empty body is always an error.
+    /// Whether the current draft would be accepted for submit. Empty body is
+    /// rejected by the composer (a new post / edit always needs text). A
+    /// future-only schedule is also required when scheduling is on.
     var isPublishable: Bool {
-        !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        if showsSubscriberControls, isScheduled, scheduledAt <= Date() {
+            return false
+        }
+        return true
     }
 
     // MARK: - Init
@@ -75,11 +148,18 @@ final class ComposerViewModel {
     init(
         messages: MessagesServicing,
         eventBus: ComposerEventBus,
-        mode: ComposerMode = .newPost
+        mode: ComposerMode = .newPost,
+        entitlements: EntitlementsService = EntitlementsService(customerStatus: .free),
+        readData: @escaping @Sendable (URL) async throws -> Data = { try Data(contentsOf: $0) },
+        onSubscriberLapse: (@MainActor () async -> Void)? = nil
     ) {
         self.messages = messages
         self.eventBus = eventBus
         self.mode = mode
+        self.entitlements = entitlements
+        self.readData = readData
+        self.onSubscriberLapse = onSubscriberLapse
+        self.scheduledAt = Date().addingTimeInterval(3600)
         switch mode {
         case .newPost:
             self.body = ""
@@ -94,16 +174,42 @@ final class ComposerViewModel {
 
     // MARK: - Intents
 
-    /// Toggles between public and private. Bound to the visibility
-    /// segment / picker in the view.
     func setVisibility(_ visibility: Visibility) {
         self.visibility = visibility
     }
 
-    /// Submits the post. Validates `isPublishable` first; bails out
-    /// silently if invalid (the view's publish button is disabled in
-    /// that case, but defence-in-depth never hurts). On success posts
-    /// a `ComposerEvent` and flips `didFinish` so the window dismisses.
+    /// Adds picked / dropped file URLs as attachments. Unsupported file types
+    /// are surfaced as an error rather than silently dropped. No-op for
+    /// non-subscribers (the affordance is disabled in the view, but this is
+    /// defence-in-depth so a programmatic add can't bypass the gate's intent).
+    func addAttachments(urls: [URL]) {
+        guard canUseSubscriberFeatures else {
+            error = MessagesError.subscriberRequired(.mediaAttachments)
+            return
+        }
+        var rejected = false
+        for url in urls {
+            if let attachment = ComposerAttachment(url: url) {
+                attachments.append(attachment)
+            } else {
+                rejected = true
+            }
+        }
+        if rejected {
+            error = ComposerError.unsupportedAttachment
+        }
+    }
+
+    /// Removes one queued attachment by id.
+    func removeAttachment(id: ComposerAttachment.ID) {
+        attachments.removeAll { $0.id == id }
+    }
+
+    /// Submits the draft. Validates `isPublishable` first; bails silently if
+    /// invalid (the publish button is disabled, but defence-in-depth). For a
+    /// new post: uploads each attachment, then calls `createPost` with the full
+    /// M6 field set. For an edit: calls `update`. On success posts a
+    /// `ComposerEvent` and flips `didFinish`.
     func submit() async {
         guard isPublishable, !isSubmitting else { return }
         isSubmitting = true
@@ -116,15 +222,7 @@ final class ComposerViewModel {
         do {
             switch mode {
             case .newPost:
-                let created = try await messages.create(
-                    body: trimmedBody,
-                    parentId: nil,
-                    tags: normalisedTags,
-                    visibility: visibility,
-                    pushedMessageId: nil
-                )
-                eventBus.post(.messageCreated(created))
-                didFinish = true
+                try await submitNewPost(body: trimmedBody, tags: normalisedTags)
             case .edit(let id, _):
                 let updated = try await messages.update(
                     messageId: id,
@@ -136,15 +234,81 @@ final class ComposerViewModel {
                 didFinish = true
             }
         } catch {
-            self.error = error
+            await handle(error: error)
         }
+    }
+
+    // MARK: - New-post pipeline
+
+    private func submitNewPost(body trimmedBody: String, tags: [String]) async throws {
+        // 1. Upload media. Images and videos run through their own gated
+        //    upload methods; the returned hosted URLs are what `createPost`
+        //    references. Throws (and aborts the post) if any upload fails.
+        var imageURLs: [String] = []
+        var videoURLs: [String] = []
+        for attachment in attachments {
+            let bytes = try await readData(attachment.url)
+            switch attachment.kind {
+            case .image:
+                imageURLs.append(try await messages.uploadImage(bytes))
+            case .video:
+                videoURLs.append(
+                    try await messages.uploadVideo(bytes, contentType: attachment.videoContentType)
+                )
+            }
+        }
+
+        // 2. Resolve the M6 field set from the current controls.
+        let scheduled: Date? = isScheduled ? scheduledAt : nil
+        let mastodonProviderIds = crossPostToMastodon
+            ? Self.normalise(providerIds: mastodonProviderIdsInput)
+            : []
+
+        // 3. Create the post. The domain service gates media / schedule /
+        //    cross-post before the HTTP call; the UI gate above keeps the user
+        //    from reaching here un-entitled in the normal flow.
+        let created = try await messages.createPost(
+            body: trimmedBody,
+            tags: tags,
+            visibility: visibility,
+            imageURLs: imageURLs,
+            videoURLs: videoURLs,
+            scheduledAt: scheduled,
+            mastodonProviderIds: mastodonProviderIds,
+            crossPostToBluesky: crossPostToBluesky,
+            crossPostToLinkedIn: crossPostToLinkedIn
+        )
+        eventBus.post(.messageCreated(created))
+        didFinish = true
+    }
+
+    // MARK: - Error handling
+
+    /// Surfaces the error and, when it signals a subscription lapse, asks the
+    /// composition root to re-fetch `customerStatus` so the UI re-gates
+    /// (PLAN.md §8). A `.subscriberRequired` domain error or a 403-style API
+    /// error both trigger the refresh.
+    private func handle(error: Error) async {
+        self.error = error
+        if Self.signalsSubscriberLapse(error) {
+            await onSubscriberLapse?()
+        }
+    }
+
+    /// Whether `error` indicates the account lost (or never had) entitlement
+    /// mid-flow. The domain gate throws `.subscriberRequired`; a server-side
+    /// lapse surfaces as a 403 in the error's text. We match conservatively on
+    /// both so the refresh hook fires for either.
+    private static func signalsSubscriberLapse(_ error: Error) -> Bool {
+        if case MessagesError.subscriberRequired = error { return true }
+        let text = error.localizedDescription.lowercased()
+        return text.contains("403") || text.contains("forbidden") || text.contains("subscri")
     }
 
     // MARK: - Tag normalisation
 
-    /// Splits the raw input on commas / whitespace and trims a leading
-    /// `#` so users can type either form. Order is preserved; duplicates
-    /// are dropped to avoid sending the same tag twice.
+    /// Splits the raw input on commas / whitespace and trims a leading `#`.
+    /// Order preserved; duplicates dropped.
     static func normalise(tags input: String) -> [String] {
         var seen: Set<String> = []
         var ordered: [String] = []
@@ -158,5 +322,37 @@ final class ComposerViewModel {
             }
         }
         return ordered
+    }
+
+    /// Splits Mastodon provider-id input on commas / whitespace. No `#`
+    /// stripping (provider ids are opaque). Order preserved; duplicates dropped.
+    static func normalise(providerIds input: String) -> [String] {
+        var seen: Set<String> = []
+        var ordered: [String] = []
+        let separators = CharacterSet(charactersIn: ", \t\n")
+        for raw in input.components(separatedBy: separators) {
+            let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !token.isEmpty else { continue }
+            if seen.insert(token).inserted {
+                ordered.append(token)
+            }
+        }
+        return ordered
+    }
+}
+
+// MARK: - ComposerError
+
+/// Composer-local errors that aren't domain errors — surfaced inline in the
+/// composer's error banner.
+enum ComposerError: Error, LocalizedError, Equatable {
+    /// A picked / dropped file isn't a supported image or video type.
+    case unsupportedAttachment
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedAttachment:
+            return "That file isn't a supported image or video."
+        }
     }
 }
