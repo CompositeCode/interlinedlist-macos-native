@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- InterlinedList — Strata · Android color resources
+     Put brand colors in values/colors.xml, then map them per theme in
+     values/themes.xml (light) and values-night/themes.xml (dark). -->
+<resources>
+    <!-- Brand (constant) -->
+    <color name="il_green">#FF2FA877</color>
+    <color name="il_green_hover">#FF28936A</color>
+    <color name="il_green_dark">#FF3FBF8C</color>
+    <color name="il_teal">#FF184860</color>
+    <color name="il_teal_deep">#FF0C2C3A</color>
+    <color name="il_teal_accent">#FF7FB8C4</color>
+    <color name="il_teal_bright">#FF4FD09C</color>
+    <color name="il_amber">#FFF0A830</color>
+    <color name="il_amber_hover">#FFDB9720</color>
+
+    <!-- Light theme -->
+    <color name="il_bg_light">#FFF4EEE2</color>
+    <color name="il_surface_light">#FFFBF7EF</color>
+    <color name="il_surface2_light">#FFF6F1E7</color>
+    <color name="il_text_light">#FF16323C</color>
+    <color name="il_text_body_light">#FF22383E</color>
+    <color name="il_text_muted_light">#8C184860</color>
+    <color name="il_masthead_light">#FF184860</color>
+
+    <!-- Dark theme (values-night) -->
+    <color name="il_bg_dark">#FF121317</color>
+    <color name="il_surface_dark">#FF17191F</color>
+    <color name="il_surface2_dark">#FF1B1D23</color>
+    <color name="il_text_dark">#FFF3F1EA</color>
+    <color name="il_text_body_dark">#D9F3F1EA</color>
+    <color name="il_text_muted_dark">#73F3F1EA</color>
+    <color name="il_masthead_dark">#FF0C2C3A</color>
+</resources>

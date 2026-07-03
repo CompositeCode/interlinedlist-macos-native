@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InterlinedList — Brand Guidelines (Strata)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --green:#2FA877;--teal:#184860;--amber:#F0A830;
+    --bg:#F4EEE2;--surface:#FBF7EF;--surface2:#F6F1E7;--border:rgba(24,72,96,.14);
+    --ink:#16323C;--body:#22383E;--muted:rgba(24,72,96,.55);
+    --disp:'Space Grotesk',sans-serif;--font:'Manrope',sans-serif;--mono:'JetBrains Mono',monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--body);font-family:var(--font);-webkit-font-smoothing:antialiased;line-height:1.55}
+  .page{max-width:940px;margin:0 auto;padding:56px 48px}
+  section{padding:44px 0;border-top:1px solid var(--border)}
+  section:first-of-type{border-top:0}
+  h1{font-family:var(--disp);font-weight:700;color:var(--ink);letter-spacing:-.02em;margin:0}
+  h2{font-family:var(--disp);font-weight:700;color:var(--ink);font-size:22px;letter-spacing:-.01em;margin:0 0 6px}
+  .kicker{font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin:0 0 18px}
+  p{font-size:14px;max-width:640px}
+  .mono{font-family:var(--mono)}
+  .grid{display:flex;flex-wrap:wrap;gap:16px}
+  .swatch{flex:1;min-width:150px;border:1px solid var(--border);border-radius:4px;overflow:hidden;background:var(--surface)}
+  .swatch .chip{height:92px}
+  .swatch .lbl{padding:12px 14px}
+  .swatch .lbl b{font-family:var(--disp);font-size:13px;color:var(--ink);display:block}
+  .swatch .lbl .hex{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .swatch .lbl .role{font-size:11px;color:var(--muted);margin-top:3px}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:22px 24px}
+  .btn{font-family:var(--disp);font-weight:600;font-size:12px;padding:9px 17px;border-radius:3px;border:0;display:inline-block}
+  .btn.primary{background:var(--green);color:#fff}
+  .btn.ghost{background:transparent;color:var(--green);border:1px solid var(--green)}
+  .btn.disabled{background:rgba(24,72,96,.1);color:var(--muted)}
+  .tag{font-family:var(--mono);font-weight:500;font-size:10px;padding:4px 8px;border-radius:3px}
+  .iconrow{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-end}
+  .icell{text-align:center}
+  .icell .cap{font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:8px}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border)}
+  th{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .do,.dont{flex:1;min-width:240px;border-radius:4px;padding:16px 18px;font-size:13px}
+  .do{background:rgba(47,168,119,.1);border:1px solid rgba(47,168,119,.3)}
+  .dont{background:rgba(224,72,77,.08);border:1px solid rgba(224,72,77,.3)}
+  .do b{color:var(--green)} .dont b{color:#C0403F}
+  @media print{ body{background:#fff} .page{padding:0 24px} section{break-inside:avoid} }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Cover -->
+  <section style="padding-top:8px">
+    <p class="kicker">Brand Guidelines</p>
+    <div style="display:flex;align-items:center;gap:18px">
+      <img src="../logo/logo-icon-master.png" alt="InterlinedList" style="width:66px;height:66px">
+      <h1 style="font-size:44px">Interlined<span style="color:var(--green)">List</span></h1>
+    </div>
+    <p style="font-family:var(--mono);font-size:13px;color:var(--teal);margin-top:18px;letter-spacing:.03em">Ordering streams across the chaos</p>
+    <p style="margin-top:18px">The <b>Strata</b> system: deep-teal structure, green as the action color, amber for live &amp; Dig moments, over a soft-sand light theme and a near-black dark theme. This document is the visual reference; machine-readable tokens live in <span class="mono">theme/tokens.json</span>.</p>
+  </section>
+
+  <!-- Logo -->
+  <section>
+    <p class="kicker">01 · The mark</p>
+    <h2>Logo</h2>
+    <p>The mark braids three streams — teal, green, amber — into a single ordered form. Use the master at <span class="mono">logo/logo-icon-master.png</span>. Preserve clear space of at least 25% of the mark's width on all sides.</p>
+    <div class="grid" style="margin-top:20px">
+      <div class="card" style="text-align:center;flex:1"><img src="../logo/logo-icon-master.png" style="width:96px;height:96px"><div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:10px">On sand · preferred</div></div>
+      <div class="card" style="text-align:center;flex:1;background:#121317"><img src="../logo/logo-icon-master.png" style="width:96px;height:96px"><div style="font-family:var(--mono);font-size:10px;color:rgba(243,241,234,.5);margin-top:10px">On near-black · dark</div></div>
+      <div class="card" style="flex:1;display:flex;align-items:center;justify-content:center;gap:12px"><img src="../logo/logo-icon-master.png" style="width:40px;height:40px"><span style="font-family:var(--disp);font-weight:700;font-size:26px;color:var(--ink);letter-spacing:-.02em">Interlined<span style="color:var(--green)">List</span></span></div>
+    </div>
+    <div class="grid" style="margin-top:16px">
+      <div class="do"><b>Do</b> — keep the mark on sand or near-black; pair the wordmark with the "List" accent color.</div>
+      <div class="dont"><b>Don't</b> — place the mark on saturated teal (the teal strokes vanish), recolor it, or stretch it.</div>
+    </div>
+  </section>
+
+  <!-- Color -->
+  <section>
+    <p class="kicker">02 · Color</p>
+    <h2>Brand palette</h2>
+    <p>Three brand colors drawn from the mark, plus theme neutrals. Green leads action; teal builds structure; amber marks what's live.</p>
+    <div class="grid" style="margin-top:18px">
+      <div class="swatch"><div class="chip" style="background:#2FA877"></div><div class="lbl"><b>Green</b><span class="hex">#2FA877</span><div class="role">Primary action</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#184860"></div><div class="lbl"><b>Teal</b><span class="hex">#184860</span><div class="role">Structure / masthead</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#F0A830"></div><div class="lbl"><b>Amber</b><span class="hex">#F0A830</span><div class="role">Live / Dig / highlight</div></div></div>
+    </div>
+    <div class="grid" style="margin-top:16px">
+      <div class="swatch"><div class="chip" style="background:#F4EEE2"></div><div class="lbl"><b>Sand base</b><span class="hex">#F4EEE2</span><div class="role">Light background</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#FBF7EF"></div><div class="lbl"><b>Surface</b><span class="hex">#FBF7EF</span><div class="role">Light cards</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#121317"></div><div class="lbl"><b>Near-black</b><span class="hex">#121317</span><div class="role">Dark background</div></div></div>
+      <div class="swatch"><div class="chip" style="background:#0C2C3A"></div><div class="lbl"><b>Deep teal</b><span class="hex">#0C2C3A</span><div class="role">Dark masthead</div></div></div>
+    </div>
+    <table>
+      <tr><th>Role</th><th>Light</th><th>Dark</th></tr>
+      <tr><td>Primary action</td><td class="mono">#2FA877</td><td class="mono">#3FBF8C</td></tr>
+      <tr><td>Text</td><td class="mono">#16323C</td><td class="mono">#F3F1EA</td></tr>
+      <tr><td>Link</td><td class="mono">#184860</td><td class="mono">#7FB8C4</td></tr>
+      <tr><td>Border</td><td class="mono">rgba(24,72,96,.12)</td><td class="mono">rgba(255,255,255,.08)</td></tr>
+    </table>
+  </section>
+
+  <!-- Type -->
+  <section>
+    <p class="kicker">03 · Typography</p>
+    <h2>Type system</h2>
+    <div class="grid" style="margin-top:12px">
+      <div class="card" style="flex:1"><div style="font-family:var(--disp);font-weight:700;font-size:30px;color:var(--ink)">Space Grotesk</div><div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px">Display · wordmark · headings · 700/600</div></div>
+      <div class="card" style="flex:1"><div style="font-family:var(--font);font-weight:400;font-size:22px;color:var(--ink)">Manrope</div><div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px">Body · UI · reading · 400/500/600</div></div>
+      <div class="card" style="flex:1"><div style="font-family:var(--mono);font-weight:500;font-size:20px;color:var(--ink)">JetBrains Mono</div><div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px">Timestamps · counts · meta</div></div>
+    </div>
+    <table>
+      <tr><th>Style</th><th>Font / weight</th><th>Size</th></tr>
+      <tr><td>Display</td><td>Space Grotesk 700</td><td class="mono">28 / 44</td></tr>
+      <tr><td>Title</td><td>Space Grotesk 700</td><td class="mono">17</td></tr>
+      <tr><td>Body</td><td>Manrope 400</td><td class="mono">13</td></tr>
+      <tr><td>Meta</td><td>JetBrains Mono 500</td><td class="mono">10</td></tr>
+    </table>
+  </section>
+
+  <!-- Spacing / radius / components -->
+  <section>
+    <p class="kicker">04 · System</p>
+    <h2>Spacing, radius &amp; components</h2>
+    <div class="grid" style="margin-top:14px;align-items:flex-start">
+      <div class="card" style="flex:1;min-width:220px">
+        <div style="font-family:var(--disp);font-weight:700;font-size:13px;color:var(--ink);margin-bottom:12px">Spacing · 4pt grid</div>
+        <div style="display:flex;align-items:flex-end;gap:7px">
+          <span style="width:4px;height:4px;background:var(--teal)"></span><span style="width:8px;height:8px;background:var(--teal)"></span><span style="width:12px;height:12px;background:var(--teal)"></span><span style="width:16px;height:16px;background:var(--teal)"></span><span style="width:20px;height:20px;background:var(--teal)"></span><span style="width:24px;height:24px;background:var(--teal)"></span>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:10px">4 · 8 · 12 · 16 · 20 · 24 · 32 · 40</div>
+        <div style="font-family:var(--disp);font-weight:700;font-size:13px;color:var(--ink);margin:18px 0 12px">Radius · sharp</div>
+        <div style="display:flex;gap:14px">
+          <div style="text-align:center"><span style="width:34px;height:26px;border:2px solid var(--teal);border-radius:3px;display:block"></span><span style="font-family:var(--mono);font-size:8px;color:var(--muted)">3</span></div>
+          <div style="text-align:center"><span style="width:34px;height:26px;border:2px solid var(--teal);border-radius:4px;display:block"></span><span style="font-family:var(--mono);font-size:8px;color:var(--muted)">4</span></div>
+          <div style="text-align:center"><span style="width:34px;height:26px;border:2px solid var(--teal);border-radius:10px;display:block"></span><span style="font-family:var(--mono);font-size:8px;color:var(--muted)">10</span></div>
+        </div>
+      </div>
+      <div class="card" style="flex:1;min-width:220px">
+        <div style="font-family:var(--disp);font-weight:700;font-size:13px;color:var(--ink);margin-bottom:12px">Buttons</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"><span class="btn primary">Post</span><span class="btn ghost">Follow</span><span class="btn disabled">Disabled</span></div>
+        <div style="font-family:var(--disp);font-weight:700;font-size:13px;color:var(--ink);margin-bottom:10px">Tags &amp; Dig</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <span class="tag" style="color:#2FA877;background:rgba(47,168,119,.12)">#dev</span>
+          <span class="tag" style="color:#184860;background:rgba(24,72,96,.09)">#sync</span>
+          <span class="tag" style="color:#F0A830;background:rgba(240,168,48,.14)">#meta</span>
+          <span class="mono" style="font-size:10px;color:#fff;background:#F0A830;padding:5px 10px;border-radius:3px;margin-left:6px">✦ 12 Digs</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Icons -->
+  <section>
+    <p class="kicker">05 · App icons</p>
+    <h2>Platform icons</h2>
+    <p>The mark on a soft-sand tile so all three colors read; near-black variants ship for dark home screens. Full export set in <span class="mono">icons/</span>.</p>
+    <div class="iconrow" style="margin-top:18px">
+      <div class="icell"><span style="display:block;width:64px;height:64px;border-radius:14px;overflow:hidden;box-shadow:0 2px 8px rgba(24,72,96,.18)"><img src="../icons/ios/AppIcon-1024.png" style="width:100%;height:100%"></span><div class="cap">iOS</div></div>
+      <div class="icell"><span style="display:block;width:64px;height:64px;border-radius:2px;overflow:hidden;box-shadow:0 2px 8px rgba(24,72,96,.18)"><img src="../icons/macos/icon-256.png" style="width:100%;height:100%"></span><div class="cap">macOS</div></div>
+      <div class="icell"><span style="display:block;width:64px;height:64px;overflow:hidden;box-shadow:0 2px 8px rgba(24,72,96,.18)"><img src="../icons/android/ic_launcher-512.png" style="width:100%;height:100%"></span><div class="cap">Android</div></div>
+      <div class="icell"><span style="display:block;width:64px;height:64px;border-radius:2px;overflow:hidden;box-shadow:0 2px 8px rgba(24,72,96,.18)"><img src="../icons/windows/icon-256.png" style="width:100%;height:100%"></span><div class="cap">Windows</div></div>
+      <div class="icell"><span style="display:block;width:64px;height:64px;overflow:hidden;box-shadow:0 2px 8px rgba(24,72,96,.18)"><img src="../icons/linux/icon-512.png" style="width:100%;height:100%"></span><div class="cap">Linux</div></div>
+      <div class="icell"><span style="display:block;width:32px;height:32px;border-radius:2px;overflow:hidden;box-shadow:0 2px 8px rgba(24,72,96,.18)"><img src="../icons/web/favicon-48.png" style="width:100%;height:100%"></span><div class="cap">web</div></div>
+    </div>
+  </section>
+
+  <section style="padding-bottom:20px">
+    <p style="font-family:var(--mono);font-size:10px;color:var(--muted)">InterlinedList — Strata brand kit · tokens: theme/tokens.json · questions → design</p>
+  </section>
+
+</div>
+</body>
+</html>

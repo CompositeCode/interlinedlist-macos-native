@@ -1,0 +1,159 @@
+/* ============================================================
+   InterlinedList — "Strata" theme
+   Drop-in CSS custom properties for the web rebrand.
+   Light = soft sand · Dark = near-black. Follows the OS via
+   prefers-color-scheme, with a manual [data-theme] override.
+   ============================================================ */
+
+:root {
+  /* ---- Brand (constant across themes) ---- */
+  --il-green:        #2FA877;  /* primary action */
+  --il-green-hover:  #28936A;
+  --il-teal:         #184860;  /* structure / masthead */
+  --il-teal-deep:    #0C2C3A;  /* dark masthead */
+  --il-teal-accent:  #7FB8C4;  /* links / borders in dark */
+  --il-teal-bright:  #4FD09C;  /* wordmark accent */
+  --il-amber:        #F0A830;  /* live / Dig / highlight */
+  --il-amber-hover:  #DB9720;
+
+  /* ---- Typography ---- */
+  --il-font-display: 'Space Grotesk', system-ui, sans-serif;
+  --il-font-body:    'Manrope', system-ui, sans-serif;
+  --il-font-mono:    'JetBrains Mono', ui-monospace, monospace;
+  --il-fs-display: 28px;  --il-fs-title: 17px;  --il-fs-subtitle: 15px;
+  --il-fs-body: 13px;     --il-fs-small: 12px;  --il-fs-meta: 10px;  --il-fs-micro: 9px;
+
+  /* ---- Spacing · 4pt grid ---- */
+  --il-space-1: 4px;  --il-space-2: 8px;  --il-space-3: 12px; --il-space-4: 16px;
+  --il-space-5: 20px; --il-space-6: 24px; --il-space-8: 32px; --il-space-10: 40px;
+
+  /* ---- Radius · sharp language ---- */
+  --il-radius-sm: 3px;   /* controls, tags */
+  --il-radius-md: 4px;   /* cards, panels */
+  --il-radius-lg: 10px;  /* desktop windows */
+  --il-radius-pill: 999px;
+
+  /* ---- Elevation ---- */
+  --il-shadow-card:  0 1px 3px rgba(24,72,96,.06);
+  --il-shadow-float: 0 10px 34px rgba(24,72,96,.14);
+}
+
+/* ---- LIGHT (default) ---- */
+:root, [data-theme="light"] {
+  --il-bg:         #F4EEE2;
+  --il-surface:    #FBF7EF;
+  --il-surface-2:  #F6F1E7;
+  --il-surface-3:  #F1EADD;
+  --il-border:     rgba(24,72,96,.12);
+  --il-border-strong: rgba(24,72,96,.20);
+  --il-text:       #16323C;
+  --il-text-body:  #22383E;
+  --il-text-muted: rgba(24,72,96,.55);
+  --il-masthead:   #184860;
+  --il-on-masthead:#FFFFFF;
+  --il-primary:    var(--il-green);
+  --il-link:       var(--il-teal);
+}
+
+/* ---- DARK (follows OS) ---- */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --il-bg:         #121317;
+    --il-surface:    #17191F;
+    --il-surface-2:  #1B1D23;
+    --il-surface-3:  #22252D;
+    --il-border:     rgba(255,255,255,.08);
+    --il-border-strong: rgba(255,255,255,.16);
+    --il-text:       #F3F1EA;
+    --il-text-body:  rgba(243,241,234,.85);
+    --il-text-muted: rgba(243,241,234,.45);
+    --il-masthead:   #0C2C3A;
+    --il-on-masthead:#F3F1EA;
+    --il-primary:    var(--il-teal-bright);
+    --il-link:       var(--il-teal-accent);
+    --il-shadow-card:  0 1px 3px rgba(0,0,0,.4);
+    --il-shadow-float: 0 10px 34px rgba(0,0,0,.5);
+  }
+}
+
+/* ---- DARK (manual override, wins over OS) ---- */
+[data-theme="dark"] {
+  --il-bg:         #121317;
+  --il-surface:    #17191F;
+  --il-surface-2:  #1B1D23;
+  --il-surface-3:  #22252D;
+  --il-border:     rgba(255,255,255,.08);
+  --il-border-strong: rgba(255,255,255,.16);
+  --il-text:       #F3F1EA;
+  --il-text-body:  rgba(243,241,234,.85);
+  --il-text-muted: rgba(243,241,234,.45);
+  --il-masthead:   #0C2C3A;
+  --il-on-masthead:#F3F1EA;
+  --il-primary:    var(--il-teal-bright);
+  --il-link:       var(--il-teal-accent);
+  --il-shadow-card:  0 1px 3px rgba(0,0,0,.4);
+  --il-shadow-float: 0 10px 34px rgba(0,0,0,.5);
+}
+
+/* ============================================================
+   Component primitives — optional starting classes
+   ============================================================ */
+
+body {
+  background: var(--il-bg);
+  color: var(--il-text-body);
+  font-family: var(--il-font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+.il-wordmark { font-family: var(--il-font-display); font-weight: 700; letter-spacing: -.01em; color: var(--il-text); }
+.il-wordmark span { color: var(--il-teal-bright); }  /* the "List" accent */
+
+.il-masthead {
+  display: flex; align-items: center; gap: var(--il-space-4);
+  padding: var(--il-space-3) var(--il-space-5);
+  background: var(--il-masthead); color: var(--il-on-masthead);
+}
+
+.il-card {
+  background: var(--il-surface);
+  border: 1px solid var(--il-border);
+  border-radius: var(--il-radius-md);
+  box-shadow: var(--il-shadow-card);
+}
+
+/* Post — color-edged card is the Strata signature */
+.il-post { border-left: 3px solid var(--il-teal); padding: var(--il-space-4) var(--il-space-5); }
+.il-post--reply   { border-left-color: var(--il-green); }
+.il-post--release { border-left-color: var(--il-amber); }
+
+.il-btn {
+  font-family: var(--il-font-display); font-weight: 600; font-size: var(--il-fs-small);
+  padding: 8px 16px; border-radius: var(--il-radius-sm); border: 0; cursor: pointer;
+}
+.il-btn--primary { background: var(--il-primary); color: #fff; }
+.il-btn--primary:hover { background: var(--il-green-hover); }
+.il-btn--ghost { background: transparent; color: var(--il-primary); border: 1px solid var(--il-primary); }
+.il-btn:disabled { background: var(--il-border); color: var(--il-text-muted); cursor: not-allowed; }
+
+.il-tag {
+  font-family: var(--il-font-mono); font-weight: 500; font-size: var(--il-fs-micro);
+  padding: 4px 8px; border-radius: var(--il-radius-sm);
+  color: var(--il-teal); background: rgba(24,72,96,.09);
+}
+.il-tag--green { color: var(--il-green); background: rgba(47,168,119,.12); }
+.il-tag--amber { color: var(--il-amber); background: rgba(240,168,48,.14); }
+
+.il-meta { font-family: var(--il-font-mono); font-size: var(--il-fs-meta); color: var(--il-text-muted); }
+
+/* Dig button */
+.il-dig { font-family: var(--il-font-mono); font-size: var(--il-fs-meta); color: var(--il-text-muted);
+          border: 1px solid var(--il-border-strong); padding: 6px 11px; border-radius: var(--il-radius-sm); background: none; cursor: pointer; }
+.il-dig--active { color: #fff; background: var(--il-amber); border-color: var(--il-amber); }
+
+/* Live status dot */
+.il-live { display: inline-flex; align-items: center; gap: 6px; font-family: var(--il-font-mono);
+           font-size: var(--il-fs-meta); font-weight: 600; color: var(--il-amber); }
+.il-live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--il-amber);
+                   animation: il-pulse 2s infinite; }
+@keyframes il-pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
