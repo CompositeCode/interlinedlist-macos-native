@@ -105,3 +105,17 @@ When picking an item up:
 ## How to add an entry
 
 Each entry needs: a unique ID (`NW-N` where `N` increments), the trigger, the deferred-design pointer, and the picked-up steps. Keep entries terse &mdash; this file is a worklist, not documentation.
+
+---
+
+## NW probe — 2026-07-03
+
+Probed all 6 NW items against the live API (https://interlinedlist.com) using the `messenger@interlinedlist.com` test account. Auth shape confirmed: `{ "token": "…", "message": "…" }`.
+
+**No items unblocked.** All 6 remain blocked. Status changes: none.
+
+- **NW-1 / NW-6** — Both `GET /api/users/lookup?handle=test` and `GET /api/users/search?q=test` return HTTP 404. Routes do not exist.
+- **NW-2** — `POST /api/messages` succeeds (field is `content` not `body`; `visibility` not a valid field — use `publiclyVisible: Bool`). Response has `crossPostUrls: null` and `scheduledCrossPostConfig: null` but no `crossPosts: [{ platform, status, externalUrl?, error? }]` envelope. Test post created and deleted cleanly.
+- **NW-3** — `GET /api/messages/scheduled` returns `{"messages":[]}`. No scheduled posts in test account; cancel/reschedule trigger unverifiable.
+- **NW-4** — `GET /api/auth/bluesky/status` and `GET /api/auth/mastodon/status` (with and without `?instance=`) both return HTTP 404. Routes do not exist.
+- **NW-5** — `GET /api/auth/github/authorize?link=true` returns HTTP 307. `redirect_uri` is `https://interlinedlist.com/api/auth/github/callback` — web URL, no custom scheme or universal link. Decision 0006 browser-handoff posture unchanged.

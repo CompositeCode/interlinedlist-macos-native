@@ -216,10 +216,20 @@ final class AppEnvironment: ObservableObject {
     /// needs persistence.
     static func live() -> AppEnvironment {
         let tokenStore = KeychainTokenStore()
+        let credentialStore = KeychainCredentialStore()
+        // Dedicated URLSession with ephemeral (in-memory) cookie storage so the
+        // session-login cookie is isolated from URLSession.shared and never
+        // persisted to disk (re-established lazily on each app launch).
+        let sessionConfig = URLSessionConfiguration.ephemeral
+        let sessionURLSession = URLSession(configuration: sessionConfig)
+        let sessionEstablisher = LiveSessionEstablisher(
+            credentialStore: credentialStore,
+            transport: sessionURLSession
+        )
         let authTransport = DefaultAuthTransport(
             tokenStore: tokenStore,
-            sessionTransport: URLSession.shared,
-            sessionEstablisher: NullSessionEstablisher()
+            sessionTransport: sessionURLSession,
+            sessionEstablisher: sessionEstablisher
         )
         let api = APIClient(authTransport: authTransport)
         let store = Self.makeMessageStore()
@@ -246,7 +256,7 @@ final class AppEnvironment: ObservableObject {
         // `GET /api/user` read that turns a stored token into a
         // `CurrentUser`. Cache is shared with the messages store so
         // sign-out clears the timeline cache.
-        let auth = AuthService(api: api, tokenStore: tokenStore)
+        let auth = AuthService(api: api, tokenStore: tokenStore, credentialStore: credentialStore)
         let session = SessionService(auth: auth, api: api, cache: store)
         // Hand the same box to the store so resolved sessions publish their
         // `customerStatus` into the source the domain gate reads (Deliverable B).

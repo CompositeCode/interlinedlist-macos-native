@@ -105,10 +105,20 @@ public final class AuthService: AuthServiceProtocol {
 
     private let api: APIClientProtocol
     private let tokenStore: TokenStore
+    private let credentialStore: (any CredentialStore)?
 
-    public init(api: APIClientProtocol, tokenStore: TokenStore) {
+    /// - Parameters:
+    ///   - credentialStore: When provided, credentials are persisted here on
+    ///     successful sign-in so `LiveSessionEstablisher` can later issue the
+    ///     lazy `POST /api/auth/login` without user intervention (decision 0001).
+    public init(
+        api: APIClientProtocol,
+        tokenStore: TokenStore,
+        credentialStore: (any CredentialStore)? = nil
+    ) {
         self.api = api
         self.tokenStore = tokenStore
+        self.credentialStore = credentialStore
     }
 
     @discardableResult
@@ -121,6 +131,7 @@ public final class AuthService: AuthServiceProtocol {
         )
         let response = try await api.send(request)
         try tokenStore.write(response.token)
+        try credentialStore?.write(Credentials(email: email, password: password))
         return response.token
     }
 
@@ -167,6 +178,7 @@ public final class AuthService: AuthServiceProtocol {
 
     public func signOut() async throws {
         try tokenStore.delete()
+        try? credentialStore?.delete()
     }
 
     public func hasStoredToken() async throws -> Bool {
