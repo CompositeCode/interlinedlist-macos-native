@@ -12,8 +12,8 @@
 		A2F99A68629A6FFE570F17B6 /* InterlinedDomain in Frameworks */ = {isa = PBXBuildFile; productRef = F55A3043259B18AED6834ECA /* InterlinedDomain */; };
 		AB10000000000000000000A1 /* InterlinedDomain in Frameworks */ = {isa = PBXBuildFile; productRef = AB20000000000000000000A1 /* InterlinedDomain */; };
 		AB10000000000000000000A2 /* InterlinedKit in Frameworks */ = {isa = PBXBuildFile; productRef = AB20000000000000000000A2 /* InterlinedKit */; };
-		TX20000000000000000000T3 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = TX10000000000000000000T2 /* Textual */; };
 		SP20000000000000000000S3 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = SP10000000000000000000S2 /* Sparkle */; };
+		TX20000000000000000000T3 /* Textual in Frameworks */ = {isa = PBXBuildFile; productRef = TX10000000000000000000T2 /* Textual */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -36,7 +36,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Resources/Info.plist,
-				Resources/InterlinedList.entitlements,
 			);
 			target = 368744F4D2FC50119EA37A06 /* InterlinedList */;
 		};
@@ -324,10 +323,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = App/Resources/InterlinedList.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = BJA9558E4B;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -454,10 +455,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = App/Resources/InterlinedList.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = BJA9558E4B;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -527,20 +530,20 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		TX00000000000000000000T1 /* XCRemoteSwiftPackageReference "textual" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/gonzalezreal/textual";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.5.0;
-			};
-		};
 		SP00000000000000000000S1 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/sparkle-project/Sparkle";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.0.0;
+			};
+		};
+		TX00000000000000000000T1 /* XCRemoteSwiftPackageReference "textual" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/textual";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -566,15 +569,15 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = InterlinedDomain;
 		};
-		TX10000000000000000000T2 /* Textual */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = TX00000000000000000000T1 /* XCRemoteSwiftPackageReference "textual" */;
-			productName = Textual;
-		};
 		SP10000000000000000000S2 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = SP00000000000000000000S1 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		TX10000000000000000000T2 /* Textual */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = TX00000000000000000000T1 /* XCRemoteSwiftPackageReference "textual" */;
+			productName = Textual;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
