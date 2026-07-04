@@ -9,27 +9,33 @@
     <language>en</language>
 
     <!--
-      BEFORE PUBLISHING EACH RELEASE update the <item> below:
-        1. title       — human-readable version ("Version 1.2.3")
-        2. sparkle:version             — CFBundleVersion (integer build number)
-        3. sparkle:shortVersionString  — CFBundleShortVersionString ("1.2.3")
-        4. pubDate     — release date in RFC 822 format
-        5. description — release notes (HTML inside CDATA is fine)
-        6. enclosure url=    — public HTTPS URL of the notarized .pkg
-        7. enclosure length= — byte size: stat -f%z InterlinedList.pkg
-        8. sparkle:edSignature= — output of:
-               <sparkle-checkout>/bin/sign_update InterlinedList.pkg <private-key>
+      HOW TO UPDATE FOR EACH RELEASE
+      ─────────────────────────────────────────────────────────────────
+      1. Duplicate the <item> block below and make it the first item.
+      2. Update: title, sparkle:version (CFBundleVersion integer),
+         sparkle:shortVersionString, pubDate, description.
+      3. Set enclosure url= to the .pkg URL under /downloads/apple/.
+      4. Set enclosure length= (byte count):
+             stat -f%z releases/InterlinedList-X.Y.Z-label.pkg
+      5. Set sparkle:edSignature= (run after building the .pkg):
+             <sparkle>/bin/sign_update releases/InterlinedList-X.Y.Z-label.pkg <private-key>
+         Paste the single-line base64 output here.
 
-      Publish this file to: https://interlinedlist.com/appcast.xml
+      Files served at: https://interlinedlist.com/downloads/apple/
+         appcast.xml
+         InterlinedList-<version>[-<label>].pkg
+         InterlinedList-<version>[-<label>].pkg.sha256
+         InterlinedList-<version>[-<label>].dmg
+         InterlinedList-<version>[-<label>].dmg.sha256
     -->
 
     <item>
       <title>Version 0.0.1 Alpha</title>
-      <link>https://interlinedlist.com</link>
+      <link>https://interlinedlist.com/downloads/apple/release-notes.html</link>
       <sparkle:version>1</sparkle:version>
       <sparkle:shortVersionString>0.0.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://interlinedlist.com/release-notes/0.0.1-alpha</sparkle:releaseNotesLink>
+      <sparkle:releaseNotesLink>https://interlinedlist.com/downloads/apple/release-notes.html</sparkle:releaseNotesLink>
       <pubDate>Thu, 03 Jul 2026 00:00:00 +0000</pubDate>
       <description><![CDATA[
         <h2>0.0.1 Alpha</h2>
@@ -56,7 +62,7 @@
         </ul>
       ]]></description>
       <enclosure
-        url="https://TODO_REPLACE_WITH_PKG_DOWNLOAD_URL/InterlinedList-0.0.1-alpha.pkg"
+        url="https://interlinedlist.com/downloads/apple/InterlinedList-0.0.1-alpha.pkg"
         length="0"
         type="application/octet-stream"
         sparkle:edSignature="TODO_REPLACE_WITH_SIGNATURE"/>
