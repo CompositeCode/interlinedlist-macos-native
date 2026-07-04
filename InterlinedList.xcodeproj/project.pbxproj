@@ -36,6 +36,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Resources/Info.plist,
+				Resources/InterlinedList.entitlements,
 			);
 			target = 368744F4D2FC50119EA37A06 /* InterlinedList */;
 		};
