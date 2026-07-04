@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+     xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+     xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>InterlinedList</title>
+    <link>https://interlinedlist.com</link>
+    <description>InterlinedList for Mac — release history</description>
+    <language>en</language>
+
+    <!--
+      BEFORE PUBLISHING EACH RELEASE:
+        1. Set url= to the public download URL of the notarized .pkg
+        2. Set length= to the byte size of the .pkg file
+           (stat -f%z InterlinedList.pkg)
+        3. Set sparkle:edSignature= to the output of:
+           <sparkle>/bin/sign_update InterlinedList.pkg <private-key>
+        4. Set pubDate= to the release date (RFC 822 format)
+        5. Update title, sparkle:version (CFBundleVersion),
+           sparkle:shortVersionString (CFBundleShortVersionString)
+    -->
+
+    <item>
+      <title>Version 0.1.0</title>
+      <link>https://interlinedlist.com</link>
+      <sparkle:version>1</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <pubDate>Thu, 03 Jul 2026 00:00:00 +0000</pubDate>
+      <description><![CDATA[
+        <h2>Initial release</h2>
+        <ul>
+          <li>Full feature parity with interlinedlist.com</li>
+          <li>Messages, Lists, Documents, Social, Notifications, Settings, Exports</li>
+          <li>Organizations and linked accounts</li>
+          <li>Scheduled posts and Composer</li>
+          <li>Automatic updates via Sparkle</li>
+        </ul>
+      ]]></description>
+      <enclosure
+        url="https://TODO_REPLACE_WITH_PKG_DOWNLOAD_URL/InterlinedList-0.1.0.pkg"
+        length="0"
+        type="application/octet-stream"
+        sparkle:edSignature="TODO_REPLACE_WITH_SIGNATURE"/>
+    </item>
+
+  </channel>
+</rss>
