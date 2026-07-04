@@ -13,7 +13,7 @@ This page summarizes what the InterlinedList macOS app can do today and what is 
 | M4 — Documents | Folder tree, Markdown editor and preview, image upload, offline sync. | Shipped. |
 | M5 — Social and notifications | Follow / unfollow; follower and following lists; mutual follows; private-account follow requests; notifications tray; system notifications; dock badge. | Shipped. |
 | M6 — Subscriber and orgs | Media attachments (with client-side resize), scheduled posts, cross-posting (Mastodon / Bluesky / LinkedIn), OAuth identity linking, organizations and member roles, entitlement gating. | Shipped. |
-| M7 — Ship | CSV exports, Settings polish (email change, account deletion, avatar), sandboxing and hardened runtime, notarization, Sparkle updates, accessibility audit, brand QA pass. | Not yet. |
+| M7 — Ship | CSV exports, Settings polish (email change, account deletion, avatar), sandboxing and hardened runtime, notarization, Sparkle updates, accessibility audit, brand QA pass. | Shipped. |
 
 ## Limits worth knowing about today
 
