@@ -54,7 +54,7 @@
 
 	     See: https://sparkle-project.org/documentation/ -->
 	<key>SUFeedURL</key>
-	<string>https://TODO_REPLACE_WITH_APPCAST_URL/appcast.xml</string>
+	<string>https://interlinedlist.com/appcast.xml</string>
 	<key>SUPublicEDKeyString</key>
 	<string>TODO_REPLACE_WITH_ED25519_PUBLIC_KEY</string>
 </dict>
