@@ -4,6 +4,8 @@
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<!-- Required by InterlinedList API networking and by Sparkle (Wave 8.6)
+	     for downloading update packages from the appcast URL. -->
 	<key>com.apple.security.network.client</key>
 	<true/>
 	<key>com.apple.security.files.user-selected.read-write</key>

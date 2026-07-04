@@ -38,5 +38,24 @@
 	<true/>
 	<key>NSSupportsSuddenTermination</key>
 	<true/>
+
+	<!-- Sparkle automatic updates (Wave 8.6).
+	     TODO: Replace both values below before shipping.
+
+	     SUFeedURL — the URL of your appcast XML file. Sparkle polls this
+	     to discover available updates. Example:
+	       https://downloads.interlinedlist.com/appcast.xml
+
+	     SUPublicEDKeyString — the Ed25519 PUBLIC key produced by Sparkle's
+	     generate_keys tool. Run the tool once, store the PRIVATE key in a
+	     secrets manager, and paste ONLY the public key here. Every release
+	     must be signed with sign_update using the private key so Sparkle
+	     can verify the download before installing it.
+
+	     See: https://sparkle-project.org/documentation/ -->
+	<key>SUFeedURL</key>
+	<string>https://TODO_REPLACE_WITH_APPCAST_URL/appcast.xml</string>
+	<key>SUPublicEDKeyString</key>
+	<string>TODO_REPLACE_WITH_ED25519_PUBLIC_KEY</string>
 </dict>
 </plist>

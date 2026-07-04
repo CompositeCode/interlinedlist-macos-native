@@ -23,6 +23,10 @@
 // `CurrentUser` has resolved. `AppRootView` observes `CurrentUserStore`
 // (an `@Observable` class) so the switch is reactive — sign-in makes
 // the user non-nil and SwiftUI re-renders `MainWindowView` in place.
+//
+// Wave 8.6 adds the Sparkle automatic-update controller. See
+// App/Composition/SparkleController.swift for the shipping checklist
+// (replace SUFeedURL and SUPublicEDKeyString in Info.plist before release).
 
 import SwiftUI
 
@@ -32,6 +36,12 @@ struct InterlinedListApp: App {
     /// Composition root constructed once for the app's lifetime.
     /// `@StateObject` so the same instance survives view-tree rebuilds.
     @StateObject private var environment = AppEnvironment.live()
+
+    /// Sparkle automatic-update controller (Wave 8.6). Held here so
+    /// Sparkle's launch-time automatic check fires before any window
+    /// renders. `@StateObject` guarantees a single instance for the
+    /// app's lifetime regardless of scene body re-evaluations.
+    @StateObject private var sparkleController = SparkleController()
 
     /// Narrow AppKit adapter (Decision 0005). Owned by the SwiftUI App
     /// scene; the only call site is the dock-badge writer inside the
@@ -90,6 +100,8 @@ struct InterlinedListApp: App {
         }
         .windowToolbarStyle(.unified)
         .commands {
+            // Wave 8.6 — Sparkle "Check for Updates..." in the app menu.
+            UpdatesMenuCommands(sparkleController: sparkleController)
             AccountMenuCommands()
             ComposeCommands()
             ListMenuCommands()
