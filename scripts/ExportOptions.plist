@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Developer ID export options for `xcodebuild -exportArchive`.
+
+        The `teamID` value is intentionally a placeholder. The wrapping shell
+        script (`scripts/notarize-and-package.sh`) substitutes the real Team ID
+        at build time by copying this file to `build/ExportOptions.plist` and
+        running `/usr/libexec/PlistBuddy -c "Set :teamID <APPLE_TEAM_ID>" …`
+        against the copy — the source file stays clean of credentials so it
+        can be committed.
+
+        Distribution is Developer ID (not App Store). Signing style is
+        automatic; Xcode picks the right Developer ID Application identity
+        from the keychain based on `teamID`.
+    -->
+    <key>method</key>
+    <string>developer-id</string>
+
+    <key>signingStyle</key>
+    <string>automatic</string>
+
+    <!-- TEMPLATE: substituted by notarize-and-package.sh via PlistBuddy. -->
+    <key>teamID</key>
+    <string>REPLACE_WITH_TEAM_ID</string>
+
+    <!-- Strip Swift stdlib symbols from embedded frameworks to shrink the
+         signed bundle without affecting runtime behaviour. -->
+    <key>stripSwiftSymbols</key>
+    <true/>
+</dict>
+</plist>
