@@ -83,7 +83,7 @@ struct ProfileHeaderView: View {
                         }
                     }
                     Text("@\(profile.username)")
-                        .font(.callout)
+                        .font(.ilBody(14))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
@@ -98,7 +98,7 @@ struct ProfileHeaderView: View {
             // bio entirely. Wired for forward-compatibility.
             if let bio = profile.bio, !bio.isEmpty {
                 Text(bio)
-                    .font(.body)
+                    .font(.ilBody())
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -124,7 +124,7 @@ struct ProfileHeaderView: View {
                     "Joined \(joinedAt.formatted(date: .abbreviated, time: .omitted))",
                     systemImage: "calendar"
                 )
-                .font(.footnote)
+                .font(.ilMono(11))
                 .foregroundStyle(.secondary)
             }
         }
@@ -174,7 +174,7 @@ struct ProfileHeaderView: View {
 
     private var avatarFallback: some View {
         ZStack {
-            Color.accentColor.opacity(0.15)
+            ILColor.primary.opacity(0.15)
             Image(systemName: "person.crop.circle.fill")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -197,7 +197,7 @@ struct ProfileHeaderView: View {
                 plural: "following"
             )
         }
-        .font(.callout)
+        .font(.ilBody(14))
     }
 
     @ViewBuilder
@@ -223,7 +223,7 @@ struct ProfileHeaderView: View {
                 }
             }
         }
-        .font(.footnote)
+        .font(.ilMono(11))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             "\(mutuals.mutualFollowers) mutual followers, \(mutuals.mutualFollowing) you both follow"

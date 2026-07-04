@@ -168,10 +168,10 @@ struct SocialRosterRootView: View {
     private var unconfiguredState: some View {
         VStack(spacing: 8) {
             Image(systemName: "person.2.slash")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Sign in to see your connections")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("Followers, following, and follow requests appear here once you're signed in.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -191,10 +191,10 @@ private struct UserRowView: View {
             avatar
             VStack(alignment: .leading, spacing: 2) {
                 Text(user.displayName)
-                    .font(.body)
+                    .font(.ilBody())
                     .fontWeight(.medium)
                 Text("@\(user.username)")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -228,7 +228,7 @@ private struct UserRowView: View {
         Image(systemName: "person.crop.circle.fill")
             .resizable()
             .aspectRatio(contentMode: .fit)
-            .foregroundStyle(Color.accentColor.opacity(0.6))
+            .foregroundStyle(ILColor.primary.opacity(0.6))
     }
 }
 
@@ -285,10 +285,10 @@ private struct EmptyRosterState: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: "tray")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text(title)
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(message)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -305,12 +305,12 @@ private struct ErrorRosterState: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Couldn't load")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(error.localizedDescription)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)

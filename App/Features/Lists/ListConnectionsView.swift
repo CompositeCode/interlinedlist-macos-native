@@ -96,9 +96,9 @@ struct ListConnectionsView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Connections")
-                .font(.title3.weight(.semibold))
+                .font(.ilTitle(20))
             Text("Drag a node onto another to connect lists. Tap a connection to remove it.")
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -122,7 +122,7 @@ struct ListConnectionsView: View {
                 viewModel.layout(in: newValue)
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(ILColor.background)
     }
 
     @ViewBuilder
@@ -143,7 +143,7 @@ struct ListConnectionsView: View {
                         y: (fromNode.position.y + toNode.position.y) / 2
                     )
                     context.draw(
-                        Text(label).font(.caption2).foregroundColor(.secondary),
+                        Text(label).font(.ilMono(9)).foregroundColor(.secondary),
                         at: mid
                     )
                 }
@@ -209,13 +209,13 @@ struct ListConnectionsView: View {
         let diameter = Self.nodeRadius * 2
         ZStack {
             Circle()
-                .fill(node.isFocused ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
+                .fill(node.isFocused ? Color.accentColor : ILColor.surface2)
                 .frame(width: diameter, height: diameter)
                 .overlay(
                     Circle().stroke(Color.secondary, lineWidth: 1)
                 )
             Text(node.title)
-                .font(.caption2)
+                .font(.ilMono(9))
                 .foregroundStyle(node.isFocused ? .white : .primary)
                 .lineLimit(2)
                 .frame(width: diameter - 8)
@@ -257,9 +257,9 @@ struct ListConnectionsView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Add connection")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("Connect \"\(name(of: pending.from, in: viewModel))\" to \"\(name(of: pending.to, in: viewModel))\"?")
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.secondary)
             TextField("Label (optional)", text: $addEdgeLabel)
                 .textFieldStyle(.roundedBorder)

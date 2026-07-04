@@ -103,7 +103,7 @@ struct ComposerWindowView: View {
         .safeAreaInset(edge: .bottom) {
             footer(viewModel: viewModel)
                 .padding(16)
-                .background(.bar)
+                .background(ILColor.surface2)
         }
         .navigationTitle(mode.windowTitle)
         // SwiftUI-only file picking (Decision 0005 — no NSOpenPanel).
@@ -130,12 +130,12 @@ struct ComposerWindowView: View {
             Image(systemName: "star.circle.fill")
                 .foregroundStyle(Color.accentColor)
             Text("Media, scheduling, and cross-posting are available with a subscription.")
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
             Spacer()
         }
         .padding(8)
-        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .background(ILColor.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: ILMetric.radiusSm))
         .accessibilityLabel("Subscriber features require a subscription")
     }
 
@@ -146,7 +146,7 @@ struct ComposerWindowView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Media")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button {
@@ -162,7 +162,7 @@ struct ComposerWindowView: View {
                 Text(viewModel.canUseSubscriberFeatures
                      ? "Drop images or videos here, or use Add."
                      : "Attaching media requires a subscription.")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -197,9 +197,9 @@ struct ComposerWindowView: View {
                             }
                         }
                         .frame(width: 72, height: 72)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: ILMetric.radiusMd))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8)
+                            RoundedRectangle(cornerRadius: ILMetric.radiusMd)
                                 .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                         )
 
@@ -261,7 +261,7 @@ struct ComposerWindowView: View {
     private func crossPostSection(viewModel: ComposerViewModel) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Cross-post")
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
 
             Toggle(isOn: Binding(
@@ -301,17 +301,17 @@ struct ComposerWindowView: View {
     private func bodyEditor(viewModel: ComposerViewModel) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Body")
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
             TextEditor(text: Binding(
                 get: { viewModel.body },
                 set: { viewModel.body = $0 }
             ))
-            .font(.body)
+            .font(.ilBody())
             .scrollContentBackground(.hidden)
-            .background(Color(nsColor: .textBackgroundColor))
+            .background(ILColor.surface)
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
+                RoundedRectangle(cornerRadius: ILMetric.radiusSm)
                     .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
             )
             .accessibilityLabel("Message body")
@@ -322,7 +322,7 @@ struct ComposerWindowView: View {
     private func tagsField(viewModel: ComposerViewModel) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Tags")
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
             TextField("Comma- or space-separated", text: Binding(
                 get: { viewModel.tagsInput },
@@ -353,12 +353,12 @@ struct ComposerWindowView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(Color.accentColor)
             Text(error.localizedDescription)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.primary)
             Spacer()
         }
         .padding(8)
-        .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+        .background(ILColor.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: ILMetric.radiusSm))
     }
 
     @ViewBuilder
@@ -393,10 +393,10 @@ struct ComposerWindowView: View {
         // the message diagnostic rather than user-facing.
         VStack(spacing: 8) {
             Image(systemName: "wrench.adjustable")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Composer unavailable")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("AppEnvironment is not injected into the view tree.")
                 .foregroundStyle(.secondary)
         }

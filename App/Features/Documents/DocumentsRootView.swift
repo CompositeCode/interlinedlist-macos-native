@@ -206,10 +206,10 @@ struct DocumentsRootView: View {
     private var unconfiguredState: some View {
         VStack(spacing: 8) {
             Image(systemName: "wrench.adjustable")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Documents unavailable")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("AppEnvironment is not injected into the view tree.")
                 .foregroundStyle(.secondary)
         }
@@ -219,10 +219,10 @@ struct DocumentsRootView: View {
     private var placeholderEditor: some View {
         VStack(spacing: 8) {
             Image(systemName: "doc.text")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Select a document")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("Pick a document from the list, or create a new one.")
                 .foregroundStyle(.secondary)
         }

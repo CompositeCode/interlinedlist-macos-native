@@ -60,7 +60,7 @@ struct LinkedAccountsView: View {
                 Text("Connected accounts")
             } footer: {
                 Text("Linking opens interlinedlist.com in your browser; return here and Refresh once done.")
-                    .font(.caption)
+                    .font(.ilMono(10))
             }
 
             Section("Link an account") {
@@ -77,7 +77,7 @@ struct LinkedAccountsView: View {
                 }
                 if let error = viewModel.linkError {
                     Text(error.localizedDescription)
-                        .font(.caption)
+                        .font(.ilMono(10))
                         .foregroundStyle(Color.accentColor)
                 }
             }
@@ -130,18 +130,18 @@ private struct LinkedIdentityRow: View {
                 .foregroundStyle(Color.accentColor)
             VStack(alignment: .leading, spacing: 2) {
                 Text(identity.provider.displayName)
-                    .font(.body)
+                    .font(.ilBody())
                     .fontWeight(.medium)
                 if let handle = identity.handle {
                     Text(handle)
-                        .font(.caption)
+                        .font(.ilMono(10))
                         .foregroundStyle(.secondary)
                 }
             }
             Spacer()
             if let connectedAt = identity.connectedAt {
                 Text(connectedAt, format: .dateTime.year().month().day())
-                    .font(.caption2)
+                    .font(.ilMono(9))
                     .foregroundStyle(.secondary)
             }
         }

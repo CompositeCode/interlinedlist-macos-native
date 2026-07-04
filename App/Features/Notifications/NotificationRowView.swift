@@ -38,6 +38,7 @@ struct NotificationRowView: View {
                 .font(.title3)
                 .foregroundStyle(.accent)
                 .frame(width: 24)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(NotificationRowCopy.copy(
@@ -46,7 +47,7 @@ struct NotificationRowView: View {
                     title: notification.title,
                     body: notification.body
                 ))
-                .font(.body)
+                .font(.ilBody())
                 .fontWeight(notification.isRead ? .regular : .semibold)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -55,14 +56,14 @@ struct NotificationRowView: View {
                     // the title above is the prominent line; render
                     // the body as the supporting detail.
                     Text(body)
-                        .font(.callout)
+                        .font(.ilBody(14))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if let createdAt = notification.createdAt {
                     Text(createdAt, format: .relative(presentation: .named))
-                        .font(.caption)
+                        .font(.ilMono(10))
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -75,7 +76,7 @@ struct NotificationRowView: View {
             }
         }
         .padding(.vertical, 6)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: - Subviews
@@ -110,11 +111,11 @@ struct NotificationRowView: View {
             }
         case .approved:
             Label("Approved", systemImage: "checkmark.circle.fill")
-                .font(.caption)
-                .foregroundStyle(.green)
+                .font(.ilMono(10))
+                .foregroundStyle(ILColor.primary)
         case .rejected:
             Label("Rejected", systemImage: "xmark.circle.fill")
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
         }
     }

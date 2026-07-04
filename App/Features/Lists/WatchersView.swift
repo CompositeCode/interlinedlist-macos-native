@@ -92,9 +92,9 @@ struct WatchersView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Share")
-                .font(.title3.weight(.semibold))
+                .font(.ilTitle(20))
             Text("Manage who can see and edit this list.")
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -105,14 +105,14 @@ struct WatchersView: View {
     private func watcherRow(viewModel: WatchersViewModel, watcher: ListWatcher) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "person.crop.circle")
-                .font(.system(size: 24))
+                .font(.ilMono(24))
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
                 Text(watcher.username ?? watcher.userId)
-                    .font(.body)
+                    .font(.ilBody())
                 if let username = watcher.username {
                     Text("@\(username)")
-                        .font(.caption)
+                        .font(.ilMono(10))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -147,12 +147,12 @@ struct WatchersView: View {
             Image(systemName: "info.circle")
                 .foregroundStyle(Color.accentColor)
             Text("Inviting new collaborators arrives in a future update.")
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.primary)
             Spacer()
         }
         .padding(10)
-        .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .background(ILColor.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: ILMetric.radiusSm))
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
     }

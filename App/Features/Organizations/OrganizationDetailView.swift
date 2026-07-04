@@ -79,7 +79,7 @@ private struct OrganizationEditSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Details")
-                .font(.headline)
+                .font(.ilSubtitle())
 
             Form {
                 TextField("Name", text: $name)
@@ -92,7 +92,7 @@ private struct OrganizationEditSection: View {
 
             if let error = viewModel.saveError {
                 Text(error.localizedDescription)
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(Color.accentColor)
             }
 
@@ -131,11 +131,11 @@ private struct MemberRosterSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Members")
-                .font(.headline)
+                .font(.ilSubtitle())
 
             if let error = viewModel.actionError {
                 Text(error.localizedDescription)
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(Color.accentColor)
             }
 
@@ -172,7 +172,7 @@ private struct MemberRosterSection: View {
     private var addMemberRow: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Add a member")
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .fontWeight(.medium)
             HStack {
                 TextField("User id", text: $newMemberUserId)
@@ -195,7 +195,7 @@ private struct MemberRosterSection: View {
                 .disabled(newMemberUserId.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             Text("Adding is by user id for now — there is no handle lookup yet.")
-                .font(.caption2)
+                .font(.ilMono(9))
                 .foregroundStyle(.secondary)
         }
         .padding(.top, 8)
@@ -218,14 +218,14 @@ private struct MemberRow: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 28, height: 28)
-                .foregroundStyle(Color.accentColor.opacity(0.6))
+                .foregroundStyle(ILColor.primary.opacity(0.6))
             VStack(alignment: .leading, spacing: 2) {
                 Text(member.userId)
-                    .font(.body)
+                    .font(.ilBody())
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(member.role.displayName)
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
             }
             Spacer()
@@ -292,10 +292,10 @@ struct OrgEmptyState: View {
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: "building.2")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text(title)
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(message)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -317,12 +317,12 @@ struct OrgErrorState: View {
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Couldn't load")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(error.localizedDescription)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)

@@ -135,10 +135,10 @@ struct ListRowsView: View {
             ForEach(keys, id: \.self) { key in
                 VStack(alignment: .leading, spacing: 1) {
                     Text(key)
-                        .font(.caption2)
+                        .font(.ilMono(9))
                         .foregroundStyle(.secondary)
                     Text(row.fields[key]?.displayText ?? "")
-                        .font(.body)
+                        .font(.ilBody())
                         .lineLimit(2)
                 }
                 .frame(minWidth: 100, alignment: .leading)
@@ -155,10 +155,12 @@ struct ListRowsView: View {
                 spacing: 12
             ) {
                 ForEach(viewModel.rows) { row in
-                    rowCard(row: row, columns: viewModel.columns)
-                        .onTapGesture {
-                            viewModel.selectedRowID = row.id
-                        }
+                    Button {
+                        viewModel.selectedRowID = row.id
+                    } label: {
+                        rowCard(row: row, columns: viewModel.columns)
+                    }
+                    .buttonStyle(.plain)
                         .onAppear {
                             if shouldLoadMore(row, in: viewModel.rows) {
                                 Task { await viewModel.loadMore() }
@@ -180,14 +182,14 @@ struct ListRowsView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Text(row.fields[key]?.displayText ?? "")
-                        .font(.body)
+                        .font(.ilBody())
                         .lineLimit(2)
                     Spacer()
                 }
             }
         }
         .padding(12)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .background(ILColor.surface2, in: RoundedRectangle(cornerRadius: ILMetric.radiusMd))
     }
 
     private func shouldLoadMore(_ row: ListRow, in loaded: [ListRow]) -> Bool {

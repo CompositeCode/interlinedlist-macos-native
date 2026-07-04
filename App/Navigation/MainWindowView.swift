@@ -46,12 +46,24 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
 struct MainWindowView: View {
     @State private var selection: SidebarSection? = .timeline
 
+    // M7 — Data Export sheet state. `pendingExportType` is set by each
+    // `ExportMenuCommands` notification before `showExportSheet` is flipped
+    // so `ExportView` receives the right initial type and can auto-start
+    // the download (PLAN.md §6 M7).
+    @State private var pendingExportType: ExportViewModel.ExportType? = nil
+    @State private var showExportSheet = false
+
     var body: some View {
         NavigationSplitView {
             List(SidebarSection.allCases, selection: $selection) { section in
                 Label(section.rawValue, systemImage: section.systemImage)
                     .tag(section)
+                    .foregroundStyle(ILColor.onMasthead)
             }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            .background(ILColor.masthead)
+            .listItemTint(ILColor.primary)
             .navigationTitle("InterlinedList")
             .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
@@ -77,6 +89,27 @@ struct MainWindowView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .socialShowRequests)) { _ in
             selection = .connections
+        }
+        // M7 — Export menu commands. Each notification maps to one ExportType;
+        // the sheet auto-starts the corresponding download on appear.
+        .onReceive(NotificationCenter.default.publisher(for: .exportMessages)) { _ in
+            pendingExportType = .messages
+            showExportSheet = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .exportLists)) { _ in
+            pendingExportType = .lists
+            showExportSheet = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .exportListDataRows)) { _ in
+            pendingExportType = .listDataRows
+            showExportSheet = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .exportFollows)) { _ in
+            pendingExportType = .follows
+            showExportSheet = true
+        }
+        .sheet(isPresented: $showExportSheet, onDismiss: { pendingExportType = nil }) {
+            ExportView(initialExportType: pendingExportType)
         }
     }
 }

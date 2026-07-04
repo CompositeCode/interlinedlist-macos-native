@@ -231,4 +231,116 @@ final class UserServiceTests: XCTestCase {
             XCTAssertEqual(error as? UserServiceError, .mastodonInstanceRequired)
         }
     }
+
+    // MARK: - requestEmailChange (M7)
+
+    func test_givenValidEmail_whenRequestEmailChange_thenCallsCorrectEndpoint() async throws {
+        // Given — happy path: well-formed new address, server returns ok.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageResponse(message: "Verification email sent."))
+        let service = UserService(api: api)
+
+        // When
+        try await service.requestEmailChange(newEmail: "new@example.com")
+
+        // Then — the correct path was hit and no error was thrown.
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.path, "/api/user/change-email/request")
+        XCTAssertEqual(recorded.first?.method, "POST")
+    }
+
+    func test_givenEndpointFails_whenRequestingEmailChange_thenThrows() async throws {
+        // Given — upstream API failure (e.g. 422 invalid email).
+        let api = StubAPIClient()
+        await api.enqueue(failure: .httpStatus(code: 422, serverMessage: "invalid email"))
+        let service = UserService(api: api)
+
+        // When / Then
+        do {
+            try await service.requestEmailChange(newEmail: "bad")
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .httpStatus(code: 422, serverMessage: "invalid email"))
+        }
+    }
+
+    // MARK: - uploadAvatar (M7)
+
+    func test_givenImageData_whenUploadingAvatar_thenReturnsAvatarURL() async throws {
+        // Given — happy path: server returns a hosted avatar URL.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.mediaUploadResponse(url: "https://cdn.example.com/avatar.png"))
+        let service = UserService(api: api)
+
+        // When
+        let url = try await service.uploadAvatar(imageData: Data([0xFF, 0xD8]), contentType: "image/jpeg")
+
+        // Then
+        XCTAssertEqual(url?.absoluteString, "https://cdn.example.com/avatar.png")
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.path, "/api/user/avatar/upload")
+        XCTAssertEqual(recorded.first?.method, "POST")
+    }
+
+    func test_givenMalformedURLInResponse_whenUploadingAvatar_thenReturnsNil() async throws {
+        // Given — boundary: server returns an empty URL string.
+        // macOS 14+ percent-encodes spaces so "not a valid url" now parses
+        // successfully; an empty string is the reliable nil-producing input.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.mediaUploadResponse(url: ""))
+        let service = UserService(api: api)
+
+        // When
+        let url = try await service.uploadAvatar(imageData: Data([0x89, 0x50]), contentType: "image/png")
+
+        // Then — no throw; nil URL signals an unparseable response.
+        XCTAssertNil(url)
+    }
+
+    func test_givenUploadAvatarEndpointFails_whenUploadingAvatar_thenThrows() async throws {
+        // Given — upstream API failure (e.g. 413 payload too large).
+        let api = StubAPIClient()
+        await api.enqueue(failure: .httpStatus(code: 413, serverMessage: "payload too large"))
+        let service = UserService(api: api)
+
+        // When / Then
+        do {
+            _ = try await service.uploadAvatar(imageData: Data([0xFF]), contentType: "image/jpeg")
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .httpStatus(code: 413, serverMessage: "payload too large"))
+        }
+    }
+
+    // MARK: - deleteAccount (M7)
+
+    func test_givenPasswordAndData_whenDeleteAccount_thenCallsCorrectEndpoint() async throws {
+        // Given — happy path: correct password, server confirms deletion.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageResponse(message: "Account deleted."))
+        let service = UserService(api: api)
+
+        // When — no error thrown on success.
+        try await service.deleteAccount(password: "s3cr3t")
+
+        // Then
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.path, "/api/user/delete")
+        XCTAssertEqual(recorded.first?.method, "POST")
+    }
+
+    func test_givenEndpointFails_whenDeletingAccount_thenThrows() async throws {
+        // Given — upstream API failure (e.g. 401 wrong password).
+        let api = StubAPIClient()
+        await api.enqueue(failure: .unauthorized(serverMessage: "incorrect password"))
+        let service = UserService(api: api)
+
+        // When / Then
+        do {
+            try await service.deleteAccount(password: "wrong")
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .unauthorized(serverMessage: "incorrect password"))
+        }
+    }
 }

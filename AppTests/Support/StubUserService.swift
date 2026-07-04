@@ -21,6 +21,9 @@ struct RecordedUserCall: Sendable, Equatable {
         case identities
         case organizations
         case identityLinkURL(provider: String, instance: String?)
+        case requestEmailChange(newEmail: String)
+        case uploadAvatar(contentType: String)
+        case deleteAccount
     }
     let kind: Kind
 }
@@ -33,6 +36,9 @@ final class StubUserService: UserServicing, @unchecked Sendable {
 
     private var identitiesOutcomes: [Result<[LinkedIdentity], Error>] = []
     private var organizationsOutcomes: [Result<[UserOrganization], Error>] = []
+    private var requestEmailChangeOutcomes: [Result<Void, Error>] = []
+    private var uploadAvatarOutcomes: [Result<URL?, Error>] = []
+    private var deleteAccountOutcomes: [Result<Void, Error>] = []
 
     /// When set, `identityLinkURL` throws this error instead of returning a
     /// URL — set once in test setup for a deterministic failure-path test.
@@ -64,6 +70,33 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func enqueueOrganizations(failure error: Error) {
         lock.lock(); defer { lock.unlock() }
         organizationsOutcomes.append(.failure(error))
+    }
+
+    func enqueueRequestEmailChange(success: Void = ()) {
+        lock.lock(); defer { lock.unlock() }
+        requestEmailChangeOutcomes.append(.success(()))
+    }
+    func enqueueRequestEmailChange(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        requestEmailChangeOutcomes.append(.failure(error))
+    }
+
+    func enqueueUploadAvatar(success url: URL?) {
+        lock.lock(); defer { lock.unlock() }
+        uploadAvatarOutcomes.append(.success(url))
+    }
+    func enqueueUploadAvatar(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        uploadAvatarOutcomes.append(.failure(error))
+    }
+
+    func enqueueDeleteAccount(success: Void = ()) {
+        lock.lock(); defer { lock.unlock() }
+        deleteAccountOutcomes.append(.success(()))
+    }
+    func enqueueDeleteAccount(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        deleteAccountOutcomes.append(.failure(error))
     }
 
     func setLinkURLError(_ error: Error?) {
@@ -107,6 +140,30 @@ final class StubUserService: UserServicing, @unchecked Sendable {
         return url
     }
 
+    func requestEmailChange(newEmail: String) async throws {
+        try performVoid(label: "requestEmailChange", record: .requestEmailChange(newEmail: newEmail)) {
+            $0.requestEmailChangeOutcomes
+        } set: {
+            $0.requestEmailChangeOutcomes = $1
+        }
+    }
+
+    func uploadAvatar(imageData: Data, contentType: String) async throws -> URL? {
+        try perform(label: "uploadAvatar", record: .uploadAvatar(contentType: contentType)) {
+            $0.uploadAvatarOutcomes
+        } set: {
+            $0.uploadAvatarOutcomes = $1
+        }
+    }
+
+    func deleteAccount(password: String) async throws {
+        try performVoid(label: "deleteAccount", record: .deleteAccount) {
+            $0.deleteAccountOutcomes
+        } set: {
+            $0.deleteAccountOutcomes = $1
+        }
+    }
+
     // MARK: - Internals
 
     private func perform<T>(
@@ -127,6 +184,29 @@ final class StubUserService: UserServicing, @unchecked Sendable {
         lock.unlock()
         switch outcome {
         case .success(let value): return value
+        case .failure(let error): throw error
+        }
+    }
+
+    /// Variant of `perform` for methods that return `Void` on success.
+    private func performVoid(
+        label: String,
+        record: RecordedUserCall.Kind,
+        get: (StubUserService) -> [Result<Void, Error>],
+        set: (StubUserService, [Result<Void, Error>]) -> Void
+    ) throws {
+        lock.lock()
+        _recorded.append(.init(kind: record))
+        var queue = get(self)
+        guard !queue.isEmpty else {
+            lock.unlock()
+            throw StubUserError.noOutcome(label: label)
+        }
+        let outcome = queue.removeFirst()
+        set(self, queue)
+        lock.unlock()
+        switch outcome {
+        case .success: return
         case .failure(let error): throw error
         }
     }

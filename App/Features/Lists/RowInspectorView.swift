@@ -48,7 +48,7 @@ struct RowInspectorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Row")
-                    .font(.title3.weight(.semibold))
+                    .font(.ilTitle(20))
                 Divider()
                 if viewModel.schema.fields.isEmpty {
                     ForEach(row.fields.keys.sorted(), id: \.self) { key in
@@ -133,10 +133,10 @@ struct RowInspectorView: View {
     private var placeholder: some View {
         VStack(spacing: 8) {
             Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Row inspector")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("Select a row to inspect its fields.")
                 .foregroundStyle(.secondary)
         }

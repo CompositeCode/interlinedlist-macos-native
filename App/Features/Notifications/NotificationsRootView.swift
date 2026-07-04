@@ -178,10 +178,10 @@ struct NotificationsRootView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "bell.slash")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("You're all caught up")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("New activity from people you follow and lists you watch will show up here.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -197,12 +197,12 @@ struct NotificationsRootView: View {
     ) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Couldn't load notifications")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(error.localizedDescription)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
@@ -217,10 +217,10 @@ struct NotificationsRootView: View {
     private var unconfiguredState: some View {
         VStack(spacing: 8) {
             Image(systemName: "wrench.adjustable")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Notifications unavailable")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("AppEnvironment is not injected into the view tree.")
                 .foregroundStyle(.secondary)
         }

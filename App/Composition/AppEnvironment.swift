@@ -144,6 +144,12 @@ final class AppEnvironment: ObservableObject {
     /// the protocol so test doubles substitute in.
     let userService: UserServicing
 
+    /// The CSV exports service the M7 Data Export feature binds against
+    /// (PLAN.md §1 "Data Exports", §6 M7). Exposed as the protocol so
+    /// test doubles substitute in. Wraps the four `/api/exports/*`
+    /// endpoints and returns domain `CSVExport` values.
+    let exportsService: ExportsServicing
+
     /// Designated initializer used by tests and previews that want to
     /// inject a fully synthetic service graph. Production code calls
     /// `live()` instead.
@@ -164,7 +170,8 @@ final class AppEnvironment: ObservableObject {
         followCountsStore: SwiftDataFollowCountsStore?,
         followRelationshipReader: FollowRelationshipReading,
         orgService: OrgServicing,
-        userService: UserServicing
+        userService: UserServicing,
+        exportsService: ExportsServicing
     ) {
         self.messages = messages
         self.lists = lists
@@ -183,6 +190,7 @@ final class AppEnvironment: ObservableObject {
         self.followRelationshipReader = followRelationshipReader
         self.orgService = orgService
         self.userService = userService
+        self.exportsService = exportsService
     }
 
     /// Builds the production service graph:
@@ -284,6 +292,11 @@ final class AppEnvironment: ObservableObject {
         // for the browser-handoff OAuth link flow.
         let orgService = OrgService(api: api)
         let userService = UserService(api: api)
+        // M7 — CSV data exports (PLAN.md §1 "Data Exports", §6 M7). Reuses
+        // the same kit-layer `APIClient`; the export endpoints are the
+        // decision-0001 session-only allowlist (`/api/exports/*`), already
+        // routed by the shared `authTransport`.
+        let exportsService = ExportsService(api: api)
         return AppEnvironment(
             messages: messages,
             lists: lists,
@@ -301,7 +314,8 @@ final class AppEnvironment: ObservableObject {
             followCountsStore: followCountsStore,
             followRelationshipReader: followRelationshipReader,
             orgService: orgService,
-            userService: userService
+            userService: userService,
+            exportsService: exportsService
         )
     }
 

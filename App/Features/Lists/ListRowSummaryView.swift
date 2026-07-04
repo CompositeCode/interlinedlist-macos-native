@@ -18,7 +18,7 @@ struct ListRowSummaryView: View {
             header
             if let description = summary.description, !description.isEmpty {
                 Text(description)
-                    .font(.subheadline)
+                    .font(.ilSubtitle())
                     .foregroundStyle(.secondary)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -50,7 +50,7 @@ struct ListRowSummaryView: View {
 
     private var visibilityBadge: some View {
         Label("Private", systemImage: "lock")
-            .font(.caption)
+            .font(.ilMono(10))
             .foregroundStyle(.secondary)
             .accessibilityLabel("Private list")
     }
@@ -62,7 +62,7 @@ struct ListRowSummaryView: View {
                     Self.relativeFormatter.localizedString(for: updatedAt, relativeTo: .now),
                     systemImage: "clock"
                 )
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Updated \(Self.fullFormatter.string(from: updatedAt))")
             }

@@ -57,15 +57,15 @@ private struct DocumentRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(document.title.isEmpty ? "Untitled" : document.title)
-                .font(.body)
+                .font(.ilBody())
                 .lineLimit(1)
             HStack(spacing: 4) {
                 Text(document.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
                 if document.isPublic {
                     Image(systemName: "globe")
-                        .font(.caption)
+                        .font(.ilMono(10))
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("Public document")
                 }

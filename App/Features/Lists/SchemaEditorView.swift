@@ -93,14 +93,14 @@ struct SchemaEditorView: View {
     private func header(viewModel: SchemaEditorViewModel) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Schema")
-                .font(.title3.weight(.semibold))
+                .font(.ilTitle(20))
             if viewModel.isEditable {
                 Text("Add, edit, and reorder the columns. Save to apply.")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
             } else {
                 Text("You don't have permission to edit this schema.")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
             }
         }
@@ -161,7 +161,7 @@ struct SchemaEditorView: View {
             }
             if let error = viewModel.validationError(for: field) {
                 Text(error)
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.red)
             }
         }
@@ -194,12 +194,12 @@ struct SchemaEditorView: View {
     private func errorState(_ error: Error) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Couldn't load schema")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(error.localizedDescription)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)

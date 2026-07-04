@@ -8,8 +8,7 @@
 // M2 adds the dedicated composer `Window` scene (PLAN.md §5 — "⌘N
 // anywhere"), the ⌘N menu command (`ComposeCommands`), and a launch-
 // time session restore so the ownership-gated edit / delete UI knows
-// who the signed-in user is. Sign-out / re-sign-in still go through
-// the Onboarding window (M0/M7).
+// who the signed-in user is.
 //
 // M5 adds the `@NSApplicationDelegateAdaptor` so the dock-tile badge
 // can be written for unread notifications (PLAN.md §5 — "dock badge
@@ -18,6 +17,12 @@
 // lifecycle aligns with the SwiftUI scene's. The notifications
 // unread-badge coordinator subscribes to the event bus and writes
 // the badge through the adapter.
+//
+// M7 adds the Onboarding window: the `WindowGroup` body switches
+// between `OnboardingView` and `MainWindowView` based on whether a
+// `CurrentUser` has resolved. `AppRootView` observes `CurrentUserStore`
+// (an `@Observable` class) so the switch is reactive — sign-in makes
+// the user non-nil and SwiftUI re-renders `MainWindowView` in place.
 
 import SwiftUI
 
@@ -40,7 +45,7 @@ struct InterlinedListApp: App {
 
     var body: some Scene {
         WindowGroup {
-            MainWindowView()
+            AppRootView(store: environment.currentUserStore)
                 .environmentObject(environment)
                 .environment(\.appEnvironment, environment)
                 .task {
@@ -85,11 +90,14 @@ struct InterlinedListApp: App {
         }
         .windowToolbarStyle(.unified)
         .commands {
+            AccountMenuCommands()
             ComposeCommands()
             ListMenuCommands()
             DocumentsMenuCommands()
             NotificationsMenuCommands()
             SocialMenuCommands()
+            // M7 — CSV exports via File > Export submenu (PLAN.md §6 M7).
+            ExportMenuCommands()
         }
 
         // Dedicated composer scene (PLAN.md §5). `Window` instead of
@@ -107,6 +115,40 @@ struct InterlinedListApp: App {
             SettingsRootView()
                 .environmentObject(environment)
                 .environment(\.appEnvironment, environment)
+        }
+    }
+}
+
+// MARK: - AppRootView
+
+/// Session-aware root switcher (M7). Reads `CurrentUserStore.currentUser`
+/// directly so SwiftUI's `@Observable` tracking re-renders the window
+/// content when sign-in resolves or sign-out clears the user. A separate
+/// view struct is necessary because `@Observable` dependency tracking
+/// operates on `View.body`, not on the `Scene.body` closure.
+///
+/// Also handles the `accountSignOut` notification posted by
+/// `AccountMenuCommands` — the notification pattern keeps the Commands
+/// struct dependency-free while this view, which always lives in the
+/// view tree, holds the async session reference.
+private struct AppRootView: View {
+    /// `CurrentUserStore` is `@Observable`; reading `store.currentUser`
+    /// in `body` registers a dependency that fires when the user changes.
+    let store: CurrentUserStore
+
+    @Environment(\.appEnvironment) private var environment
+
+    var body: some View {
+        Group {
+            if store.currentUser != nil {
+                MainWindowView()
+            } else {
+                OnboardingView()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .accountSignOut)) { _ in
+            guard let environment else { return }
+            Task { try? await environment.session.signOut() }
         }
     }
 }

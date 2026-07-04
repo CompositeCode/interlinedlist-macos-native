@@ -64,6 +64,9 @@ struct MessageRowView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
+        .accessibilityAction(named: "Dig") {
+            onToggleDig?(message)
+        }
     }
 
     // MARK: - Sections
@@ -73,17 +76,17 @@ struct MessageRowView: View {
             avatar
             VStack(alignment: .leading, spacing: 2) {
                 Text(message.author.displayName)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.ilTitle())
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text("@\(message.author.username)")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
             Text(Self.relativeFormatter.localizedString(for: message.createdAt, relativeTo: .now))
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Posted \(Self.fullFormatter.string(from: message.createdAt))")
         }
@@ -112,7 +115,7 @@ struct MessageRowView: View {
         // later milestone alongside richer composer affordances.
         // `.body` honours Dynamic Type.
         Text(message.text)
-            .font(.body)
+            .font(.ilBody())
             .foregroundStyle(.primary)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -127,10 +130,10 @@ struct MessageRowView: View {
             HStack(spacing: 6) {
                 ForEach(message.tags, id: \.self) { tag in
                     Text("#\(tag)")
-                        .font(.caption2.weight(.medium))
+                        .font(.ilMono(9))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Color.accentColor.opacity(0.15), in: Capsule())
+                        .background(ILColor.primary.opacity(0.15), in: Capsule())
                         .foregroundStyle(Color.accentColor)
                         .accessibilityLabel("Tag \(tag)")
                 }
@@ -144,21 +147,21 @@ struct MessageRowView: View {
 
             if message.repostCount > 0 {
                 Label("\(message.repostCount)", systemImage: "arrow.2.squarepath")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("\(message.repostCount) reposts")
             }
 
             if let count = message.replyCount, count > 0 {
                 Label("\(count)", systemImage: "bubble.left")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("\(count) replies")
             }
 
             if message.visibility == .private {
                 Label("Private", systemImage: "lock")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Private post")
             }
@@ -194,7 +197,7 @@ struct MessageRowView: View {
             "\(message.digCount)",
             systemImage: message.didDig ? "hand.thumbsup.fill" : "hand.thumbsup"
         )
-        .font(.caption)
+        .font(.ilMono(10))
         .foregroundStyle(message.didDig ? Color.accentColor : .secondary)
     }
 
@@ -232,9 +235,9 @@ struct MessageRowView: View {
     private func repostBanner(original: Message) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "arrow.2.squarepath")
-                .font(.caption)
+                .font(.ilMono(10))
             Text("Reposted from @\(original.author.username)")
-                .font(.caption)
+                .font(.ilMono(10))
         }
         .foregroundStyle(.secondary)
         .accessibilityLabel("Reposted from @\(original.author.username)")

@@ -48,6 +48,26 @@ public protocol UserServicing: Sendable {
     /// - Throws: `UserServiceError` for an unsupported provider, a missing
     ///   Mastodon instance, or a URL that cannot be assembled.
     func identityLinkURL(provider: IdentityProvider, instance: String?) throws -> URL
+
+    // MARK: - Account mutations (M7)
+
+    /// Starts the email-change flow for the signed-in account. The server
+    /// sends a confirmation link to `newEmail`; no local state changes until
+    /// the user clicks the link. Throws on any networking failure.
+    func requestEmailChange(newEmail: String) async throws
+
+    /// Uploads raw image bytes and returns the hosted avatar URL. The server
+    /// responds with a `MediaUploadResponse`; the returned `URL` is parsed
+    /// from `response.url`. Returns `nil` when the server returns a URL string
+    /// that cannot be parsed into a `Foundation.URL` (edge case).
+    func uploadAvatar(imageData: Data, contentType: String) async throws -> URL?
+
+    /// Permanently deletes the signed-in account. The server ignores the
+    /// response body; callers should sign out immediately on success. Passes
+    /// `password` to the `DeleteAccountRequest` so the server can re-confirm
+    /// identity; `nil` is accepted by the endpoint but callers should always
+    /// supply the current password.
+    func deleteAccount(password: String) async throws
 }
 
 // MARK: - UserServiceError
@@ -158,5 +178,22 @@ public final class UserService: UserServicing {
             throw UserServiceError.malformedLinkURL
         }
         return url
+    }
+
+    // MARK: - Account mutations (M7)
+
+    public func requestEmailChange(newEmail: String) async throws {
+        _ = try await api.send(User.requestEmailChange(ChangeEmailRequest(newEmail: newEmail)))
+    }
+
+    public func uploadAvatar(imageData: Data, contentType: String) async throws -> URL? {
+        let response = try await api.send(User.uploadAvatar(imageData, contentType: contentType))
+        let trimmed = response.url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return URL(string: trimmed)
+    }
+
+    public func deleteAccount(password: String) async throws {
+        _ = try await api.send(User.delete(DeleteAccountRequest(password: password)))
     }
 }

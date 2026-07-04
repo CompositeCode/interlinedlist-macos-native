@@ -161,10 +161,10 @@ struct ProfileRootView: View {
     private var promptState: some View {
         VStack(spacing: 8) {
             Image(systemName: "person.crop.circle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Browse a public profile")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("Enter a username to view their public profile.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -189,10 +189,10 @@ struct ProfileRootView: View {
         // renders — and so it doesn't look like a transport failure.
         VStack(spacing: 8) {
             Image(systemName: "tray")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Profile unavailable")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("@\(username) has no public messages yet, so we can't show their profile in this version.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -205,12 +205,12 @@ struct ProfileRootView: View {
     private func errorState(error: Error, viewModel: ProfileViewModel) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Couldn't load profile")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(error.localizedDescription)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
@@ -228,10 +228,10 @@ struct ProfileRootView: View {
         // the message diagnostic rather than user-facing.
         VStack(spacing: 8) {
             Image(systemName: "wrench.adjustable")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Profile unavailable")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("AppEnvironment is not injected into the view tree.")
                 .foregroundStyle(.secondary)
         }

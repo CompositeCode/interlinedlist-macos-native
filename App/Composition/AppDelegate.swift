@@ -62,19 +62,17 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         completionHandler([.banner, .sound])
     }
 
-    /// Called when the user clicks a delivered notification. v1 simply
-    /// brings the app forward; the eventual deep-link router translates
-    /// `userInfo["target"]` into a `NotificationTarget` and routes the
-    /// main window. Tracked as TODO(M5.x).
+    /// Called when the user clicks a delivered notification. Routes the
+    /// main window to the Notifications sidebar section and activates
+    /// the app. The `NotificationsRootView` will refresh on appear so
+    /// the relevant item is visible.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        // TODO(M5.x): decode `response.notification.request.content.userInfo`
-        // into a `NotificationTarget` and route the main window's
-        // sidebar selection. v1 just activates the app.
         NSApp.activate(ignoringOtherApps: true)
+        NotificationCenter.default.post(name: .notificationsShow, object: nil)
         completionHandler()
     }
 }

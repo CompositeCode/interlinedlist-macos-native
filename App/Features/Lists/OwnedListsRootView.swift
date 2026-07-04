@@ -194,10 +194,10 @@ struct OwnedListsRootView: View {
     private var placeholderSelectListState: some View {
         VStack(spacing: 8) {
             Image(systemName: "list.bullet.rectangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Select a list")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("Choose a list from the sidebar to view its rows.")
                 .foregroundStyle(.secondary)
         }
@@ -207,10 +207,10 @@ struct OwnedListsRootView: View {
     private var unconfiguredState: some View {
         VStack(spacing: 8) {
             Image(systemName: "wrench.adjustable")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Lists unavailable")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("AppEnvironment is not injected into the view tree.")
                 .foregroundStyle(.secondary)
         }
@@ -272,7 +272,7 @@ private struct OwnedListSidebarRow: View {
                 .lineLimit(1)
             if list.gitHubSource != nil {
                 Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("GitHub-backed list")
             }

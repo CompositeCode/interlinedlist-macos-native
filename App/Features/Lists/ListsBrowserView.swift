@@ -150,10 +150,10 @@ struct ListsBrowserView: View {
     private var promptState: some View {
         VStack(spacing: 8) {
             Image(systemName: "list.bullet.rectangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Browse public lists")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("Enter a username to browse their public lists.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -174,10 +174,10 @@ struct ListsBrowserView: View {
     private func emptyState(username: String) -> some View {
         VStack(spacing: 8) {
             Image(systemName: "tray")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("No public lists")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("@\(username) has no public lists yet.")
                 .foregroundStyle(.secondary)
         }
@@ -188,12 +188,12 @@ struct ListsBrowserView: View {
     private func errorState(error: Error, viewModel: ListsBrowserViewModel) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Couldn't load lists")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(error.localizedDescription)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
@@ -211,10 +211,10 @@ struct ListsBrowserView: View {
         // the message diagnostic rather than user-facing.
         VStack(spacing: 8) {
             Image(systemName: "wrench.adjustable")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Lists unavailable")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("AppEnvironment is not injected into the view tree.")
                 .foregroundStyle(.secondary)
         }

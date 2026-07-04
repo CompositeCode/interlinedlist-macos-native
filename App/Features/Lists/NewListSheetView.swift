@@ -60,7 +60,7 @@ struct NewListSheetView: View {
                         set: { viewModel.schemaDSL = $0 }
                     ))
                     Text("You can also edit this later from the schema editor.")
-                        .font(.caption)
+                        .font(.ilMono(10))
                         .foregroundStyle(.secondary)
                 }
                 Section("Organization") {
@@ -96,7 +96,7 @@ struct NewListSheetView: View {
                         set: { viewModel.gitHubBranch = $0 }
                     ))
                     Text("GitHub source fields will be sent in a future update.")
-                        .font(.caption)
+                        .font(.ilMono(10))
                         .foregroundStyle(.secondary)
                 }
                 if let error = viewModel.error {

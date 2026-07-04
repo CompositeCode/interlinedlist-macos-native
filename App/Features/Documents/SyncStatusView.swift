@@ -20,7 +20,7 @@ struct SyncStatusView: View {
         HStack(spacing: 6) {
             statusGlyph
             Text(label)
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
@@ -39,7 +39,7 @@ struct SyncStatusView: View {
                 .controlSize(.small)
         case .lastSynced:
             Image(systemName: "checkmark.circle")
-                .foregroundStyle(.green)
+                .foregroundStyle(ILColor.primary)
         case .failed:
             Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(.red)

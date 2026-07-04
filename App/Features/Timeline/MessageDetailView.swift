@@ -158,7 +158,7 @@ struct MessageDetailView: View {
     private func repliesSection(viewModel: MessageDetailViewModel, currentUserID: String?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Replies")
-                .font(.headline)
+                .font(.ilSubtitle())
                 .padding(.horizontal, 16)
 
             if viewModel.replies.isEmpty, !viewModel.isLoading {
@@ -193,19 +193,19 @@ struct MessageDetailView: View {
                 content: {
                     VStack(alignment: .leading, spacing: 8) {
                         TextEditor(text: $replyBody)
-                            .font(.body)
+                            .font(.ilBody())
                             .frame(minHeight: 80)
                             .scrollContentBackground(.hidden)
-                            .background(Color(nsColor: .textBackgroundColor))
+                            .background(ILColor.surface)
                             .overlay(
-                                RoundedRectangle(cornerRadius: 6)
+                                RoundedRectangle(cornerRadius: ILMetric.radiusSm)
                                     .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                             )
                             .accessibilityLabel("Reply body")
 
                         if let replyError = viewModel.replyError {
                             Label(replyError.localizedDescription, systemImage: "exclamationmark.triangle.fill")
-                                .font(.caption)
+                                .font(.ilMono(10))
                                 .foregroundStyle(Color.accentColor)
                         }
 
@@ -246,12 +246,12 @@ struct MessageDetailView: View {
     private func errorState(error: Error, viewModel: MessageDetailViewModel) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Couldn't load the message")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(error.localizedDescription)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)

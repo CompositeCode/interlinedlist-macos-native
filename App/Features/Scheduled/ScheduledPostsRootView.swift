@@ -92,7 +92,7 @@ struct ScheduledPostsRootView: View {
                 }
             } footer: {
                 Text("Cancelling or rescheduling a queued post isn't available yet.")
-                    .font(.footnote)
+                    .font(.ilMono(11))
                     .foregroundStyle(.secondary)
             }
         }
@@ -116,10 +116,10 @@ struct ScheduledPostsRootView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "calendar.badge.clock")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Nothing scheduled")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("Posts you schedule for later will appear here.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -139,12 +139,12 @@ struct ScheduledPostsRootView: View {
     ) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Couldn't load scheduled posts")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(error.localizedDescription)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
@@ -159,10 +159,10 @@ struct ScheduledPostsRootView: View {
     private var unconfiguredState: some View {
         VStack(spacing: 8) {
             Image(systemName: "wrench.adjustable")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Scheduled posts unavailable")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("AppEnvironment is not injected into the view tree.")
                 .foregroundStyle(.secondary)
         }
@@ -181,16 +181,16 @@ private struct ScheduledPostRow: View {
         VStack(alignment: .leading, spacing: 4) {
             if let scheduledAt = post.scheduledAt {
                 Label(Self.dateFormatter.string(from: scheduledAt), systemImage: "clock")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(Color.accentColor)
             }
             Text(post.text.isEmpty ? "(No text)" : post.text)
-                .font(.body)
+                .font(.ilBody())
                 .lineLimit(3)
                 .foregroundStyle(post.text.isEmpty ? .secondary : .primary)
             if !post.tags.isEmpty {
                 Text(post.tags.map { "#\($0)" }.joined(separator: " "))
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
             }
         }

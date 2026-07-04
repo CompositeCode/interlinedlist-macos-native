@@ -96,27 +96,27 @@ struct ListDetailView: View {
                         .foregroundStyle(Color.accentColor)
                         .accessibilityHidden(true)
                     Text(detail.title)
-                        .font(.title2.weight(.semibold))
+                        .font(.ilDisplay())
                     if detail.visibility == .private {
                         Label("Private", systemImage: "lock")
-                            .font(.caption)
+                            .font(.ilMono(10))
                             .foregroundStyle(.secondary)
                             .accessibilityLabel("Private list")
                     }
                     Spacer()
                     Text("@\(username)")
-                        .font(.subheadline)
+                        .font(.ilSubtitle())
                         .foregroundStyle(.secondary)
                 }
                 if let description = detail.description, !description.isEmpty {
                     Text(description)
-                        .font(.subheadline)
+                        .font(.ilSubtitle())
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if let schema = detail.schemaDescription, !schema.isEmpty {
                     Label(schema, systemImage: "tablecells")
-                        .font(.caption)
+                        .font(.ilMono(10))
                         .foregroundStyle(.secondary)
                         .accessibilityLabel("Schema: \(schema)")
                 }
@@ -182,7 +182,7 @@ struct ListDetailView: View {
                         .foregroundStyle(.secondary)
                         .frame(minWidth: 80, alignment: .leading)
                     Text(row.fields[key]?.displayText ?? "")
-                        .font(.body)
+                        .font(.ilBody())
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer()
@@ -207,10 +207,10 @@ struct ListDetailView: View {
     private var emptyRowsState: some View {
         VStack(spacing: 8) {
             Image(systemName: "tray")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("No rows")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("This list has no rows yet.")
                 .foregroundStyle(.secondary)
         }
@@ -221,12 +221,12 @@ struct ListDetailView: View {
     private func errorState(error: Error, viewModel: ListDetailViewModel) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Couldn't load this list")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(error.localizedDescription)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
@@ -244,21 +244,21 @@ struct ListDetailView: View {
     private var saveSheet: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Save to my lists")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("Create a copy of this list in your account.")
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
             TextField("Name", text: $savedListName)
                 .textFieldStyle(.roundedBorder)
             if let viewModel,
                case .saved(let list) = viewModel.saveState {
                 Text("Saved as \"\(list.title)\".")
-                    .font(.caption)
-                    .foregroundStyle(.green)
+                    .font(.ilMono(10))
+                    .foregroundStyle(ILColor.primary)
             } else if let viewModel,
                       case .failed(let message) = viewModel.saveState {
                 Text(message)
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.red)
             }
             HStack {

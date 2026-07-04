@@ -21,15 +21,15 @@ struct ConflictBannerView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.yellow)
-                .font(.system(size: 18))
+                .foregroundStyle(ILColor.amber)
+                .font(.ilMono(18))
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Server changed this document.")
-                    .font(.headline)
+                    .font(.ilSubtitle())
                 Text("Your local copy was saved as “\(pending.preservedTitle) (local copy)”.")
-                    .font(.subheadline)
+                    .font(.ilSubtitle())
                     .foregroundStyle(.secondary)
             }
 
@@ -51,12 +51,12 @@ struct ConflictBannerView: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.yellow.opacity(0.12))
+            RoundedRectangle(cornerRadius: ILMetric.radiusMd)
+                .fill(ILColor.amber.opacity(0.15))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.yellow.opacity(0.4), lineWidth: 1)
+            RoundedRectangle(cornerRadius: ILMetric.radiusMd)
+                .stroke(ILColor.amber.opacity(0.4), lineWidth: 1)
         )
         .padding(.horizontal, 12)
         .padding(.top, 8)

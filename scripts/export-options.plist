@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Developer ID distribution outside the Mac App Store. -->
+    <key>method</key>
+    <string>developer-id</string>
+
+    <!-- Set to your Team ID (10-char alphanumeric, e.g. ABCDEF1234).
+         Find it at https://developer.apple.com/account in Membership. -->
+    <key>teamID</key>
+    <string>REPLACE_WITH_YOUR_TEAM_ID</string>
+
+    <!-- Hardened Runtime is required for notarization. -->
+    <key>hardRuntime</key>
+    <true/>
+
+    <!-- Sign the embedded frameworks too. -->
+    <key>signingStyle</key>
+    <string>manual</string>
+
+    <key>signingCertificate</key>
+    <string>Developer ID Application</string>
+
+    <key>provisioningProfiles</key>
+    <dict>
+        <!-- Leave empty for apps that don't use provisioning profiles
+             (Developer ID + entitlements only, no push/iCloud). -->
+    </dict>
+
+    <!-- Strip Swift stdlib from embedded frameworks if possible. -->
+    <key>stripSwiftSymbols</key>
+    <true/>
+</dict>
+</plist>

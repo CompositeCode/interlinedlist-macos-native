@@ -141,6 +141,7 @@ struct TimelineRootView: View {
             HStack(spacing: 6) {
                 Image(systemName: "number")
                     .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
                 TextField("Filter by tag", text: $tagDraft)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit {
@@ -216,6 +217,7 @@ struct TimelineRootView: View {
                     Spacer()
                     ProgressView()
                         .controlSize(.small)
+                        .accessibilityLabel("Loading more messages")
                     Spacer()
                 }
                 .padding(.vertical, 8)
@@ -236,10 +238,10 @@ struct TimelineRootView: View {
     private var emptyState: some View {
         VStack(spacing: 8) {
             Image(systemName: "tray")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("No messages")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("Posts in this feed will appear here.")
                 .foregroundStyle(.secondary)
         }
@@ -250,12 +252,12 @@ struct TimelineRootView: View {
     private func errorState(error: Error, viewModel: TimelineViewModel) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(Color.accentColor)
             Text("Couldn't load the timeline")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text(error.localizedDescription)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
@@ -273,10 +275,10 @@ struct TimelineRootView: View {
         // the message diagnostic rather than user-facing.
         VStack(spacing: 8) {
             Image(systemName: "wrench.adjustable")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Timeline unavailable")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("AppEnvironment is not injected into the view tree.")
                 .foregroundStyle(.secondary)
         }

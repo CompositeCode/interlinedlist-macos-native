@@ -105,10 +105,10 @@ struct OrganizationsRootView: View {
     private var unconfiguredState: some View {
         VStack(spacing: 8) {
             Image(systemName: "building.2")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Sign in to see your organizations")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("Organizations you belong to appear here once you're signed in.")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -129,18 +129,18 @@ private struct OrgRowView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 28, height: 28)
-                .foregroundStyle(Color.accentColor.opacity(0.7))
+                .foregroundStyle(ILColor.primary.opacity(0.7))
             VStack(alignment: .leading, spacing: 2) {
                 Text(membership.organization.name)
-                    .font(.body)
+                    .font(.ilBody())
                     .fontWeight(.medium)
                 HStack(spacing: 6) {
                     Text(membership.role.displayName)
-                        .font(.caption)
+                        .font(.ilMono(10))
                         .foregroundStyle(.secondary)
                     if membership.organization.isPublic {
                         Text("Public")
-                            .font(.caption2)
+                            .font(.ilMono(9))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
                             .background(Color.secondary.opacity(0.15), in: Capsule())
@@ -169,7 +169,7 @@ private struct CreateOrganizationSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("New Organization")
-                .font(.headline)
+                .font(.ilSubtitle())
                 .padding([.top, .horizontal], 20)
 
             Form {
@@ -182,7 +182,7 @@ private struct CreateOrganizationSheet: View {
 
             if let error = listViewModel.createError {
                 Text(error.localizedDescription)
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 20)
             }

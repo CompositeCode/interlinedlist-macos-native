@@ -536,6 +536,16 @@ enum Fixtures {
         """
     }
 
+    /// Generic `MessageResponse` envelope returned by endpoints that
+    /// confirm an operation with a human-readable message string (e.g.
+    /// `POST /api/user/change-email/request` and
+    /// `POST /api/user/delete`).
+    static func messageResponse(message: String = "ok") -> String {
+        """
+        { "message": "\(message)" }
+        """
+    }
+
     // MARK: - Organizations (M6) fixtures
 
     /// A single `OrganizationDTO` object body.

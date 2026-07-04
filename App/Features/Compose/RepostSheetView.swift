@@ -46,24 +46,24 @@ struct RepostSheetView: View {
     private func sheetBody(viewModel: RepostSheetViewModel) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Repost")
-                .font(.headline)
+                .font(.ilSubtitle())
 
             originalPreview
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Commentary (optional)")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
                 TextEditor(text: Binding(
                     get: { viewModel.commentary },
                     set: { viewModel.commentary = $0 }
                 ))
-                .font(.body)
+                .font(.ilBody())
                 .frame(minHeight: 80)
                 .scrollContentBackground(.hidden)
-                .background(Color(nsColor: .textBackgroundColor))
+                .background(ILColor.surface)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: ILMetric.radiusSm)
                         .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                 )
                 .accessibilityLabel("Repost commentary")
@@ -82,7 +82,7 @@ struct RepostSheetView: View {
 
             if let error = viewModel.error {
                 Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
-                    .font(.subheadline)
+                    .font(.ilSubtitle())
                     .foregroundStyle(Color.accentColor)
             }
 
@@ -94,15 +94,15 @@ struct RepostSheetView: View {
     private var originalPreview: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("@\(original.author.username)")
-                .font(.caption)
+                .font(.ilMono(10))
                 .foregroundStyle(.secondary)
             Text(original.text)
-                .font(.subheadline)
+                .font(.ilSubtitle())
                 .lineLimit(3)
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: ILMetric.radiusSm))
     }
 
     @ViewBuilder
@@ -133,10 +133,10 @@ struct RepostSheetView: View {
     private var unconfiguredState: some View {
         VStack(spacing: 8) {
             Image(systemName: "wrench.adjustable")
-                .font(.system(size: 36))
+                .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
             Text("Repost unavailable")
-                .font(.headline)
+                .font(.ilSubtitle())
             Text("AppEnvironment is not injected into the view tree.")
                 .foregroundStyle(.secondary)
         }

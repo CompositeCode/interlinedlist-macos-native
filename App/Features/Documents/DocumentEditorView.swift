@@ -61,7 +61,7 @@ struct DocumentEditorView: View {
             )
         )
         .textFieldStyle(.plain)
-        .font(.title2.weight(.semibold))
+        .font(.ilDisplay())
     }
 
     // MARK: - Toolbar
@@ -103,11 +103,11 @@ struct DocumentEditorView: View {
                     .controlSize(.small)
             } else if viewModel.hasUnsavedChanges {
                 Text("Unsaved")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
             } else {
                 Text("Saved")
-                    .font(.caption)
+                    .font(.ilMono(10))
                     .foregroundStyle(.secondary)
             }
         }
@@ -138,9 +138,9 @@ struct DocumentEditorView: View {
                 set: { viewModel.body = $0 }
             )
         )
-        .font(.system(.body, design: .monospaced))
+        .font(.ilMono(13))
         .padding(8)
-        .background(Color(white: 0.98))
+        .background(ILColor.surface)
         .dropDestination(for: Data.self) { items, _ in
             guard let data = items.first else { return false }
             Task { await viewModel.uploadImage(data, suggestedName: nil) }
