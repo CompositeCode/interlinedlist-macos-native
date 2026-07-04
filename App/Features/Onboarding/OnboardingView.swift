@@ -165,6 +165,7 @@ struct OnboardingView: View {
                 if vm.isLoading {
                     ProgressView()
                         .scaleEffect(0.75)
+                        .accessibilityLabel("Loading")
                 }
             }
         }

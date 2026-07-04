@@ -160,6 +160,7 @@ struct ListDetailView: View {
                     Spacer()
                     ProgressView()
                         .controlSize(.small)
+                        .accessibilityLabel("Loading more rows")
                     Spacer()
                 }
                 .padding(.vertical, 8)

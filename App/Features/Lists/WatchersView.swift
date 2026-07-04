@@ -23,6 +23,7 @@ struct WatchersView: View {
                 content(viewModel: viewModel)
             } else {
                 ProgressView()
+                    .accessibilityLabel("Loading sharing panel")
                     .padding()
             }
         }
@@ -49,6 +50,7 @@ struct WatchersView: View {
             List {
                 if viewModel.watchers.isEmpty, viewModel.isLoading {
                     ProgressView()
+                        .accessibilityLabel("Loading watchers")
                         .frame(maxWidth: .infinity)
                 } else if viewModel.watchers.isEmpty {
                     Text("No watchers yet.")
@@ -107,6 +109,7 @@ struct WatchersView: View {
             Image(systemName: "person.crop.circle")
                 .font(.ilMono(24))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(watcher.username ?? watcher.userId)
                     .font(.ilBody())
@@ -129,6 +132,7 @@ struct WatchersView: View {
             }
             .pickerStyle(.menu)
             .frame(width: 100)
+            .accessibilityLabel("Role for \(watcher.username ?? watcher.userId)")
 
             Button {
                 userIDPendingRemove = watcher.userId
@@ -137,7 +141,7 @@ struct WatchersView: View {
                     .foregroundStyle(.red)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Remove watcher")
+            .accessibilityLabel("Remove \(watcher.username ?? watcher.userId)")
         }
         .padding(.vertical, 2)
     }

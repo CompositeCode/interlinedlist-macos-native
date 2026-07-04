@@ -99,6 +99,7 @@ struct ListRowsView: View {
             }
             .pickerStyle(.segmented)
             .frame(width: 200)
+            .accessibilityLabel("View mode")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -145,6 +146,7 @@ struct ListRowsView: View {
             }
             Spacer()
         }
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -161,6 +163,8 @@ struct ListRowsView: View {
                         rowCard(row: row, columns: viewModel.columns)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(rowAccessibilityLabel(row: row, columns: viewModel.columns))
+                    .accessibilityHint("Selects this row for inspection")
                         .onAppear {
                             if shouldLoadMore(row, in: viewModel.rows) {
                                 Task { await viewModel.loadMore() }
@@ -190,6 +194,15 @@ struct ListRowsView: View {
         }
         .padding(12)
         .background(ILColor.surface2, in: RoundedRectangle(cornerRadius: ILMetric.radiusMd))
+    }
+
+    private func rowAccessibilityLabel(row: ListRow, columns: [String]) -> String {
+        let keys = columns.isEmpty ? row.fields.keys.sorted() : columns
+        let pairs = keys.compactMap { key -> String? in
+            guard let value = row.fields[key]?.displayText, !value.isEmpty else { return nil }
+            return "\(key): \(value)"
+        }
+        return pairs.isEmpty ? "Row" : pairs.joined(separator: ", ")
     }
 
     private func shouldLoadMore(_ row: ListRow, in loaded: [ListRow]) -> Bool {

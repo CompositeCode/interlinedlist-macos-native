@@ -23,6 +23,7 @@ struct DocumentsListView: View {
         )) {
             if viewModel.documentsLoaded.isEmpty, viewModel.isLoading {
                 ProgressView()
+                    .accessibilityLabel("Loading documents")
                     .frame(maxWidth: .infinity)
             } else if viewModel.documentsLoaded.isEmpty {
                 Text("No documents yet — create one to begin.")
@@ -72,5 +73,14 @@ private struct DocumentRowView: View {
             }
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(documentAccessibilityLabel)
+    }
+
+    private var documentAccessibilityLabel: String {
+        let title = document.title.isEmpty ? "Untitled" : document.title
+        let date = document.updatedAt.formatted(date: .abbreviated, time: .shortened)
+        let visibility = document.isPublic ? ", public document" : ""
+        return "\(title), updated \(date)\(visibility)"
     }
 }

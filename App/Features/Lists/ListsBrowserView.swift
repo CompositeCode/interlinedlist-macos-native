@@ -63,6 +63,7 @@ struct ListsBrowserView: View {
         HStack(spacing: 8) {
             Image(systemName: "at")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             TextField(
                 "Browse a user's lists",
                 text: Binding(
@@ -137,6 +138,7 @@ struct ListsBrowserView: View {
                     Spacer()
                     ProgressView()
                         .controlSize(.small)
+                        .accessibilityLabel("Loading more lists")
                     Spacer()
                 }
                 .padding(.vertical, 8)

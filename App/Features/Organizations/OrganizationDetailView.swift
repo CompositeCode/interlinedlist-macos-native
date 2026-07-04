@@ -219,6 +219,7 @@ private struct MemberRow: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 28, height: 28)
                 .foregroundStyle(ILColor.primary.opacity(0.6))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(member.userId)
                     .font(.ilBody())
@@ -230,7 +231,9 @@ private struct MemberRow: View {
             }
             Spacer()
             if isPending {
-                ProgressView().controlSize(.small)
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Updating member")
             }
             if canManage {
                 Picker("Role", selection: Binding(
@@ -249,6 +252,7 @@ private struct MemberRow: View {
                 .labelsHidden()
                 .frame(width: 110)
                 .disabled(isPending)
+                .accessibilityLabel("Role for \(member.userId)")
 
                 Button(role: .destructive) {
                     Task { await onRemove() }
@@ -257,6 +261,7 @@ private struct MemberRow: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(isPending)
+                .accessibilityLabel("Remove \(member.userId) from organization")
             }
         }
         .padding(.vertical, 4)

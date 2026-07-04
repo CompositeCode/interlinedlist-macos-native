@@ -128,6 +128,7 @@ private struct LinkedIdentityRow: View {
             Image(systemName: identity.provider.iconName)
                 .frame(width: 22)
                 .foregroundStyle(Color.accentColor)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(identity.provider.displayName)
                     .font(.ilBody())
@@ -146,6 +147,17 @@ private struct LinkedIdentityRow: View {
             }
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(rowAccessibilityLabel)
+    }
+
+    private var rowAccessibilityLabel: String {
+        var parts = [identity.provider.displayName]
+        if let handle = identity.handle { parts.append(handle) }
+        if let connectedAt = identity.connectedAt {
+            parts.append("connected \(connectedAt.formatted(date: .abbreviated, time: .omitted))")
+        }
+        return parts.joined(separator: ", ")
     }
 }
 

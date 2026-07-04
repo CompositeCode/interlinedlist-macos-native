@@ -101,6 +101,7 @@ struct NotificationRowView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(viewModel.isMutating)
+                .accessibilityHint("Rejects this follow request")
 
                 Button("Approve") {
                     Task { await viewModel.approve() }
@@ -108,6 +109,7 @@ struct NotificationRowView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(viewModel.isMutating)
+                .accessibilityHint("Approves this follow request")
             }
         case .approved:
             Label("Approved", systemImage: "checkmark.circle.fill")

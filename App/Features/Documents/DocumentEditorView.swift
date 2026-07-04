@@ -62,6 +62,7 @@ struct DocumentEditorView: View {
         )
         .textFieldStyle(.plain)
         .font(.ilDisplay())
+        .accessibilityLabel("Document title")
     }
 
     // MARK: - Toolbar
@@ -101,6 +102,7 @@ struct DocumentEditorView: View {
             if viewModel.isSaving {
                 ProgressView()
                     .controlSize(.small)
+                    .accessibilityLabel("Saving document")
             } else if viewModel.hasUnsavedChanges {
                 Text("Unsaved")
                     .font(.ilMono(10))
@@ -141,6 +143,7 @@ struct DocumentEditorView: View {
         .font(.ilMono(13))
         .padding(8)
         .background(ILColor.surface)
+        .accessibilityLabel("Document body")
         .dropDestination(for: Data.self) { items, _ in
             guard let data = items.first else { return false }
             Task { await viewModel.uploadImage(data, suggestedName: nil) }
@@ -162,6 +165,7 @@ struct DocumentEditorView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(12)
         }
+        .accessibilityLabel("Document preview")
     }
 
     // MARK: - State held by the view itself

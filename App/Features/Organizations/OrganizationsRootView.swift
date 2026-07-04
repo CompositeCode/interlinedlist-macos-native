@@ -130,6 +130,7 @@ private struct OrgRowView: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 28, height: 28)
                 .foregroundStyle(ILColor.primary.opacity(0.7))
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(membership.organization.name)
                     .font(.ilBody())
@@ -150,6 +151,13 @@ private struct OrgRowView: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(rowAccessibilityLabel)
+    }
+
+    private var rowAccessibilityLabel: String {
+        let visibility = membership.organization.isPublic ? ", public" : ""
+        return "\(membership.organization.name), \(membership.role.displayName)\(visibility)"
     }
 }
 

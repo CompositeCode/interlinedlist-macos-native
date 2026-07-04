@@ -82,7 +82,9 @@ struct AccountSettingsView: View {
                     }
                     .disabled(vm.isLoadingAvatar)
                     if vm.isLoadingAvatar {
-                        ProgressView().controlSize(.small)
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Uploading avatar")
                     }
                 }
                 .padding(.vertical, 4)
@@ -189,11 +191,13 @@ struct AccountSettingsView: View {
             }
             .frame(width: 64, height: 64)
             .clipShape(Circle())
+            .accessibilityHidden(true)
         } else {
             Image(systemName: "person.crop.circle.fill")
                 .resizable()
                 .frame(width: 64, height: 64)
                 .foregroundStyle(ILColor.primary)
+                .accessibilityHidden(true)
         }
     }
 }

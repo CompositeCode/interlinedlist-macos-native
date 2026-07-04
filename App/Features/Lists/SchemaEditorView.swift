@@ -178,6 +178,7 @@ struct SchemaEditorView: View {
             if viewModel.isSaving {
                 ProgressView()
                     .controlSize(.small)
+                    .accessibilityLabel("Saving schema")
                     .padding(.trailing, 4)
             }
             Button("Save") {

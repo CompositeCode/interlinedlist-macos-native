@@ -195,6 +195,21 @@ private struct ScheduledPostRow: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(rowAccessibilityLabel)
+    }
+
+    private var rowAccessibilityLabel: String {
+        var parts: [String] = []
+        if let scheduledAt = post.scheduledAt {
+            parts.append("Scheduled for \(Self.dateFormatter.string(from: scheduledAt))")
+        }
+        let bodyText = post.text.isEmpty ? "No text" : post.text
+        parts.append(bodyText)
+        if !post.tags.isEmpty {
+            parts.append("Tags: \(post.tags.joined(separator: ", "))")
+        }
+        return parts.joined(separator: ". ")
     }
 
     private static let dateFormatter: DateFormatter = {

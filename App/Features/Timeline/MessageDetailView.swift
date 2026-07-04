@@ -48,6 +48,7 @@ struct MessageDetailView: View {
                 detailBody(viewModel: viewModel)
             } else {
                 ProgressView()
+                    .accessibilityLabel("Loading message")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -212,7 +213,9 @@ struct MessageDetailView: View {
                         HStack {
                             Spacer()
                             if viewModel.isPostingReply {
-                                ProgressView().controlSize(.small)
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .accessibilityLabel("Posting reply")
                             }
                             Button("Reply") {
                                 Task {

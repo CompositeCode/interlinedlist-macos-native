@@ -170,6 +170,7 @@ struct OwnedListsRootView: View {
         )) {
             if viewModel.lists_loaded.isEmpty, viewModel.isLoading {
                 ProgressView()
+                    .accessibilityLabel("Loading lists")
                     .frame(maxWidth: .infinity)
             } else if viewModel.lists_loaded.isEmpty {
                 Text("No lists yet — create one to begin.")
@@ -278,6 +279,8 @@ private struct OwnedListSidebarRow: View {
             }
             Spacer()
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(list.gitHubSource != nil ? "\(list.title), GitHub-backed list" : list.title)
         .contextMenu {
             Button(role: .destructive) {
                 onDeleteRequested(list)

@@ -374,6 +374,7 @@ struct ComposerWindowView: View {
             if viewModel.isSubmitting {
                 ProgressView()
                     .controlSize(.small)
+                    .accessibilityLabel("Publishing post")
                     .padding(.trailing, 8)
             }
 

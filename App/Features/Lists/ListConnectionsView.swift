@@ -182,6 +182,8 @@ struct ListConnectionsView: View {
                         edgeIDPendingRemove = firstEdge.id
                     }
                 }
+                .accessibilityLabel(node.isFocused ? "\(node.title), current list" : node.title)
+                .accessibilityHint("Drag to reposition. Drag onto another list to connect. Double-tap to remove a connection.")
         }
 
         // Hit-targets for edges — invisible circles at the midpoint
@@ -189,6 +191,7 @@ struct ListConnectionsView: View {
         ForEach(viewModel.edges) { edge in
             if let from = viewModel.nodes.first(where: { $0.id == edge.fromListId }),
                let to = viewModel.nodes.first(where: { $0.id == edge.toListId }) {
+                let edgeLabel = edge.label.map { ", \($0)" } ?? ""
                 Circle()
                     .fill(Color.clear)
                     .frame(width: 20, height: 20)
@@ -200,6 +203,8 @@ struct ListConnectionsView: View {
                     .onTapGesture {
                         edgeIDPendingRemove = edge.id
                     }
+                    .accessibilityLabel("Connection from \(from.title) to \(to.title)\(edgeLabel)")
+                    .accessibilityHint("Tap to remove this connection")
             }
         }
     }

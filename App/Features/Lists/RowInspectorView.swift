@@ -112,6 +112,7 @@ struct RowInspectorView: View {
                         commitChange(row: row, key: key, type: type, viewModel: viewModel)
                     }
                 ))
+                .accessibilityLabel(key)
             }
         }
     }

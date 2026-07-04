@@ -103,6 +103,8 @@ struct RepostSheetView: View {
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: ILMetric.radiusSm))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Original post by @\(original.author.username): \(original.text)")
     }
 
     @ViewBuilder
@@ -118,6 +120,7 @@ struct RepostSheetView: View {
             if viewModel.isSubmitting {
                 ProgressView()
                     .controlSize(.small)
+                    .accessibilityLabel("Submitting repost")
                     .padding(.trailing, 8)
             }
 

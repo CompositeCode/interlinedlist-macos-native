@@ -147,8 +147,14 @@ private struct ExportRowView: View {
                 viewModel.export(type)
             }
             .disabled(viewModel.isExporting)
+            .accessibilityLabel("Export \(type.rawValue) as CSV")
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(type.rawValue): \(type.exportDescription)")
+        .accessibilityAction(named: "Export CSV") {
+            viewModel.export(type)
+        }
     }
 }
 

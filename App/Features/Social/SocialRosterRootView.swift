@@ -68,6 +68,7 @@ struct SocialRosterRootView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+            .accessibilityLabel("Connections section")
 
             Divider()
 
@@ -200,6 +201,8 @@ private struct UserRowView: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(user.displayName), @\(user.username)")
     }
 
     @ViewBuilder
@@ -222,6 +225,7 @@ private struct UserRowView: View {
         }
         .frame(width: 32, height: 32)
         .clipShape(Circle())
+        .accessibilityHidden(true)
     }
 
     private var avatarFallback: some View {
@@ -253,6 +257,7 @@ private struct FollowRequestRow: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(inFlight)
+                .accessibilityLabel("Reject follow request from \(request.user.displayName)")
 
                 Button("Approve") {
                     Task { await act(approve: true) }
@@ -260,6 +265,7 @@ private struct FollowRequestRow: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(inFlight)
+                .accessibilityLabel("Approve follow request from \(request.user.displayName)")
             }
         }
         .padding(.vertical, 4)

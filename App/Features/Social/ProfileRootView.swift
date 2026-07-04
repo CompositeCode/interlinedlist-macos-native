@@ -75,6 +75,7 @@ struct ProfileRootView: View {
         HStack(spacing: 8) {
             Image(systemName: "at")
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             TextField(
                 "Browse a user's profile",
                 text: Binding(
