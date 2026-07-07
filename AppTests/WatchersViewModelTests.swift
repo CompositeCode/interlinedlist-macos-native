@@ -15,7 +15,7 @@ final class WatchersViewModelTests: XCTestCase {
         let stub = StubListsService()
         let alice = ListsFixtures.watcher(userId: "u1", username: "alice", role: .editor)
         await stub.enqueueWatcherUsers(success: [alice])
-        let viewModel = WatchersViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+        let viewModel = WatchersViewModel(lists: stub, userService: StubUserService(), eventBus: ListsEventBus(), listId: "L1")
 
         await viewModel.load()
 
@@ -26,7 +26,7 @@ final class WatchersViewModelTests: XCTestCase {
     func test_givenEmptyResponse_whenLoading_thenLeavesEmpty() async {
         let stub = StubListsService()
         await stub.enqueueWatcherUsers(success: [])
-        let viewModel = WatchersViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+        let viewModel = WatchersViewModel(lists: stub, userService: StubUserService(), eventBus: ListsEventBus(), listId: "L1")
 
         await viewModel.load()
 
@@ -36,7 +36,7 @@ final class WatchersViewModelTests: XCTestCase {
     func test_givenAPIFailure_whenLoading_thenSurfacesError() async {
         let stub = StubListsService()
         await stub.enqueueWatcherUsers(failure: TestError.upstream("denied"))
-        let viewModel = WatchersViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+        let viewModel = WatchersViewModel(lists: stub, userService: StubUserService(), eventBus: ListsEventBus(), listId: "L1")
 
         await viewModel.load()
 
@@ -51,7 +51,7 @@ final class WatchersViewModelTests: XCTestCase {
         await stub.enqueueWatcherUsers(success: [alice])
         let confirmed = ListsFixtures.watcher(userId: "u1", username: "alice", role: .editor)
         await stub.enqueueSetWatcher(success: confirmed)
-        let viewModel = WatchersViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+        let viewModel = WatchersViewModel(lists: stub, userService: StubUserService(), eventBus: ListsEventBus(), listId: "L1")
         await viewModel.load()
 
         await viewModel.setRole(userId: "u1", role: .editor)
@@ -65,7 +65,7 @@ final class WatchersViewModelTests: XCTestCase {
         await stub.enqueueWatcherUsers(success: [alice])
         let failure = TestError.upstream("server-down")
         await stub.enqueueSetWatcher(failure: failure)
-        let viewModel = WatchersViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+        let viewModel = WatchersViewModel(lists: stub, userService: StubUserService(), eventBus: ListsEventBus(), listId: "L1")
         await viewModel.load()
 
         await viewModel.setRole(userId: "u1", role: .editor)
@@ -81,7 +81,7 @@ final class WatchersViewModelTests: XCTestCase {
         let alice = ListsFixtures.watcher(userId: "u1")
         await stub.enqueueWatcherUsers(success: [alice])
         await stub.enqueueRemoveWatcherSuccess()
-        let viewModel = WatchersViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+        let viewModel = WatchersViewModel(lists: stub, userService: StubUserService(), eventBus: ListsEventBus(), listId: "L1")
         await viewModel.load()
 
         await viewModel.remove(userId: "u1")
@@ -94,7 +94,7 @@ final class WatchersViewModelTests: XCTestCase {
         let alice = ListsFixtures.watcher(userId: "u1")
         await stub.enqueueWatcherUsers(success: [alice])
         await stub.enqueueRemoveWatcher(failure: TestError.upstream("denied"))
-        let viewModel = WatchersViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+        let viewModel = WatchersViewModel(lists: stub, userService: StubUserService(), eventBus: ListsEventBus(), listId: "L1")
         await viewModel.load()
 
         await viewModel.remove(userId: "u1")
@@ -108,7 +108,7 @@ final class WatchersViewModelTests: XCTestCase {
         let stub = StubListsService()
         let alice = ListsFixtures.watcher(userId: "u1", role: .viewer)
         await stub.enqueueWatcherUsers(success: [alice])
-        let viewModel = WatchersViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+        let viewModel = WatchersViewModel(lists: stub, userService: StubUserService(), eventBus: ListsEventBus(), listId: "L1")
         await viewModel.load()
 
         viewModel.apply(event: .watcherChanged(
@@ -123,7 +123,7 @@ final class WatchersViewModelTests: XCTestCase {
         let stub = StubListsService()
         let alice = ListsFixtures.watcher(userId: "u1", role: .viewer)
         await stub.enqueueWatcherUsers(success: [alice])
-        let viewModel = WatchersViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+        let viewModel = WatchersViewModel(lists: stub, userService: StubUserService(), eventBus: ListsEventBus(), listId: "L1")
         await viewModel.load()
 
         viewModel.apply(event: .watcherChanged(
@@ -132,5 +132,70 @@ final class WatchersViewModelTests: XCTestCase {
         ))
 
         XCTAssertEqual(viewModel.watchers.first?.role, .owner)
+    }
+
+    // MARK: - lookupAndAdd (NW-1)
+
+    func test_givenValidHandle_whenLookupAndAdd_thenPopulatesFoundUser() async {
+        let stub = StubListsService()
+        let users = StubUserService()
+        await stub.enqueueWatcherUsers(success: [])
+        users.enqueueLookupUser(success: UserSearchResult(id: "u9", username: "new-user"))
+        let viewModel = WatchersViewModel(lists: stub, userService: users, eventBus: ListsEventBus(), listId: "L1")
+        await viewModel.load()
+
+        await viewModel.lookupAndAdd(handle: "new-user")
+
+        XCTAssertEqual(viewModel.foundUser?.id, "u9")
+        XCTAssertNil(viewModel.error)
+    }
+
+    func test_givenUnknownHandle_whenLookupAndAdd_thenSetsNotFoundError() async {
+        let stub = StubListsService()
+        let users = StubUserService()
+        await stub.enqueueWatcherUsers(success: [])
+        users.enqueueLookupUser(success: nil)
+        let viewModel = WatchersViewModel(lists: stub, userService: users, eventBus: ListsEventBus(), listId: "L1")
+        await viewModel.load()
+
+        await viewModel.lookupAndAdd(handle: "ghost")
+
+        XCTAssertNil(viewModel.foundUser)
+        XCTAssertEqual(viewModel.error as? WatchersError, .userNotFound("ghost"))
+    }
+
+    func test_givenFoundUser_whenAddWatcherSucceeds_thenAppendsConfirmedWatcher() async {
+        let stub = StubListsService()
+        let users = StubUserService()
+        await stub.enqueueWatcherUsers(success: [])
+        users.enqueueLookupUser(success: UserSearchResult(id: "u9", username: "new-user"))
+        let confirmed = ListsFixtures.watcher(userId: "u9", username: "new-user", role: .viewer)
+        await stub.enqueueSetWatcher(success: confirmed)
+        let viewModel = WatchersViewModel(lists: stub, userService: users, eventBus: ListsEventBus(), listId: "L1")
+        await viewModel.load()
+        await viewModel.lookupAndAdd(handle: "new-user")
+
+        await viewModel.addWatcher(userId: "u9", role: .viewer)
+
+        XCTAssertEqual(viewModel.watchers.first?.userId, "u9")
+        XCTAssertNil(viewModel.foundUser)
+    }
+
+    func test_givenAddWatcherFails_whenAddingWatcher_thenRollsBackSnapshot() async {
+        let stub = StubListsService()
+        let users = StubUserService()
+        let existing = ListsFixtures.watcher(userId: "u1", username: "alice", role: .viewer)
+        await stub.enqueueWatcherUsers(success: [existing])
+        users.enqueueLookupUser(success: UserSearchResult(id: "u9", username: "new-user"))
+        await stub.enqueueSetWatcher(failure: TestError.upstream("boom"))
+        let viewModel = WatchersViewModel(lists: stub, userService: users, eventBus: ListsEventBus(), listId: "L1")
+        await viewModel.load()
+        await viewModel.lookupAndAdd(handle: "new-user")
+
+        await viewModel.addWatcher(userId: "u9", role: .viewer)
+
+        // Rollback: only the original watcher remains.
+        XCTAssertEqual(viewModel.watchers.map(\.userId), ["u1"])
+        XCTAssertNotNil(viewModel.error)
     }
 }

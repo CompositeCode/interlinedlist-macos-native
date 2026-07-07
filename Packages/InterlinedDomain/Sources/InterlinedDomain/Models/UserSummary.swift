@@ -21,3 +21,30 @@ public struct UserSummary: Sendable, Equatable, Hashable, Identifiable {
         self.avatarURL = avatarURL
     }
 }
+
+// MARK: - UserSearchResult (NW-1)
+
+/// A user returned by the search / lookup surface (NW-1). Distinct from
+/// `UserSummary` (the embedded message-author type) — this carries the privacy
+/// flag the watcher invite and org member-add UIs need.
+public struct UserSearchResult: Sendable, Equatable, Identifiable {
+    public let id: String
+    public let username: String
+    public let displayName: String?
+    public let avatarURL: URL?
+    public let isPrivate: Bool
+
+    public init(
+        id: String,
+        username: String,
+        displayName: String? = nil,
+        avatarURL: URL? = nil,
+        isPrivate: Bool = false
+    ) {
+        self.id = id
+        self.username = username
+        self.displayName = displayName
+        self.avatarURL = avatarURL
+        self.isPrivate = isPrivate
+    }
+}

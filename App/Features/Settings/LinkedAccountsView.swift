@@ -2,13 +2,11 @@
 //
 // The Settings > "Linked accounts" pane (PLAN.md §1 "Profile & account",
 // §6 M6). Lists the signed-in account's linked OAuth identities and offers
-// a per-provider "Link account ↗" button that opens the web authorize flow
-// in the user's default browser via SwiftUI's `openURL` — no AppKit, no
-// ASWebAuthenticationSession (browser-handoff v1, per the approved spike).
+// a per-provider "Link account" button that opens the native in-app OAuth
+// flow via `ASWebAuthenticationSession` (NW-5). No AppKit, no openURL.
 //
 // Mastodon requires an instance host, so its link button first prompts for
-// the instance domain before resolving the URL. New identities appear after
-// the user returns and taps Refresh.
+// the instance domain before starting the session.
 //
 // Per decision 0003 the view consumes only `InterlinedDomain`.
 
@@ -18,7 +16,6 @@ import InterlinedDomain
 struct LinkedAccountsView: View {
 
     @Environment(\.appEnvironment) private var environment
-    @Environment(\.openURL) private var openURL
 
     @State private var viewModel: LinkedAccountsViewModel?
     @State private var mastodonInstance: String = ""
@@ -59,11 +56,24 @@ struct LinkedAccountsView: View {
             } header: {
                 Text("Connected accounts")
             } footer: {
-                Text("Linking opens interlinedlist.com in your browser; return here and Refresh once done.")
+                Text("OAuth runs natively in-app; your credentials never pass through this app.")
                     .font(.ilMono(10))
             }
 
             Section("Link an account") {
+                if viewModel.isLinking {
+                    HStack {
+                        ProgressView()
+                        Text("Linking…")
+                            .font(.ilMono(10))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if viewModel.nativeLinkSuccess {
+                    Text("Account linked successfully.")
+                        .font(.ilMono(10))
+                        .foregroundStyle(.green)
+                }
                 ForEach(viewModel.linkableProviders, id: \.wireToken) { provider in
                     Button {
                         link(provider: provider, viewModel: viewModel)
@@ -74,6 +84,7 @@ struct LinkedAccountsView: View {
                             Image(systemName: provider.iconName)
                         }
                     }
+                    .disabled(viewModel.isLinking)
                 }
                 if let error = viewModel.linkError {
                     Text(error.localizedDescription)
@@ -97,9 +108,8 @@ struct LinkedAccountsView: View {
             TextField("mastodon.social", text: $mastodonInstance)
             Button("Cancel", role: .cancel) {}
             Button("Continue") {
-                if let url = viewModel.linkURL(for: .mastodon, instance: mastodonInstance) {
-                    openURL(url)
-                }
+                let instance = mastodonInstance
+                Task { await viewModel.linkNatively(provider: .mastodon, instance: instance) }
                 mastodonInstance = ""
             }
         } message: {
@@ -112,9 +122,7 @@ struct LinkedAccountsView: View {
             showMastodonPrompt = true
             return
         }
-        if let url = viewModel.linkURL(for: provider) {
-            openURL(url)
-        }
+        Task { await viewModel.linkNatively(provider: provider) }
     }
 }
 

@@ -98,14 +98,16 @@ public enum Auth {
     public static func authorize(
         provider: OAuthProvider,
         link: Bool? = nil,
-        instance: String? = nil
+        instance: String? = nil,
+        redirectURI: String? = nil
     ) -> Request<EmptyResponse> {
         Request(
             method: .get,
             path: "/api/auth/\(provider.rawValue)/authorize",
             query: [
                 .bool("link", link),
-                .string("instance", instance)
+                .string("instance", instance),
+                .string("redirect_uri", redirectURI)
             ],
             auth: .none
         )
@@ -118,5 +120,38 @@ public enum Auth {
     /// unauthenticated caller.
     public static func linkedinStatus() -> Request<LinkedInStatusResponse> {
         Request(method: .get, path: "/api/auth/linkedin/status", auth: .none)
+    }
+
+    /// `GET /api/auth/bluesky/status` — whether Bluesky OAuth is configured
+    /// on the server. Bearer-authenticated (NW-4).
+    public static func blueskyStatus() -> Request<ProviderStatusResponse> {
+        Request(method: .get, path: "/api/auth/bluesky/status", auth: .bearer)
+    }
+
+    /// `GET /api/auth/mastodon/status?instance=<host>` — whether Mastodon
+    /// OAuth is configured for a given instance. Bearer-authenticated (NW-4).
+    public static func mastodonStatus(instance: String) -> Request<ProviderStatusResponse> {
+        Request(
+            method: .get,
+            path: "/api/auth/mastodon/status",
+            query: [.string("instance", instance)],
+            auth: .bearer
+        )
+    }
+
+    /// `POST /api/auth/{provider}/link` — complete a native in-app OAuth flow
+    /// by exchanging the one-time code returned by the callback URL for a
+    /// linked identity record. Bearer-authenticated (NW-5).
+    public static func linkIdentity(
+        provider: OAuthProvider,
+        code: String,
+        state: String
+    ) -> Request<OAuthLinkResponse> {
+        Request(
+            method: .post,
+            path: "/api/auth/\(provider.rawValue)/link",
+            body: .json(OAuthLinkRequest(code: code, state: state)),
+            auth: .bearer
+        )
     }
 }

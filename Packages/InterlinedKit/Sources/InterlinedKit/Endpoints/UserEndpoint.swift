@@ -75,4 +75,29 @@ public enum User {
     public static func delete(_ body: DeleteAccountRequest = DeleteAccountRequest()) -> Request<MessageResponse> {
         Request(method: .post, path: "/api/user/delete", body: .json(body), auth: .bearer)
     }
+
+    // MARK: - User search / lookup (NW-1)
+
+    /// `GET /api/users/search?q=query&limit=limit` — prefix search for users.
+    public static func search(query: String, limit: Int? = nil) -> Request<UserSearchResponse> {
+        Request(
+            method: .get,
+            path: "/api/users/search",
+            query: [
+                .string("q", query),
+                .int("limit", limit)
+            ],
+            auth: .bearer
+        )
+    }
+
+    /// `GET /api/users/lookup?handle=handle` — exact handle lookup; 404 when not found.
+    public static func lookup(handle: String) -> Request<UserSearchResultDTO> {
+        Request(
+            method: .get,
+            path: "/api/users/lookup",
+            query: [.string("handle", handle)],
+            auth: .bearer
+        )
+    }
 }

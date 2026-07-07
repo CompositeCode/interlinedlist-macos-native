@@ -162,5 +162,14 @@ private struct AppRootView: View {
             guard let environment else { return }
             Task { try? await environment.session.signOut() }
         }
+        .onOpenURL { url in
+            // `interlinedlist://oauth/callback` is the native OAuth redirect URI
+            // registered in Info.plist (NW-5). ASWebAuthenticationSession intercepts
+            // the URL automatically; this handler is a fallback in case the system
+            // delivers the URL directly (e.g., after a cold-start redirect). No
+            // action is needed here — the session's completion handler owns the
+            // code/state exchange.
+            guard url.scheme == "interlinedlist" else { return }
+        }
     }
 }

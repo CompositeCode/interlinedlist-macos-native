@@ -30,6 +30,7 @@ final class OrgMembersViewModel {
     // MARK: - Dependencies
 
     private let orgs: OrgServicing
+    private let userService: UserServicing
     private let orgId: String
 
     /// Page size for member pagination. Mirrors the kit's default `limit`.
@@ -52,10 +53,18 @@ final class OrgMembersViewModel {
     /// drives per-row spinners / disabled controls.
     private(set) var pendingOperations: Set<String> = []
 
+    /// The user found by the most recent `lookupUser` call. Nil when no lookup
+    /// has been run or when the handle returned 404. The add-by-handle UI reads
+    /// this to show a confirmation row before calling `addMemberByHandle`.
+    private(set) var foundUser: UserSearchResult?
+    /// True while a handle lookup is in flight.
+    private(set) var isLookingUp: Bool = false
+
     // MARK: - Init
 
-    init(orgService: OrgServicing, orgId: String) {
+    init(orgService: OrgServicing, userService: UserServicing, orgId: String) {
         self.orgs = orgService
+        self.userService = userService
         self.orgId = orgId
     }
 
@@ -221,6 +230,48 @@ final class OrgMembersViewModel {
             return error
         }
     }
+
+    // MARK: - Handle lookup (NW-6)
+
+    /// Looks up a user by exact handle. Populates `foundUser` on success;
+    /// sets `foundUser = nil` and surfaces the error / not-found state when the
+    /// handle cannot be resolved.
+    func lookupUser(handle: String) async {
+        let trimmed = handle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            actionError = OrgMembersError.emptyHandle
+            return
+        }
+        isLookingUp = true
+        foundUser = nil
+        actionError = nil
+        defer { isLookingUp = false }
+        do {
+            let result = try await userService.lookupUser(handle: trimmed)
+            if let result {
+                foundUser = result
+            } else {
+                actionError = OrgMembersError.handleNotFound(trimmed)
+            }
+        } catch {
+            actionError = error
+        }
+    }
+
+    /// Chains `lookupUser` → `addMember` so the handle-based add UI only needs
+    /// one call. On a successful lookup that finds a non-member, adds the member
+    /// with the given role. Sets `actionError` if the handle resolves to nil,
+    /// the user is already a member, or the add service call fails.
+    @discardableResult
+    func addMemberByHandle(handle: String, role: OrgRole) async -> Error? {
+        await lookupUser(handle: handle)
+        guard let user = foundUser else {
+            return actionError
+        }
+        let result = await addMember(userId: user.id, role: role)
+        if result == nil { foundUser = nil }
+        return result
+    }
 }
 
 // MARK: - OrgMembersError
@@ -229,6 +280,8 @@ final class OrgMembersViewModel {
 enum OrgMembersError: LocalizedError, Equatable {
     case emptyUserId
     case alreadyMember
+    case emptyHandle
+    case handleNotFound(String)
 
     var errorDescription: String? {
         switch self {
@@ -236,6 +289,10 @@ enum OrgMembersError: LocalizedError, Equatable {
             return "Enter the user id of the person to add."
         case .alreadyMember:
             return "That user is already a member of this organization."
+        case .emptyHandle:
+            return "Enter a @handle to look up."
+        case .handleNotFound(let handle):
+            return "@\(handle) was not found."
         }
     }
 }

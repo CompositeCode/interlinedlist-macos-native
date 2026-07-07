@@ -57,5 +57,16 @@
 	<string>https://interlinedlist.com/appcast.xml</string>
 	<key>SUPublicEDKeyString</key>
 	<string>TODO_REPLACE_WITH_ED25519_PUBLIC_KEY</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.interlinedlist.macos.oauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>interlinedlist</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

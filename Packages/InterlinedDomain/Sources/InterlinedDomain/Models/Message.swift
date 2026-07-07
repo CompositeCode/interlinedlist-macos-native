@@ -43,6 +43,11 @@ public struct Message: Sendable, Equatable, Identifiable {
     /// When set, the message is scheduled for future publication at this time.
     public let scheduledAt: Date?
 
+    /// Per-platform cross-post outcomes attached to a published message.
+    /// Empty when the message was not cross-posted or when the server did not
+    /// return cross-post data for this response.
+    public let crossPostResults: [CrossPostResult]
+
     public init(
         id: String,
         author: UserSummary,
@@ -57,7 +62,8 @@ public struct Message: Sendable, Equatable, Identifiable {
         replyCount: Int? = nil,
         parentID: String? = nil,
         repost: Repost? = nil,
-        scheduledAt: Date? = nil
+        scheduledAt: Date? = nil,
+        crossPostResults: [CrossPostResult] = []
     ) {
         self.id = id
         self.author = author
@@ -73,6 +79,7 @@ public struct Message: Sendable, Equatable, Identifiable {
         self.parentID = parentID
         self.repost = repost
         self.scheduledAt = scheduledAt
+        self.crossPostResults = crossPostResults
     }
 }
 
@@ -86,6 +93,37 @@ public indirect enum Repost: Sendable, Equatable {
         switch self {
         case .message(let message): return message
         }
+    }
+}
+
+// MARK: - CrossPostResult (NW-2)
+
+/// The per-platform cross-post outcome attached to a published message.
+/// Maps from `CrossPostResultDTO`; the wire status string is narrowed to a
+/// typed enum with a forward-compatible `.unknown` case.
+public struct CrossPostResult: Sendable, Equatable {
+    public enum Status: Sendable, Equatable {
+        case ok
+        case failed(String?)
+        case pending
+        case unknown(String)
+    }
+
+    public let platform: String
+    public let providerId: String?
+    public let status: Status
+    public let externalURL: URL?
+
+    public init(
+        platform: String,
+        providerId: String? = nil,
+        status: Status,
+        externalURL: URL? = nil
+    ) {
+        self.platform = platform
+        self.providerId = providerId
+        self.status = status
+        self.externalURL = externalURL
     }
 }
 

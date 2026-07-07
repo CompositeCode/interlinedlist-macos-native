@@ -111,4 +111,83 @@ final class ScheduledPostsViewModelTests: XCTestCase {
         await viewModel.load()
         XCTAssertEqual(viewModel.posts.map(\.id), ["s-2"])
     }
+
+    // MARK: - cancel (NW-3)
+
+    func test_givenScheduledPost_whenCancelSucceeds_thenRemovesFromList() async {
+        let stub = StubMessagesService()
+        let post = scheduledMessage(id: "s-1")
+        await stub.enqueueScheduledPosts(success: [post])
+        await stub.enqueueCancelScheduledSuccess()
+        let viewModel = ScheduledPostsViewModel(messages: stub)
+        await viewModel.load()
+
+        await viewModel.cancel(post: post)
+
+        XCTAssertTrue(viewModel.posts.isEmpty)
+        XCTAssertNil(viewModel.actionError)
+    }
+
+    func test_givenCancelFails_whenCancelling_thenRollsBackOptimisticRemoval() async {
+        let stub = StubMessagesService()
+        let post = scheduledMessage(id: "s-1")
+        await stub.enqueueScheduledPosts(success: [post])
+        await stub.enqueueCancelScheduled(failure: TestError.upstream("forbidden"))
+        let viewModel = ScheduledPostsViewModel(messages: stub)
+        await viewModel.load()
+
+        await viewModel.cancel(post: post)
+
+        XCTAssertEqual(viewModel.posts.map(\.id), ["s-1"])
+        XCTAssertNotNil(viewModel.actionError)
+    }
+
+    func test_givenPostNotInList_whenCancelling_thenIsNoop() async {
+        let stub = StubMessagesService()
+        let post = scheduledMessage(id: "s-99")
+        await stub.enqueueScheduledPosts(success: [])
+        let viewModel = ScheduledPostsViewModel(messages: stub)
+        await viewModel.load()
+
+        await viewModel.cancel(post: post)
+
+        let recorded = await stub.recorded
+        XCTAssertEqual(recorded.count, 1) // only the initial load, no cancel call
+        XCTAssertNil(viewModel.actionError)
+    }
+
+    // MARK: - reschedule (NW-3)
+
+    func test_givenScheduledPost_whenRescheduleSucceeds_thenReplacesWithServerCopy() async {
+        let stub = StubMessagesService()
+        let originalDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let newDate = Date(timeIntervalSince1970: 1_800_003_600)
+        let post = scheduledMessage(id: "s-1", at: originalDate)
+        await stub.enqueueScheduledPosts(success: [post])
+        let confirmed = scheduledMessage(id: "s-1", at: newDate)
+        await stub.enqueueReschedule(success: confirmed)
+        let viewModel = ScheduledPostsViewModel(messages: stub)
+        await viewModel.load()
+
+        await viewModel.reschedule(post: post, to: newDate)
+
+        XCTAssertEqual(viewModel.posts.first?.scheduledAt, newDate)
+        XCTAssertNil(viewModel.actionError)
+    }
+
+    func test_givenRescheduleFails_whenRescheduling_thenRollsBackOptimisticDate() async {
+        let stub = StubMessagesService()
+        let originalDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let newDate = Date(timeIntervalSince1970: 1_800_003_600)
+        let post = scheduledMessage(id: "s-1", at: originalDate)
+        await stub.enqueueScheduledPosts(success: [post])
+        await stub.enqueueReschedule(failure: TestError.upstream("conflict"))
+        let viewModel = ScheduledPostsViewModel(messages: stub)
+        await viewModel.load()
+
+        await viewModel.reschedule(post: post, to: newDate)
+
+        XCTAssertEqual(viewModel.posts.first?.scheduledAt, originalDate)
+        XCTAssertNotNil(viewModel.actionError)
+    }
 }

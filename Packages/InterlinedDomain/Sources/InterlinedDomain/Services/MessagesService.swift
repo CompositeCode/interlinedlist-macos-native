@@ -221,6 +221,19 @@ public protocol MessagesServicing: Sendable {
     ///   - data: the already-encoded video bytes.
     ///   - contentType: the video MIME type (e.g. `"video/mp4"`).
     func uploadVideo(_ data: Data, contentType: String) async throws -> String
+
+    // MARK: - NW-3: Scheduled post management
+
+    /// Cancels a scheduled post by deleting it. The post must not yet be
+    /// published; calling on a published post surfaces `APIError.notFound`
+    /// (the server treats it as gone once published).
+    func cancelScheduled(messageId: String) async throws
+
+    /// Reschedules a pending post to `newDate`. Re-fetches the existing body
+    /// first so the update call can supply the full content (the PUT requires
+    /// a complete body, not a patch). Returns the authoritative updated
+    /// `Message` (with `scheduledAt == newDate`).
+    func reschedule(messageId: String, newDate: Date) async throws -> Message
 }
 
 // MARK: - MessagesService
@@ -601,6 +614,24 @@ public final class MessagesService: MessagesServicing {
         }
         let response = try await api.send(Messages.uploadVideo(data, contentType: contentType))
         return response.url
+    }
+
+    public func cancelScheduled(messageId: String) async throws {
+        try await api.sendVoid(Messages.delete(id: messageId))
+        await store?.remove(id: messageId)
+    }
+
+    public func reschedule(messageId: String, newDate: Date) async throws -> Message {
+        let existing = try await message(id: messageId)
+        let request = CreateMessageRequest(
+            content: existing.text,
+            publiclyVisible: existing.visibility.isPubliclyVisible,
+            tags: existing.tags.isEmpty ? nil : existing.tags,
+            scheduledAt: newDate
+        )
+        let dto = try await api.send(Messages.update(id: messageId, request))
+        let updated = Message(from: dto)
+        return updated
     }
 
     /// Throws `MessagesError.subscriberRequired(feature)` when `feature` is

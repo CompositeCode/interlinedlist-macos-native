@@ -218,6 +218,48 @@ final class AuthEndpointTests: XCTestCase {
 
         XCTAssertEqual(try store.read(), "il_tok_keep")
     }
+
+    // MARK: - blueskyStatus (GET /api/auth/bluesky/status) — NW-4
+
+    func test_givenNoParams_whenBlueskyStatusBuilt_thenTargetsBlueskyStatusPath() throws {
+        let request = Auth.blueskyStatus()
+        XCTAssertEqual(request.method, .get)
+        XCTAssertEqual(request.path, "/api/auth/bluesky/status")
+        XCTAssertEqual(request.auth, .bearer)
+        XCTAssertTrue(request.query.isEmpty)
+    }
+
+    // MARK: - mastodonStatus (GET /api/auth/mastodon/status) — NW-4
+
+    func test_givenInstance_whenMastodonStatusBuilt_thenIncludesInstanceQuery() throws {
+        let request = Auth.mastodonStatus(instance: "mastodon.social")
+        XCTAssertEqual(request.method, .get)
+        XCTAssertEqual(request.path, "/api/auth/mastodon/status")
+        XCTAssertEqual(request.auth, .bearer)
+        XCTAssertTrue(request.query.contains { $0.name == "instance" && $0.value == "mastodon.social" })
+    }
+
+    func test_givenEmptyInstance_whenMastodonStatusBuilt_thenInstanceQueryPresent() throws {
+        let request = Auth.mastodonStatus(instance: "")
+        XCTAssertTrue(request.query.contains { $0.name == "instance" && $0.value == "" })
+    }
+
+    // MARK: - linkIdentity (POST /api/auth/{provider}/link) — NW-5
+
+    func test_givenGitHubCodeAndState_whenLinkIdentityBuilt_thenPostsToGitHubLinkPath() throws {
+        let request = Auth.linkIdentity(provider: .github, code: "code123", state: "state456")
+        XCTAssertEqual(request.method, .post)
+        XCTAssertEqual(request.path, "/api/auth/github/link")
+        XCTAssertEqual(request.auth, .bearer)
+        let body = try encodedBody(request)
+        XCTAssertEqual(body["code"] as? String, "code123")
+        XCTAssertEqual(body["state"] as? String, "state456")
+    }
+
+    func test_givenBlueskyProvider_whenLinkIdentityBuilt_thenPathUsesBluesky() throws {
+        let request = Auth.linkIdentity(provider: .bluesky, code: "c", state: "s")
+        XCTAssertEqual(request.path, "/api/auth/bluesky/link")
+    }
 }
 
 private struct AnyEncodableAuthProbe: Encodable {

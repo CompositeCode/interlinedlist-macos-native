@@ -39,6 +39,7 @@ struct OrganizationDetailView: View {
             )
             let members = OrgMembersViewModel(
                 orgService: environment.orgService,
+                userService: environment.userService,
                 orgId: membership.organization.id
             )
             detailViewModel = detail
@@ -175,7 +176,7 @@ private struct MemberRosterSection: View {
                 .font(.ilSubtitle())
                 .fontWeight(.medium)
             HStack {
-                TextField("User id", text: $newMemberUserId)
+                TextField("@handle", text: $newMemberUserId)
                     .textFieldStyle(.roundedBorder)
                 Picker("Role", selection: $newMemberRole) {
                     ForEach(OrgRole.assignableRoles, id: \.wireToken) { role in
@@ -184,19 +185,38 @@ private struct MemberRosterSection: View {
                 }
                 .labelsHidden()
                 .frame(width: 120)
-                Button("Add") {
+                Button(viewModel.foundUser == nil ? "Search" : "Add") {
                     Task {
-                        if await viewModel.addMember(userId: newMemberUserId, role: newMemberRole) == nil {
-                            newMemberUserId = ""
+                        if viewModel.foundUser == nil {
+                            await viewModel.lookupUser(handle: newMemberUserId)
+                        } else if let user = viewModel.foundUser {
+                            if await viewModel.addMember(userId: user.id, role: newMemberRole) == nil {
+                                newMemberUserId = ""
+                            }
                         }
                     }
                 }
                 .buttonStyle(.bordered)
-                .disabled(newMemberUserId.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(newMemberUserId.trimmingCharacters(in: .whitespaces).isEmpty
+                          || viewModel.isLookingUp
+                          || viewModel.pendingOperations.contains(viewModel.foundUser?.id ?? ""))
             }
-            Text("Adding is by user id for now — there is no handle lookup yet.")
-                .font(.ilMono(9))
-                .foregroundStyle(.secondary)
+            if viewModel.isLookingUp {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            if let found = viewModel.foundUser {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                        .imageScale(.small)
+                    Text(found.displayName ?? found.username)
+                        .font(.ilMono(10))
+                    Text("(@\(found.username))")
+                        .font(.ilMono(10))
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .padding(.top, 8)
     }

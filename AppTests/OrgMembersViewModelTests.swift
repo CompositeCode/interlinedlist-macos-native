@@ -14,10 +14,11 @@ import InterlinedDomain
 @MainActor
 final class OrgMembersViewModelTests: XCTestCase {
 
-    private func makeViewModel(orgId: String = "o1") -> (OrgMembersViewModel, StubOrgService) {
+    private func makeViewModel(orgId: String = "o1") -> (OrgMembersViewModel, StubOrgService, StubUserService) {
         let orgs = StubOrgService()
-        let vm = OrgMembersViewModel(orgService: orgs, orgId: orgId)
-        return (vm, orgs)
+        let users = StubUserService()
+        let vm = OrgMembersViewModel(orgService: orgs, userService: users, orgId: orgId)
+        return (vm, orgs, users)
     }
 
     private func member(_ id: String, role: OrgRole = .member) -> OrgMember {
@@ -27,7 +28,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     // MARK: - load + pagination
 
     func test_givenPopulatedPage_whenLoading_thenRendersAndSurfacesPagination() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage(
             members: [member("u1"), member("u2")],
             hasMore: true,
@@ -43,7 +44,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     }
 
     func test_givenZeroItemPage_whenLoading_thenEmptyAndNoMore() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage.empty)
 
         await vm.load(reset: true)
@@ -54,7 +55,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     }
 
     func test_givenSecondPage_whenLoadingMore_thenAppends() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage(members: [member("u1")], hasMore: true, nextOffset: 1))
         await orgs.enqueueMembers(success: OrgMembersPage(members: [member("u2")], hasMore: false, nextOffset: nil))
 
@@ -66,7 +67,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     }
 
     func test_givenMembersEndpointFails_whenLoading_thenSurfacesError() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(failure: TestError.upstream("net"))
 
         await vm.load(reset: true)
@@ -78,7 +79,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     // MARK: - changeRole (optimistic)
 
     func test_givenMember_whenChangingRole_thenUsesServerAuthoritativeRole() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage(members: [member("u1", role: .member)], hasMore: false, nextOffset: nil))
         await orgs.enqueueUpdateMember(success: OrgMember(userId: "u1", membershipId: "m-u1", role: .admin, active: true))
         await vm.load(reset: true)
@@ -91,7 +92,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     }
 
     func test_givenChangeRoleFails_whenChangingRole_thenRollsBackSnapshot() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage(members: [member("u1", role: .member)], hasMore: false, nextOffset: nil))
         await orgs.enqueueUpdateMember(failure: TestError.upstream("boom"))
         await vm.load(reset: true)
@@ -106,7 +107,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     }
 
     func test_givenSameRole_whenChangingRole_thenNoOpAndNoServiceCall() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage(members: [member("u1", role: .admin)], hasMore: false, nextOffset: nil))
         await vm.load(reset: true)
 
@@ -120,7 +121,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     func test_givenOtherRoleMember_whenChangingToKnownRole_thenServerRolePreserved() async {
         // OrgRole.other round-trips: a member arrives with an unrecognized
         // role and is promoted to admin; the server's return value is used.
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage(members: [member("u1", role: .other("guest"))], hasMore: false, nextOffset: nil))
         await orgs.enqueueUpdateMember(success: OrgMember(userId: "u1", membershipId: "m-u1", role: .admin, active: true))
         await vm.load(reset: true)
@@ -135,7 +136,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     // MARK: - addMember (optimistic)
 
     func test_givenValidUserId_whenAddingMember_thenAppendsServerMembership() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage.empty)
         await orgs.enqueueAddMember(success: OrgMember(userId: "u9", membershipId: "m-u9", role: .member, active: true))
         await vm.load(reset: true)
@@ -148,7 +149,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     }
 
     func test_givenBlankUserId_whenAddingMember_thenRejectsBeforeServiceCall() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage.empty)
         await vm.load(reset: true)
 
@@ -160,7 +161,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     }
 
     func test_givenAlreadyMember_whenAddingMember_thenRejectsBeforeServiceCall() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage(members: [member("u1")], hasMore: false, nextOffset: nil))
         await vm.load(reset: true)
 
@@ -172,7 +173,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     }
 
     func test_givenAddFails_whenAddingMember_thenRollsBackProvisionalRow() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage.empty)
         await orgs.enqueueAddMember(failure: TestError.upstream("boom"))
         await vm.load(reset: true)
@@ -188,7 +189,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     // MARK: - removeMember (optimistic)
 
     func test_givenMember_whenRemoving_thenDropsRow() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage(members: [member("u1"), member("u2")], hasMore: false, nextOffset: nil))
         await orgs.enqueueRemoveMemberSuccess()
         await vm.load(reset: true)
@@ -200,7 +201,7 @@ final class OrgMembersViewModelTests: XCTestCase {
     }
 
     func test_givenRemoveFails_whenRemoving_thenRollsBackSnapshot() async {
-        let (vm, orgs) = makeViewModel()
+        let (vm, orgs, _) = makeViewModel()
         await orgs.enqueueMembers(success: OrgMembersPage(members: [member("u1"), member("u2")], hasMore: false, nextOffset: nil))
         await orgs.enqueueRemoveMember(failure: TestError.upstream("boom"))
         await vm.load(reset: true)
@@ -211,5 +212,55 @@ final class OrgMembersViewModelTests: XCTestCase {
         // Rollback: both members restored.
         XCTAssertEqual(vm.members.map(\.userId), ["u1", "u2"])
         XCTAssertEqual(vm.actionError as? TestError, .upstream("boom"))
+    }
+
+    // MARK: - lookupUser (NW-6)
+
+    func test_givenValidHandle_whenLookingUpUser_thenPopulatesFoundUser() async {
+        let (vm, orgs, users) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage.empty)
+        let found = UserSearchResult(id: "u9", username: "ada", displayName: "Ada Lovelace")
+        users.enqueueLookupUser(success: found)
+        await vm.load(reset: true)
+
+        await vm.lookupUser(handle: "ada")
+
+        XCTAssertEqual(vm.foundUser?.id, "u9")
+        XCTAssertNil(vm.actionError)
+    }
+
+    func test_givenUnknownHandle_whenLookingUpUser_thenSetsNotFoundError() async {
+        let (vm, orgs, users) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage.empty)
+        users.enqueueLookupUser(success: nil)
+        await vm.load(reset: true)
+
+        await vm.lookupUser(handle: "ghost")
+
+        XCTAssertNil(vm.foundUser)
+        XCTAssertEqual(vm.actionError as? OrgMembersError, .handleNotFound("ghost"))
+    }
+
+    func test_givenAPIFailure_whenLookingUpUser_thenSurfacesError() async {
+        let (vm, orgs, users) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage.empty)
+        users.enqueueLookupUser(failure: TestError.upstream("net"))
+        await vm.load(reset: true)
+
+        await vm.lookupUser(handle: "ada")
+
+        XCTAssertNil(vm.foundUser)
+        XCTAssertEqual(vm.actionError as? TestError, .upstream("net"))
+    }
+
+    func test_givenEmptyHandle_whenLookingUpUser_thenRejectsBeforeServiceCall() async {
+        let (vm, orgs, _) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage.empty)
+        await vm.load(reset: true)
+
+        await vm.lookupUser(handle: "  ")
+
+        XCTAssertNil(vm.foundUser)
+        XCTAssertEqual(vm.actionError as? OrgMembersError, .emptyHandle)
     }
 }

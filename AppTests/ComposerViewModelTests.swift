@@ -518,6 +518,151 @@ final class ComposerViewModelTests: XCTestCase {
         let didRefresh = await refreshed.didRefresh
         XCTAssertFalse(didRefresh)
     }
+
+    // MARK: - crossPostResults (NW-2)
+
+    func test_givenCrossPostResults_whenPostSucceeds_thenSetsCrossPostResultsState() async {
+        let stub = StubMessagesService()
+        let crossResult = CrossPostResult(platform: "bluesky", providerId: nil, status: .ok, externalURL: nil)
+        let created = Message(
+            id: "m-x",
+            author: MessageFixtures.author(),
+            text: "hello",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            tags: [],
+            visibility: .public,
+            digCount: 0,
+            didDig: false,
+            repostCount: 0,
+            replyCount: nil,
+            parentID: nil,
+            repost: nil,
+            scheduledAt: nil,
+            crossPostResults: [crossResult]
+        )
+        await stub.enqueueCreatePost(success: created)
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus())
+        viewModel.body = "hello"
+
+        await viewModel.submit()
+
+        XCTAssertEqual(viewModel.crossPostResults?.count, 1)
+        XCTAssertEqual(viewModel.crossPostResults?.first?.platform, "bluesky")
+        XCTAssertTrue(viewModel.didFinish)
+    }
+
+    func test_givenNoCrossPostResults_whenPostSucceeds_thenCrossPostResultsRemainsNil() async {
+        let stub = StubMessagesService()
+        let created = Message(
+            id: "m-y",
+            author: MessageFixtures.author(),
+            text: "hello",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            tags: [],
+            visibility: .public,
+            digCount: 0,
+            didDig: false,
+            repostCount: 0,
+            replyCount: nil,
+            parentID: nil,
+            repost: nil,
+            scheduledAt: nil,
+            crossPostResults: []
+        )
+        await stub.enqueueCreatePost(success: created)
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus())
+        viewModel.body = "hello"
+
+        await viewModel.submit()
+
+        XCTAssertNil(viewModel.crossPostResults)
+        XCTAssertTrue(viewModel.didFinish)
+    }
+
+    func test_givenCrossPostResultsSet_whenDismissed_thenBecomesNil() async {
+        let stub = StubMessagesService()
+        let crossResult = CrossPostResult(platform: "bluesky", providerId: nil, status: .ok, externalURL: nil)
+        let created = Message(
+            id: "m-z",
+            author: MessageFixtures.author(),
+            text: "hello",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            tags: [],
+            visibility: .public,
+            digCount: 0,
+            didDig: false,
+            repostCount: 0,
+            replyCount: nil,
+            parentID: nil,
+            repost: nil,
+            scheduledAt: nil,
+            crossPostResults: [crossResult]
+        )
+        await stub.enqueueCreatePost(success: created)
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus())
+        viewModel.body = "hello"
+        await viewModel.submit()
+        XCTAssertNotNil(viewModel.crossPostResults)
+
+        viewModel.dismissCrossPostResults()
+
+        XCTAssertNil(viewModel.crossPostResults)
+    }
+
+    // MARK: - setBlueskyEnabled / setMastodonEnabled (NW-4)
+
+    func test_givenBlueskyConfigured_whenEnablingBluesky_thenToggleRemainsEnabled() async {
+        let stub = StubMessagesService()
+        let users = StubUserService()
+        users.enqueueBlueskyConfigured(success: true)
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus(), userService: users)
+
+        await viewModel.setBlueskyEnabled(true)
+
+        XCTAssertTrue(viewModel.crossPostToBluesky)
+        XCTAssertFalse(viewModel.blueskyNotConfigured)
+    }
+
+    func test_givenBlueskyNotConfigured_whenEnablingBluesky_thenDisablesToggleAndSetsFlag() async {
+        let stub = StubMessagesService()
+        let users = StubUserService()
+        users.enqueueBlueskyConfigured(success: false)
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus(), userService: users)
+
+        await viewModel.setBlueskyEnabled(true)
+
+        XCTAssertFalse(viewModel.crossPostToBluesky)
+        XCTAssertTrue(viewModel.blueskyNotConfigured)
+    }
+
+    func test_givenDisableBluesky_whenCalledWithFalse_thenNoServiceCallMade() async {
+        let stub = StubMessagesService()
+        let users = StubUserService()
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus(), userService: users)
+
+        await viewModel.setBlueskyEnabled(false)
+
+        // No blueskyConfigured call should have been made when disabling.
+        XCTAssertFalse(viewModel.crossPostToBluesky)
+        XCTAssertFalse(viewModel.blueskyNotConfigured)
+        XCTAssertEqual(users.recorded.filter { $0.kind == .blueskyConfigured }.count, 0)
+    }
+
+    func test_givenMastodonNotConfigured_whenEnablingMastodon_thenDisablesAndSetsFlag() async {
+        let stub = StubMessagesService()
+        let users = StubUserService()
+        users.enqueueMastodonConfigured(success: false)
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus(), userService: users)
+        viewModel.mastodonProviderIdsInput = "mastodon.social"
+
+        await viewModel.setMastodonEnabled(true)
+
+        XCTAssertFalse(viewModel.crossPostToMastodon)
+        XCTAssertTrue(viewModel.mastodonNotConfigured)
+    }
 }
 
 /// Spy that records whether the subscriber-lapse refresh hook fired.

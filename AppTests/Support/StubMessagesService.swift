@@ -34,6 +34,8 @@ struct RecordedMessagesCall: Sendable, Equatable {
         case scheduledPosts
         case uploadImage(byteCount: Int)
         case uploadVideo(byteCount: Int, contentType: String)
+        case cancelScheduled(messageId: String)
+        case reschedule(messageId: String, newDate: Date)
     }
     let kind: Kind
 }
@@ -60,6 +62,8 @@ actor StubMessagesService: MessagesServicing {
     private var scheduledPostsOutcomes: [Result<[Message], Error>] = []
     private var uploadImageOutcomes: [Result<String, Error>] = []
     private var uploadVideoOutcomes: [Result<String, Error>] = []
+    private var cancelScheduledOutcomes: [Result<Void, Error>] = []
+    private var rescheduleOutcomes: [Result<Message, Error>] = []
 
     private(set) var recorded: [RecordedMessagesCall] = []
 
@@ -106,6 +110,11 @@ actor StubMessagesService: MessagesServicing {
 
     func enqueueUploadVideo(success url: String) { uploadVideoOutcomes.append(.success(url)) }
     func enqueueUploadVideo(failure error: Error) { uploadVideoOutcomes.append(.failure(error)) }
+
+    func enqueueCancelScheduledSuccess() { cancelScheduledOutcomes.append(.success(())) }
+    func enqueueCancelScheduled(failure error: Error) { cancelScheduledOutcomes.append(.failure(error)) }
+    func enqueueReschedule(success message: Message) { rescheduleOutcomes.append(.success(message)) }
+    func enqueueReschedule(failure error: Error) { rescheduleOutcomes.append(.failure(error)) }
 
     // MARK: MessagesServicing — reads
 
@@ -239,6 +248,16 @@ actor StubMessagesService: MessagesServicing {
     func uploadVideo(_ data: Data, contentType: String) async throws -> String {
         recorded.append(.init(kind: .uploadVideo(byteCount: data.count, contentType: contentType)))
         return try take(&uploadVideoOutcomes, label: "uploadVideo")
+    }
+
+    func cancelScheduled(messageId: String) async throws {
+        recorded.append(.init(kind: .cancelScheduled(messageId: messageId)))
+        let _: Void = try take(&cancelScheduledOutcomes, label: "cancelScheduled")
+    }
+
+    func reschedule(messageId: String, newDate: Date) async throws -> Message {
+        recorded.append(.init(kind: .reschedule(messageId: messageId, newDate: newDate)))
+        return try take(&rescheduleOutcomes, label: "reschedule")
     }
 
     // MARK: - Internals

@@ -24,6 +24,12 @@ struct RecordedUserCall: Sendable, Equatable {
         case requestEmailChange(newEmail: String)
         case uploadAvatar(contentType: String)
         case deleteAccount
+        case searchUsers(query: String, limit: Int?)
+        case lookupUser(handle: String)
+        case blueskyConfigured
+        case mastodonConfigured(instance: String)
+        case identityLinkURLNative(provider: String, instance: String?)
+        case linkIdentityNative(provider: String, code: String, state: String)
     }
     let kind: Kind
 }
@@ -39,6 +45,11 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     private var requestEmailChangeOutcomes: [Result<Void, Error>] = []
     private var uploadAvatarOutcomes: [Result<URL?, Error>] = []
     private var deleteAccountOutcomes: [Result<Void, Error>] = []
+    private var searchUsersOutcomes: [Result<[UserSearchResult], Error>] = []
+    private var lookupUserOutcomes: [Result<UserSearchResult?, Error>] = []
+    private var blueskyConfiguredOutcomes: [Result<Bool, Error>] = []
+    private var mastodonConfiguredOutcomes: [Result<Bool, Error>] = []
+    private var linkIdentityNativeOutcomes: [Result<LinkedIdentity, Error>] = []
 
     /// When set, `identityLinkURL` throws this error instead of returning a
     /// URL — set once in test setup for a deterministic failure-path test.
@@ -97,6 +108,47 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func enqueueDeleteAccount(failure error: Error) {
         lock.lock(); defer { lock.unlock() }
         deleteAccountOutcomes.append(.failure(error))
+    }
+
+    func enqueueSearchUsers(success results: [UserSearchResult]) {
+        lock.lock(); defer { lock.unlock() }
+        searchUsersOutcomes.append(.success(results))
+    }
+    func enqueueSearchUsers(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        searchUsersOutcomes.append(.failure(error))
+    }
+    func enqueueLookupUser(success result: UserSearchResult?) {
+        lock.lock(); defer { lock.unlock() }
+        lookupUserOutcomes.append(.success(result))
+    }
+    func enqueueLookupUser(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        lookupUserOutcomes.append(.failure(error))
+    }
+    func enqueueBlueskyConfigured(success configured: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        blueskyConfiguredOutcomes.append(.success(configured))
+    }
+    func enqueueBlueskyConfigured(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        blueskyConfiguredOutcomes.append(.failure(error))
+    }
+    func enqueueMastodonConfigured(success configured: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        mastodonConfiguredOutcomes.append(.success(configured))
+    }
+    func enqueueMastodonConfigured(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        mastodonConfiguredOutcomes.append(.failure(error))
+    }
+    func enqueueLinkIdentityNative(success identity: LinkedIdentity) {
+        lock.lock(); defer { lock.unlock() }
+        linkIdentityNativeOutcomes.append(.success(identity))
+    }
+    func enqueueLinkIdentityNative(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        linkIdentityNativeOutcomes.append(.failure(error))
     }
 
     func setLinkURLError(_ error: Error?) {
@@ -162,6 +214,51 @@ final class StubUserService: UserServicing, @unchecked Sendable {
         } set: {
             $0.deleteAccountOutcomes = $1
         }
+    }
+
+    func searchUsers(query: String, limit: Int?) async throws -> [UserSearchResult] {
+        try perform(label: "searchUsers", record: .searchUsers(query: query, limit: limit)) { $0.searchUsersOutcomes }
+            set: { $0.searchUsersOutcomes = $1 }
+    }
+
+    func lookupUser(handle: String) async throws -> UserSearchResult? {
+        try perform(label: "lookupUser", record: .lookupUser(handle: handle)) { $0.lookupUserOutcomes }
+            set: { $0.lookupUserOutcomes = $1 }
+    }
+
+    func blueskyConfigured() async throws -> Bool {
+        try perform(label: "blueskyConfigured", record: .blueskyConfigured) { $0.blueskyConfiguredOutcomes }
+            set: { $0.blueskyConfiguredOutcomes = $1 }
+    }
+
+    func mastodonConfigured(instance: String) async throws -> Bool {
+        try perform(label: "mastodonConfigured", record: .mastodonConfigured(instance: instance)) { $0.mastodonConfiguredOutcomes }
+            set: { $0.mastodonConfiguredOutcomes = $1 }
+    }
+
+    func identityLinkURLNative(provider: IdentityProvider, instance: String?) throws -> URL {
+        lock.lock()
+        _recorded.append(.init(kind: .identityLinkURLNative(provider: provider.wireToken, instance: instance)))
+        let error = linkURLError
+        lock.unlock()
+        if let error { throw error }
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "interlinedlist.com"
+        components.path = "/api/auth/\(provider.wireToken)/authorize"
+        var items = [URLQueryItem(name: "link", value: "true"),
+                     URLQueryItem(name: "redirect_uri", value: "interlinedlist://oauth/callback")]
+        if let instance, !instance.isEmpty {
+            items.append(URLQueryItem(name: "instance", value: instance))
+        }
+        components.queryItems = items
+        guard let url = components.url else { throw StubUserError.malformedURL }
+        return url
+    }
+
+    func linkIdentityNative(provider: IdentityProvider, code: String, state: String) async throws -> LinkedIdentity {
+        try perform(label: "linkIdentityNative", record: .linkIdentityNative(provider: provider.wireToken, code: code, state: state)) { $0.linkIdentityNativeOutcomes }
+            set: { $0.linkIdentityNativeOutcomes = $1 }
     }
 
     // MARK: - Internals

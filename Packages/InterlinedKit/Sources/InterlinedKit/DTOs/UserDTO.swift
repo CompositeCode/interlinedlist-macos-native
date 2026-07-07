@@ -323,3 +323,39 @@ public struct UserOrganizationDTO: Decodable, Sendable, Equatable {
         self.joinedAt = joinedAt
     }
 }
+
+// MARK: - User search / lookup (NW-1)
+
+/// A user as returned by `GET /api/users/search` and `GET /api/users/lookup`.
+public struct UserSearchResultDTO: Decodable, Sendable, Equatable {
+    public let id: String
+    public let username: String
+    public let displayName: String?
+    public let avatar: String?
+    public let isPrivate: Bool
+
+    public init(
+        id: String,
+        username: String,
+        displayName: String? = nil,
+        avatar: String? = nil,
+        isPrivate: Bool = false
+    ) {
+        self.id = id
+        self.username = username
+        self.displayName = displayName
+        self.avatar = avatar
+        self.isPrivate = isPrivate
+    }
+}
+
+/// Response envelope for `GET /api/users/search`.
+public struct UserSearchResponse: Decodable, Sendable, Equatable {
+    public let users: [UserSearchResultDTO]
+    public let total: Int
+
+    public init(users: [UserSearchResultDTO], total: Int) {
+        self.users = users
+        self.total = total
+    }
+}

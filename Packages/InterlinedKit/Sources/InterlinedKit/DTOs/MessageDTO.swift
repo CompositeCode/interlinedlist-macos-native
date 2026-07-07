@@ -30,6 +30,7 @@ public struct MessageDTO: Decodable, Sendable, Equatable {
     public let user: UserSummaryDTO
     public let pushedMessage: PushedMessageBox?
     public let dugByMe: Bool
+    public let crossPosts: [CrossPostResultDTO]?
 
     public init(
         id: String,
@@ -50,7 +51,8 @@ public struct MessageDTO: Decodable, Sendable, Equatable {
         pushedMessageId: String? = nil,
         user: UserSummaryDTO,
         pushedMessage: PushedMessageBox? = nil,
-        dugByMe: Bool
+        dugByMe: Bool,
+        crossPosts: [CrossPostResultDTO]? = nil
     ) {
         self.id = id
         self.content = content
@@ -71,6 +73,7 @@ public struct MessageDTO: Decodable, Sendable, Equatable {
         self.user = user
         self.pushedMessage = pushedMessage
         self.dugByMe = dugByMe
+        self.crossPosts = crossPosts
     }
 }
 
@@ -184,6 +187,30 @@ public struct CrossPostURLDTO: Decodable, Sendable, Equatable {
         self.statusIds = statusIds
         self.instanceUrl = instanceUrl
         self.instanceName = instanceName
+    }
+}
+
+// MARK: - CrossPostResultDTO
+
+public struct CrossPostResultDTO: Decodable, Sendable, Equatable {
+    public let platform: String
+    public let providerId: String?
+    public let status: String           // "ok" | "failed" | "pending"
+    public let externalUrl: String?
+    public let error: String?
+
+    public init(
+        platform: String,
+        providerId: String? = nil,
+        status: String,
+        externalUrl: String? = nil,
+        error: String? = nil
+    ) {
+        self.platform = platform
+        self.providerId = providerId
+        self.status = status
+        self.externalUrl = externalUrl
+        self.error = error
     }
 }
 

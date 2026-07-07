@@ -22,6 +22,7 @@ struct ScheduledPostsRootView: View {
     @Environment(\.openWindow) private var openWindow
 
     @State private var viewModel: ScheduledPostsViewModel?
+    @State private var reschedulingPost: Message? = nil
 
     var body: some View {
         NavigationStack {
@@ -48,6 +49,12 @@ struct ScheduledPostsRootView: View {
                         }
                     }
                 }
+            }
+        }
+        .sheet(item: $reschedulingPost) { post in
+            RescheduleSheet(post: post) { newDate in
+                Task { await viewModel?.reschedule(post: post, to: newDate) }
+                reschedulingPost = nil
             }
         }
         .task {
@@ -84,16 +91,18 @@ struct ScheduledPostsRootView: View {
     @ViewBuilder
     private func list(viewModel: ScheduledPostsViewModel) -> some View {
         List {
-            // Read-only in v1 (P3.3): a footnote so the missing
-            // cancel / reschedule affordance is intentional, not a gap.
             Section {
                 ForEach(viewModel.posts) { post in
                     ScheduledPostRow(post: post)
+                        .contextMenu {
+                            Button("Reschedule\u{2026}") {
+                                reschedulingPost = post
+                            }
+                            Button("Cancel Post", role: .destructive) {
+                                Task { await viewModel.cancel(post: post) }
+                            }
+                        }
                 }
-            } footer: {
-                Text("Cancelling or rescheduling a queued post isn't available yet.")
-                    .font(.ilMono(11))
-                    .foregroundStyle(.secondary)
             }
         }
         .listStyle(.inset)
@@ -170,10 +179,55 @@ struct ScheduledPostsRootView: View {
     }
 }
 
+// MARK: - RescheduleSheet
+
+private struct RescheduleSheet: View {
+    let post: Message
+    let onReschedule: (Date) -> Void
+
+    @State private var selectedDate: Date
+    @Environment(\.dismiss) private var dismiss
+
+    init(post: Message, onReschedule: @escaping (Date) -> Void) {
+        self.post = post
+        self.onReschedule = onReschedule
+        _selectedDate = State(initialValue: post.scheduledAt ?? Date().addingTimeInterval(3600))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Reschedule Post")
+                .font(.ilTitle(18))
+            Text(post.text.isEmpty ? "(No text)" : post.text)
+                .font(.ilBody())
+                .lineLimit(2)
+                .foregroundStyle(.secondary)
+            DatePicker(
+                "Publish at",
+                selection: $selectedDate,
+                in: Date()...,
+                displayedComponents: [.date, .hourAndMinute]
+            )
+            HStack {
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button("Reschedule") {
+                    onReschedule(selectedDate)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 320, minHeight: 200)
+    }
+}
+
 // MARK: - ScheduledPostRow
 
-/// One queued scheduled post: its publish time plus a body preview. No
-/// destructive affordance (P3.3 — read-only v1).
+/// One queued scheduled post: its publish time plus a body preview.
 private struct ScheduledPostRow: View {
     let post: Message
 

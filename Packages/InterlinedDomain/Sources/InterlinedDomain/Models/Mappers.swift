@@ -65,7 +65,8 @@ extension Message {
             repost: dto.pushedMessage.map { box in
                 Repost.message(Message(from: box.message))
             },
-            scheduledAt: dto.scheduledAt
+            scheduledAt: dto.scheduledAt,
+            crossPostResults: (dto.crossPosts ?? []).map(CrossPostResult.init(from:))
         )
     }
 }
@@ -80,6 +81,40 @@ extension TimelinePage {
             messages: messages,
             hasMore: info.hasMore,
             nextOffset: info.hasMore ? info.offset + info.limit : nil
+        )
+    }
+}
+
+extension CrossPostResult {
+    /// Maps the wire status string to the typed `Status` enum, with a forward-
+    /// compatible `.unknown` case for strings the client doesn't recognise yet.
+    public init(from dto: CrossPostResultDTO) {
+        let status: Status
+        switch dto.status {
+        case "ok":      status = .ok
+        case "failed":  status = .failed(dto.error)
+        case "pending": status = .pending
+        default:        status = .unknown(dto.status)
+        }
+        self.init(
+            platform: dto.platform,
+            providerId: dto.providerId,
+            status: status,
+            externalURL: dto.externalUrl.flatMap(URL.init(string:))
+        )
+    }
+}
+
+extension UserSearchResult {
+    /// Maps from the search / lookup DTO. Avatar string is parsed into a URL and
+    /// silently dropped if malformed — the UI always has the username as fallback.
+    public init(from dto: UserSearchResultDTO) {
+        self.init(
+            id: dto.id,
+            username: dto.username,
+            displayName: dto.displayName,
+            avatarURL: dto.avatar.flatMap(URL.init(string:)),
+            isPrivate: dto.isPrivate
         )
     }
 }

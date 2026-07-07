@@ -212,4 +212,37 @@ final class MapperTests: XCTestCase {
             createdAt: date
         )
     }
+
+    // MARK: - CrossPostResult mapper (NW-2)
+
+    func test_givenOkStatus_whenMappingCrossPostResult_thenStatusIsOk() throws {
+        let dto = CrossPostResultDTO(platform: "bluesky", providerId: nil, status: "ok", externalUrl: "https://bsky.app/p/123", error: nil)
+        let result = CrossPostResult(from: dto)
+        XCTAssertEqual(result.platform, "bluesky")
+        XCTAssertEqual(result.status, .ok)
+        XCTAssertEqual(result.externalURL?.absoluteString, "https://bsky.app/p/123")
+    }
+
+    func test_givenFailedStatusWithReason_whenMappingCrossPostResult_thenStatusIsFailedWithReason() throws {
+        let dto = CrossPostResultDTO(platform: "mastodon", providerId: "ada@m.social", status: "failed", externalUrl: nil, error: "rate_limited")
+        let result = CrossPostResult(from: dto)
+        XCTAssertEqual(result.status, .failed("rate_limited"))
+        XCTAssertEqual(result.providerId, "ada@m.social")
+    }
+
+    func test_givenPendingStatus_whenMappingCrossPostResult_thenStatusIsPending() throws {
+        let dto = CrossPostResultDTO(platform: "linkedin", providerId: nil, status: "pending", externalUrl: nil, error: nil)
+        let result = CrossPostResult(from: dto)
+        XCTAssertEqual(result.status, .pending)
+    }
+
+    func test_givenUnknownStatus_whenMappingCrossPostResult_thenStatusIsUnknown() throws {
+        let dto = CrossPostResultDTO(platform: "threads", providerId: nil, status: "queued", externalUrl: nil, error: nil)
+        let result = CrossPostResult(from: dto)
+        if case .unknown(let raw) = result.status {
+            XCTAssertEqual(raw, "queued")
+        } else {
+            XCTFail("Expected .unknown, got \(result.status)")
+        }
+    }
 }

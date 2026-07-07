@@ -343,4 +343,183 @@ final class UserServiceTests: XCTestCase {
             XCTAssertEqual(error, .unauthorized(serverMessage: "incorrect password"))
         }
     }
+
+    // MARK: - searchUsers (NW-1)
+
+    func test_givenMatchingUsers_whenSearching_thenReturnsMappedResults() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(json: """
+        { "users": [
+            { "id": "u1", "username": "ada", "displayName": "Ada", "avatar": null, "isPrivate": false }
+          ], "total": 1 }
+        """)
+        let service = UserService(api: api)
+
+        let results = try await service.searchUsers(query: "ada", limit: 5)
+
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results.first?.id, "u1")
+        XCTAssertEqual(results.first?.username, "ada")
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.path, "/api/users/search")
+    }
+
+    func test_givenEmptyQuery_whenSearching_thenReturnsEmptyList() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(json: #"{ "users": [], "total": 0 }"#)
+        let service = UserService(api: api)
+
+        let results = try await service.searchUsers(query: "", limit: nil)
+
+        XCTAssertTrue(results.isEmpty)
+    }
+
+    func test_givenAPIFailure_whenSearching_thenThrows() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(failure: .httpStatus(code: 500, serverMessage: "search down"))
+        let service = UserService(api: api)
+
+        do {
+            _ = try await service.searchUsers(query: "ada", limit: nil)
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .httpStatus(code: 500, serverMessage: "search down"))
+        }
+    }
+
+    // MARK: - lookupUser (NW-1)
+
+    func test_givenExistingHandle_whenLookingUp_thenReturnsUser() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(json: """
+        { "id": "u1", "username": "ada", "displayName": null, "avatar": null, "isPrivate": false }
+        """)
+        let service = UserService(api: api)
+
+        let result = try await service.lookupUser(handle: "ada")
+
+        XCTAssertEqual(result?.id, "u1")
+        XCTAssertEqual(result?.username, "ada")
+    }
+
+    func test_givenNotFoundResponse_whenLookingUp_thenReturnsNil() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(failure: .notFound(serverMessage: "user not found"))
+        let service = UserService(api: api)
+
+        let result = try await service.lookupUser(handle: "ghost")
+
+        XCTAssertNil(result)
+    }
+
+    func test_givenAPIFailure_whenLookingUp_thenThrows() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(failure: .httpStatus(code: 500, serverMessage: "lookup down"))
+        let service = UserService(api: api)
+
+        do {
+            _ = try await service.lookupUser(handle: "ada")
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .httpStatus(code: 500, serverMessage: "lookup down"))
+        }
+    }
+
+    // MARK: - blueskyConfigured (NW-4)
+
+    func test_givenConfiguredBluesky_whenChecking_thenReturnsTrue() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(json: #"{ "configured": true }"#)
+        let service = UserService(api: api)
+
+        let configured = try await service.blueskyConfigured()
+
+        XCTAssertTrue(configured)
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.path, "/api/auth/bluesky/status")
+    }
+
+    func test_givenUnconfiguredBluesky_whenChecking_thenReturnsFalse() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(json: #"{ "configured": false }"#)
+        let service = UserService(api: api)
+
+        let configured = try await service.blueskyConfigured()
+
+        XCTAssertFalse(configured)
+    }
+
+    // MARK: - mastodonConfigured (NW-4)
+
+    func test_givenConfiguredMastodon_whenChecking_thenReturnsTrue() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(json: #"{ "configured": true }"#)
+        let service = UserService(api: api)
+
+        let configured = try await service.mastodonConfigured(instance: "mastodon.social")
+
+        XCTAssertTrue(configured)
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.path, "/api/auth/mastodon/status")
+    }
+
+    // MARK: - identityLinkURLNative (NW-5)
+
+    func test_givenGitHubProvider_whenResolvingNativeLinkURL_thenIncludesRedirectURI() throws {
+        let api = StubAPIClient()
+        let service = UserService(api: api, baseURL: URL(string: "https://example.test")!)
+
+        let url = try service.identityLinkURLNative(provider: .github, instance: nil)
+
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        XCTAssertEqual(components?.path, "/api/auth/github/authorize")
+        XCTAssertEqual(
+            components?.queryItems?.first { $0.name == "redirect_uri" }?.value,
+            "interlinedlist://oauth/callback"
+        )
+        XCTAssertEqual(
+            components?.queryItems?.first { $0.name == "link" }?.value,
+            "true"
+        )
+    }
+
+    func test_givenOtherProvider_whenResolvingNativeLinkURL_thenThrowsUnsupportedProvider() {
+        let api = StubAPIClient()
+        let service = UserService(api: api)
+
+        XCTAssertThrowsError(try service.identityLinkURLNative(provider: .other("threads"), instance: nil)) { error in
+            XCTAssertEqual(error as? UserServiceError, .unsupportedProvider("threads"))
+        }
+    }
+
+    // MARK: - linkIdentityNative (NW-5)
+
+    func test_givenValidCodeAndState_whenLinkingNatively_thenReturnsLinkedIdentity() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(json: """
+        { "provider": "github", "providerUserId": "gh-123", "username": "ada", "linkedAt": "2026-01-01T00:00:00Z" }
+        """)
+        let service = UserService(api: api)
+
+        let identity = try await service.linkIdentityNative(provider: .github, code: "code123", state: "state456")
+
+        XCTAssertEqual(identity.provider, .github)
+        XCTAssertEqual(identity.handle, "ada")
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.path, "/api/auth/github/link")
+        XCTAssertEqual(recorded.first?.method, "POST")
+    }
+
+    func test_givenAPIFailure_whenLinkingNatively_thenThrows() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(failure: .unauthorized(serverMessage: "token expired"))
+        let service = UserService(api: api)
+
+        do {
+            _ = try await service.linkIdentityNative(provider: .github, code: "c", state: "s")
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .unauthorized(serverMessage: "token expired"))
+        }
+    }
 }

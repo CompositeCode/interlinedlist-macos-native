@@ -55,6 +55,8 @@ final class ComposerViewModel {
     /// tests that don't assert the refresh hook.
     private let onSubscriberLapse: (@MainActor () async -> Void)?
 
+    private let userService: UserServicing?
+
     // MARK: - Editable state
 
     /// Body text of the post. Markdown source — treated as plain text here
@@ -101,6 +103,19 @@ final class ComposerViewModel {
     /// Set to `true` after a successful publish; the window observes this to
     /// dismiss itself.
     private(set) var didFinish: Bool = false
+
+    /// Per-platform cross-post results from the last successful publish (NW-2).
+    /// Non-nil when the server returned at least one cross-post outcome; the
+    /// view presents `CrossPostResultsSheet` while this is non-nil.
+    private(set) var crossPostResults: [CrossPostResult]?
+
+    /// True when the Bluesky cross-post toggle was enabled but Bluesky is not
+    /// configured on the server (NW-4). The composer shows an inline hint.
+    private(set) var blueskyNotConfigured: Bool = false
+
+    /// True when a Mastodon cross-post toggle was enabled but Mastodon is not
+    /// configured for that instance (NW-4).
+    private(set) var mastodonNotConfigured: Bool = false
 
     // MARK: - Derived gating
 
@@ -151,7 +166,8 @@ final class ComposerViewModel {
         mode: ComposerMode = .newPost,
         entitlements: EntitlementsService = EntitlementsService(customerStatus: .free),
         readData: @escaping @Sendable (URL) async throws -> Data = { try Data(contentsOf: $0) },
-        onSubscriberLapse: (@MainActor () async -> Void)? = nil
+        onSubscriberLapse: (@MainActor () async -> Void)? = nil,
+        userService: UserServicing? = nil
     ) {
         self.messages = messages
         self.eventBus = eventBus
@@ -159,6 +175,7 @@ final class ComposerViewModel {
         self.entitlements = entitlements
         self.readData = readData
         self.onSubscriberLapse = onSubscriberLapse
+        self.userService = userService
         self.scheduledAt = Date().addingTimeInterval(3600)
         switch mode {
         case .newPost:
@@ -279,6 +296,9 @@ final class ComposerViewModel {
             crossPostToLinkedIn: crossPostToLinkedIn
         )
         eventBus.post(.messageCreated(created))
+        if !created.crossPostResults.isEmpty {
+            crossPostResults = created.crossPostResults
+        }
         didFinish = true
     }
 
@@ -338,6 +358,56 @@ final class ComposerViewModel {
             }
         }
         return ordered
+    }
+
+    // MARK: - Cross-post configuration checks (NW-4)
+
+    /// Called when the user enables the Bluesky cross-post toggle. Checks whether
+    /// Bluesky is configured on the server; if not, disables the toggle and sets
+    /// `blueskyNotConfigured = true` so the view can show a hint (NW-4).
+    func setBlueskyEnabled(_ enabled: Bool) async {
+        crossPostToBluesky = enabled
+        blueskyNotConfigured = false
+        guard enabled, let userService else { return }
+        do {
+            let configured = try await userService.blueskyConfigured()
+            if !configured {
+                crossPostToBluesky = false
+                blueskyNotConfigured = true
+            }
+        } catch {
+            // Configuration check failure is non-fatal; leave the toggle as-is.
+        }
+    }
+
+    /// Called when the user enables a Mastodon cross-post toggle. Checks whether
+    /// Mastodon is configured for the resolved instance; if not, disables the
+    /// toggle and sets `mastodonNotConfigured = true` (NW-4).
+    func setMastodonEnabled(_ enabled: Bool) async {
+        crossPostToMastodon = enabled
+        mastodonNotConfigured = false
+        guard enabled, let userService else { return }
+        let instance = normalised(mastodonProviderIdsInput)
+        guard !instance.isEmpty else { return }
+        do {
+            let configured = try await userService.mastodonConfigured(instance: instance)
+            if !configured {
+                crossPostToMastodon = false
+                mastodonNotConfigured = true
+            }
+        } catch {
+            // Non-fatal.
+        }
+    }
+
+    /// Also expose a method to dismiss the cross-post results sheet.
+    func dismissCrossPostResults() {
+        crossPostResults = nil
+    }
+
+    private func normalised(_ input: String) -> String {
+        input.components(separatedBy: CharacterSet(charactersIn: ", \t\n"))
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
     }
 }
 

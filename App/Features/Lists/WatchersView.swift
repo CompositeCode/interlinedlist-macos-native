@@ -16,6 +16,7 @@ struct WatchersView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: WatchersViewModel?
     @State private var userIDPendingRemove: String?
+    @State private var showAddWatcher: Bool = false
 
     var body: some View {
         Group {
@@ -32,6 +33,7 @@ struct WatchersView: View {
             if viewModel == nil {
                 let model = WatchersViewModel(
                     lists: environment.lists,
+                    userService: environment.userService,
                     eventBus: environment.listsEventBus,
                     listId: listId
                 )
@@ -45,7 +47,7 @@ struct WatchersView: View {
     @ViewBuilder
     private func content(viewModel: WatchersViewModel) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
+            header(viewModel: viewModel)
             Divider()
             List {
                 if viewModel.watchers.isEmpty, viewModel.isLoading {
@@ -65,9 +67,11 @@ struct WatchersView: View {
                 Label(error.localizedDescription, systemImage: "exclamationmark.triangle")
                     .padding(8)
             }
-            inviteHintInfobox
             Divider()
             footer
+        }
+        .sheet(isPresented: $showAddWatcher) {
+            AddWatcherSheetView(viewModel: viewModel)
         }
         .confirmationDialog(
             "Remove this watcher?",
@@ -91,13 +95,20 @@ struct WatchersView: View {
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Share")
-                .font(.ilTitle(20))
-            Text("Manage who can see and edit this list.")
-                .font(.ilMono(10))
-                .foregroundStyle(.secondary)
+    private func header(viewModel: WatchersViewModel) -> some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Share")
+                    .font(.ilTitle(20))
+                Text("Manage who can see and edit this list.")
+                    .font(.ilMono(10))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Add Watcher") {
+                showAddWatcher = true
+            }
+            .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
@@ -144,21 +155,6 @@ struct WatchersView: View {
             .accessibilityLabel("Remove \(watcher.username ?? watcher.userId)")
         }
         .padding(.vertical, 2)
-    }
-
-    private var inviteHintInfobox: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "info.circle")
-                .foregroundStyle(Color.accentColor)
-            Text("Inviting new collaborators arrives in a future update.")
-                .font(.ilMono(10))
-                .foregroundStyle(.primary)
-            Spacer()
-        }
-        .padding(10)
-        .background(ILColor.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: ILMetric.radiusSm))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
     }
 
     private var footer: some View {

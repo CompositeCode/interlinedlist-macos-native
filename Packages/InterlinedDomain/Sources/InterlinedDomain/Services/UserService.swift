@@ -68,6 +68,40 @@ public protocol UserServicing: Sendable {
     /// identity; `nil` is accepted by the endpoint but callers should always
     /// supply the current password.
     func deleteAccount(password: String) async throws
+
+    // MARK: - User search / lookup (NW-1)
+
+    /// Searches for users by username prefix. Returns the first `limit` matches.
+    func searchUsers(query: String, limit: Int?) async throws -> [UserSearchResult]
+
+    /// Looks up a user by exact username handle. Returns `nil` when the server
+    /// responds `404` (user not found); throws for any other error.
+    func lookupUser(handle: String) async throws -> UserSearchResult?
+
+    // MARK: - Provider status (NW-4)
+
+    /// Returns whether Bluesky OAuth is configured on the server.
+    func blueskyConfigured() async throws -> Bool
+
+    /// Returns whether Mastodon OAuth is configured for a given instance host.
+    func mastodonConfigured(instance: String) async throws -> Bool
+
+    // MARK: - Native OAuth linking (NW-5)
+
+    /// Builds the authorize URL for a native in-app OAuth flow (NW-5). Like
+    /// `identityLinkURL` but appends `redirect_uri=interlinedlist://oauth/callback`
+    /// so `ASWebAuthenticationSession` can intercept the callback without opening
+    /// the browser.
+    func identityLinkURLNative(provider: IdentityProvider, instance: String?) throws -> URL
+
+    /// Exchanges the one-time `code` + `state` returned by the native OAuth
+    /// callback for a linked identity. Returns the new `LinkedIdentity` on
+    /// success; throws on any API failure.
+    func linkIdentityNative(
+        provider: IdentityProvider,
+        code: String,
+        state: String
+    ) async throws -> LinkedIdentity
 }
 
 // MARK: - UserServiceError
@@ -195,5 +229,112 @@ public final class UserService: UserServicing {
 
     public func deleteAccount(password: String) async throws {
         _ = try await api.send(User.delete(DeleteAccountRequest(password: password)))
+    }
+
+    // MARK: - User search / lookup (NW-1)
+
+    public func searchUsers(query: String, limit: Int?) async throws -> [UserSearchResult] {
+        let response = try await api.send(User.search(query: query, limit: limit))
+        return response.users.map(UserSearchResult.init(from:))
+    }
+
+    public func lookupUser(handle: String) async throws -> UserSearchResult? {
+        do {
+            let dto = try await api.send(User.lookup(handle: handle))
+            return UserSearchResult(from: dto)
+        } catch let error as APIError {
+            if case .notFound = error { return nil }
+            throw error
+        }
+    }
+
+    // MARK: - Provider status (NW-4)
+
+    public func blueskyConfigured() async throws -> Bool {
+        let response = try await api.send(Auth.blueskyStatus())
+        return response.configured
+    }
+
+    public func mastodonConfigured(instance: String) async throws -> Bool {
+        let response = try await api.send(Auth.mastodonStatus(instance: instance))
+        return response.configured
+    }
+
+    // MARK: - Native OAuth linking (NW-5)
+
+    public func identityLinkURLNative(provider: IdentityProvider, instance: String?) throws -> URL {
+        let oauthProvider: OAuthProvider
+        switch provider {
+        case .github:   oauthProvider = .github
+        case .mastodon: oauthProvider = .mastodon
+        case .bluesky:  oauthProvider = .bluesky
+        case .linkedin: oauthProvider = .linkedin
+        case .other(let token):
+            throw UserServiceError.unsupportedProvider(token)
+        }
+
+        var resolvedInstance: String?
+        if oauthProvider == .mastodon {
+            let trimmed = instance?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let trimmed, !trimmed.isEmpty else {
+                throw UserServiceError.mastodonInstanceRequired
+            }
+            resolvedInstance = trimmed
+        }
+
+        let request = Auth.authorize(
+            provider: oauthProvider,
+            link: true,
+            instance: resolvedInstance,
+            redirectURI: "interlinedlist://oauth/callback"
+        )
+
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else {
+            throw UserServiceError.malformedLinkURL
+        }
+        let basePath = baseURL.path.hasSuffix("/")
+            ? String(baseURL.path.dropLast())
+            : baseURL.path
+        components.path = basePath
+            + (request.path.hasPrefix("/") ? request.path : "/" + request.path)
+        let queryItems = request.query.compactMap { item -> URLQueryItem? in
+            guard let value = item.value else { return nil }
+            return URLQueryItem(name: item.name, value: value)
+        }
+        if !queryItems.isEmpty {
+            components.queryItems = queryItems
+        }
+
+        guard let url = components.url else {
+            throw UserServiceError.malformedLinkURL
+        }
+        return url
+    }
+
+    public func linkIdentityNative(
+        provider: IdentityProvider,
+        code: String,
+        state: String
+    ) async throws -> LinkedIdentity {
+        let oauthProvider: OAuthProvider
+        switch provider {
+        case .github:   oauthProvider = .github
+        case .mastodon: oauthProvider = .mastodon
+        case .bluesky:  oauthProvider = .bluesky
+        case .linkedin: oauthProvider = .linkedin
+        case .other(let token):
+            throw UserServiceError.unsupportedProvider(token)
+        }
+
+        let response = try await api.send(Auth.linkIdentity(provider: oauthProvider, code: code, state: state))
+        return LinkedIdentity(
+            id: response.providerUserId,
+            provider: IdentityProvider(wireToken: response.provider),
+            handle: response.username,
+            profileURL: nil,
+            avatarURL: nil,
+            connectedAt: response.linkedAt,
+            lastVerifiedAt: nil
+        )
     }
 }

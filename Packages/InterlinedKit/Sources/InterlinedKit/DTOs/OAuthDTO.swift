@@ -43,3 +43,43 @@ public struct LinkedInStatusResponse: Decodable, Sendable, Equatable {
         self.redirectUri = redirectUri
     }
 }
+
+// MARK: - Provider status (NW-4)
+
+/// Shared response for `GET /api/auth/bluesky/status` and
+/// `GET /api/auth/mastodon/status` — both return `{ "configured": bool }`.
+public struct ProviderStatusResponse: Decodable, Sendable, Equatable {
+    public let configured: Bool
+
+    public init(configured: Bool) {
+        self.configured = configured
+    }
+}
+
+// MARK: - Native OAuth link (NW-5)
+
+/// Request body for `POST /api/auth/{provider}/link`.
+public struct OAuthLinkRequest: Encodable, Sendable, Equatable {
+    public let code: String
+    public let state: String
+
+    public init(code: String, state: String) {
+        self.code = code
+        self.state = state
+    }
+}
+
+/// Response for `POST /api/auth/{provider}/link`.
+public struct OAuthLinkResponse: Decodable, Sendable, Equatable {
+    public let provider: String
+    public let providerUserId: String
+    public let username: String
+    public let linkedAt: Date
+
+    public init(provider: String, providerUserId: String, username: String, linkedAt: Date) {
+        self.provider = provider
+        self.providerUserId = providerUserId
+        self.username = username
+        self.linkedAt = linkedAt
+    }
+}

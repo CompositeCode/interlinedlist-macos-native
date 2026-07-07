@@ -298,6 +298,39 @@ final class UserEndpointTests: XCTestCase {
             XCTAssertEqual(error, .forbidden(serverMessage: "Incorrect password"))
         }
     }
+
+    // MARK: - search (GET /api/users/search) — NW-1
+
+    func test_givenQuery_whenSearchBuilt_thenTargetsSearchPathWithBearer() throws {
+        let request = User.search(query: "ada", limit: 10)
+        XCTAssertEqual(request.method, .get)
+        XCTAssertEqual(request.path, "/api/users/search")
+        XCTAssertEqual(request.auth, .bearer)
+        let qItems = request.query
+        XCTAssertTrue(qItems.contains { $0.name == "q" && $0.value == "ada" })
+        XCTAssertTrue(qItems.contains { $0.name == "limit" && $0.value == "10" })
+    }
+
+    func test_givenEmptyQuery_whenSearchBuilt_thenQParameterPresent() throws {
+        let request = User.search(query: "", limit: nil)
+        XCTAssertEqual(request.path, "/api/users/search")
+        XCTAssertTrue(request.query.contains { $0.name == "q" && $0.value == "" })
+    }
+
+    // MARK: - lookup (GET /api/users/lookup) — NW-1
+
+    func test_givenHandle_whenLookupBuilt_thenTargetsLookupPathWithBearer() throws {
+        let request = User.lookup(handle: "ada")
+        XCTAssertEqual(request.method, .get)
+        XCTAssertEqual(request.path, "/api/users/lookup")
+        XCTAssertEqual(request.auth, .bearer)
+        XCTAssertTrue(request.query.contains { $0.name == "handle" && $0.value == "ada" })
+    }
+
+    func test_givenEmptyHandle_whenLookupBuilt_thenHandleParameterPresent() throws {
+        let request = User.lookup(handle: "")
+        XCTAssertTrue(request.query.contains { $0.name == "handle" && $0.value == "" })
+    }
 }
 
 private struct AnyEncodableUserProbe: Encodable {
