@@ -44,6 +44,18 @@ final class APIErrorTests: XCTestCase {
         XCTAssertEqual(error, .rateLimited(serverMessage: nil, retryAfter: 5))
     }
 
+    func test_given429StatusWithNoRetryAfterHeader_whenMapped_thenRateLimitedWithNilDelay() {
+        // Boundary: Retry-After absent (header not emitted by this route).
+        // Must produce .rateLimited with nil retryAfter — not an error, not a crash.
+        let error = APIError.from(statusCode: 429, serverMessage: "slow down", retryAfter: nil)
+        XCTAssertEqual(error, .rateLimited(serverMessage: "slow down", retryAfter: nil))
+        if case .rateLimited(_, let delay) = error {
+            XCTAssertNil(delay, "Absent Retry-After must yield nil delay, not a default value")
+        } else {
+            XCTFail("Expected .rateLimited")
+        }
+    }
+
     func test_given500Status_whenMapped_thenFallsBackToHttpStatus() {
         let error = APIError.from(statusCode: 500, serverMessage: "Server error")
         XCTAssertEqual(error, .httpStatus(code: 500, serverMessage: "Server error"))

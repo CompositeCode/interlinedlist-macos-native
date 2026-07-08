@@ -213,6 +213,46 @@ final class MapperTests: XCTestCase {
         )
     }
 
+    // MARK: FollowAction mapper (FollowActionResponse → FollowAction)
+
+    func test_givenActiveStatusInActionResponse_whenMappingFollowAction_thenReturnsApproved() {
+        // Happy path: the action response carries `"active"` — follow is live.
+        let dto = FollowActionResponse(follow: .init(status: "active"))
+
+        let action = FollowAction(from: dto)
+
+        XCTAssertEqual(action, .approved)
+    }
+
+    func test_givenPendingStatusInActionResponse_whenMappingFollowAction_thenReturnsPending() {
+        // Private-account scenario: request is queued for approval.
+        let dto = FollowActionResponse(follow: .init(status: "pending"))
+
+        let action = FollowAction(from: dto)
+
+        XCTAssertEqual(action, .pending)
+    }
+
+    func test_givenMissingFollowKeyInActionResponse_whenMappingFollowAction_thenDefaultsToPending() {
+        // Boundary / nil case: `follow` is absent (e.g. unfollow/approve/reject
+        // responses that omit the key). Conservative default is `.pending`.
+        let dto = FollowActionResponse(follow: nil)
+
+        let action = FollowAction(from: dto)
+
+        XCTAssertEqual(action, .pending)
+    }
+
+    func test_givenUnknownStatusInActionResponse_whenMappingFollowAction_thenDefaultsToPending() {
+        // Future-proofing: any unrecognised status string falls back to `.pending`
+        // so the UI renders "Requested" rather than silently assuming approval.
+        let dto = FollowActionResponse(follow: .init(status: "unknown_future_value"))
+
+        let action = FollowAction(from: dto)
+
+        XCTAssertEqual(action, .pending)
+    }
+
     // MARK: - CrossPostResult mapper (NW-2)
 
     func test_givenOkStatus_whenMappingCrossPostResult_thenStatusIsOk() throws {

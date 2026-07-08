@@ -161,15 +161,38 @@ final class FollowEndpointTests: XCTestCase {
         XCTAssertEqual(response.requests.first?.followId, "fr1")
     }
 
-    func test_givenSuccessEnvelope_whenFollowSent_thenDecodesActionResponse() async throws {
+    func test_givenActiveStatusBody_whenFollowSent_thenDecodesActionResponse() async throws {
+        // Happy path: the backend returns `{ "follow": { "status": "active" } }`
+        // for a public-account follow (relationship immediately approved).
         let (client, transport) = makeClient()
-        await transport.enqueue(.json(#"{"success":true}"#))
+        await transport.enqueue(.json(#"{"follow":{"status":"active"}}"#))
 
         let result = try await client.send(Follow.follow(userId: "u1"))
 
-        XCTAssertEqual(result.success, true)
+        XCTAssertEqual(result.follow?.status, "active")
         let received = await transport.received
         XCTAssertEqual(received[0].httpMethod, "POST")
+    }
+
+    func test_givenPendingStatusBody_whenFollowSent_thenDecodesPendingStatus() async throws {
+        // Private-account scenario: backend returns `{ "follow": { "status": "pending" } }`.
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"{"follow":{"status":"pending"}}"#))
+
+        let result = try await client.send(Follow.follow(userId: "u1"))
+
+        XCTAssertEqual(result.follow?.status, "pending")
+    }
+
+    func test_givenEmptyActionBody_whenActionSent_thenDecodesWithNilFollowKey() async throws {
+        // Boundary: unfollow/approve/reject/remove may return `{}` or omit the
+        // "follow" key. The optional field must decode without error.
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json("{}"))
+
+        let result = try await client.send(Follow.unfollow(userId: "u1"))
+
+        XCTAssertNil(result.follow)
     }
 
     // MARK: - API failure

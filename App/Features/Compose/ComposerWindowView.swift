@@ -55,7 +55,12 @@ struct ComposerWindowView: View {
                     entitlements: environment.liveEntitlements,
                     // PLAN.md §8 — a gated 403 mid-flow re-fetches the
                     // customerStatus so the composer re-gates.
-                    onSubscriberLapse: { await environment.refreshEntitlements() }
+                    onSubscriberLapse: { await environment.refreshEntitlements() },
+                    // NW-4: provider status checks for Bluesky and Mastodon
+                    // cross-post toggles. The view model gates against nil so
+                    // the toggle still functions in preview / test hosts that
+                    // don't wire the full environment.
+                    userService: environment.userService
                 )
             }
         }
@@ -264,9 +269,13 @@ struct ComposerWindowView: View {
                 .font(.ilMono(10))
                 .foregroundStyle(.secondary)
 
+            // NW-4: the setter calls the async configuration check so the
+            // view model can disable the toggle when the server reports the
+            // provider is not configured. The binding get-path reads the
+            // (possibly-rolled-back) authoritative state.
             Toggle(isOn: Binding(
                 get: { viewModel.crossPostToMastodon },
-                set: { viewModel.crossPostToMastodon = $0 }
+                set: { enabled in Task { await viewModel.setMastodonEnabled(enabled) } }
             )) { Text("Mastodon") }
                 .disabled(!viewModel.canUseSubscriberFeatures)
 
@@ -280,11 +289,25 @@ struct ComposerWindowView: View {
                 .accessibilityLabel("Mastodon provider IDs")
             }
 
+            if viewModel.mastodonNotConfigured {
+                Text("Mastodon is not configured for that instance.")
+                    .font(.ilMono(10))
+                    .foregroundStyle(Color.red)
+                    .accessibilityLabel("Mastodon cross-posting is not available for this instance")
+            }
+
             Toggle(isOn: Binding(
                 get: { viewModel.crossPostToBluesky },
-                set: { viewModel.crossPostToBluesky = $0 }
+                set: { enabled in Task { await viewModel.setBlueskyEnabled(enabled) } }
             )) { Text("Bluesky") }
                 .disabled(!viewModel.canUseSubscriberFeatures)
+
+            if viewModel.blueskyNotConfigured {
+                Text("Bluesky is not configured on the server.")
+                    .font(.ilMono(10))
+                    .foregroundStyle(Color.red)
+                    .accessibilityLabel("Bluesky cross-posting is not available")
+            }
 
             Toggle(isOn: Binding(
                 get: { viewModel.crossPostToLinkedIn },

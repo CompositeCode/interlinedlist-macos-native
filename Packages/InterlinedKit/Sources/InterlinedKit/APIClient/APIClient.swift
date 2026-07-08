@@ -28,6 +28,34 @@ public protocol APIClientProtocol: Sendable {
     /// Executes a request and returns the raw bytes plus content type.
     /// Used for CSV export endpoints (`/api/exports/*`).
     func sendRaw<Response>(_ request: Request<Response>) async throws -> (Data, String?)
+
+    /// Executes a request, decodes its JSON body into `Response`, and returns
+    /// any rate-limit metadata extracted from the response headers.
+    ///
+    /// Returns `nil` for `rateLimitInfo` when the route does not emit
+    /// `RateLimit-Limit` / `RateLimit-Remaining` / `RateLimit-Reset` headers.
+    /// Callers **must** treat `nil` as "no limit enforced on this route" and
+    /// must not error, warn, or stall when the headers are absent.
+    ///
+    /// A default implementation is provided via a protocol extension; it calls
+    /// `send(_:)` and returns `nil` for rate-limit info. Override in concrete
+    /// types (e.g. `APIClient`) to provide actual header extraction.
+    func sendWithRateLimitInfo<Response: Decodable & Sendable>(
+        _ request: Request<Response>
+    ) async throws -> (Response, RateLimitInfo?)
+}
+
+// MARK: - Default implementation
+
+extension APIClientProtocol {
+    /// Conformers that do not need real rate-limit header extraction — primarily
+    /// stubs and fakes — get this default which calls `send(_:)` and returns
+    /// `nil`, correctly signalling "no limit enforced".
+    public func sendWithRateLimitInfo<Response: Decodable & Sendable>(
+        _ request: Request<Response>
+    ) async throws -> (Response, RateLimitInfo?) {
+        (try await send(request), nil)
+    }
 }
 
 // MARK: - APIClient
@@ -101,6 +129,23 @@ public final class APIClient: APIClientProtocol {
         let (data, response) = try await performWithSafetyNet(request)
         let contentType = response.value(forHTTPHeaderField: "Content-Type")
         return (data, contentType)
+    }
+
+    public func sendWithRateLimitInfo<Response: Decodable & Sendable>(
+        _ request: Request<Response>
+    ) async throws -> (Response, RateLimitInfo?) {
+        let (data, response) = try await performWithSafetyNet(request)
+        do {
+            let decoded = try decoder.decode(Response.self, from: data)
+            // RateLimitInfo.parse returns nil when headers are absent —
+            // that is the correct "no limit on this route" signal.
+            return (decoded, RateLimitInfo.parse(from: response))
+        } catch {
+            throw APIError.decoding(
+                type: String(describing: Response.self),
+                message: error.localizedDescription
+            )
+        }
     }
 
     // MARK: - Execution

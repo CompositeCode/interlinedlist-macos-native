@@ -50,6 +50,27 @@ extension FollowRelationship {
     }
 }
 
+// MARK: - FollowAction mapper
+
+extension FollowAction {
+    /// Maps the follow action response to the typed outcome.
+    ///
+    /// - `"active"` → `.approved`: the follow is live (target is a public
+    ///   account and the relationship was immediately approved by the server).
+    /// - Any other value, `"pending"`, or an absent `follow` key → `.pending`:
+    ///   the target is a private account and the request is awaiting approval.
+    ///   Using `.pending` as the conservative default survives an eventual-
+    ///   consistency window and unknown future status strings.
+    ///
+    /// `followedBy` is NOT available from the action response — callers that
+    /// need the inverse direction must call `status(of:)` separately. Remove
+    /// this note when the backend adds `followedBy` to the follow action
+    /// response.
+    public init(from dto: FollowActionResponse) {
+        self = (dto.follow?.status == "active") ? .approved : .pending
+    }
+}
+
 // MARK: - FollowRequest mapper
 
 extension FollowRequest {

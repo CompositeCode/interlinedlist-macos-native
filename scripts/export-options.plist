@@ -9,7 +9,7 @@
     <!-- Set to your Team ID (10-char alphanumeric, e.g. ABCDEF1234).
          Find it at https://developer.apple.com/account in Membership. -->
     <key>teamID</key>
-    <string>REPLACE_WITH_YOUR_TEAM_ID</string>
+    <string>BJA9558E4B</string>
 
     <!-- Hardened Runtime is required for notarization. -->
     <key>hardRuntime</key>

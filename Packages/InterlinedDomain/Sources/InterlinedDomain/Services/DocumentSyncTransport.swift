@@ -14,14 +14,22 @@ public struct DocumentSyncDelta: Sendable, Equatable {
     public let folders: [FolderNode]
     public let documents: [Document]
 
+    /// Rate-limit metadata parsed from the pull response headers. `nil` when
+    /// the route does not emit `RateLimit-Limit` / `RateLimit-Remaining` /
+    /// `RateLimit-Reset` headers — the sync engine must interpret `nil` as
+    /// "no limit enforced on this route" and proceed at full pace.
+    public let rateLimitInfo: RateLimitInfo?
+
     public init(
         syncedAt: Date? = nil,
         folders: [FolderNode] = [],
-        documents: [Document] = []
+        documents: [Document] = [],
+        rateLimitInfo: RateLimitInfo? = nil
     ) {
         self.syncedAt = syncedAt
         self.folders = folders
         self.documents = documents
+        self.rateLimitInfo = rateLimitInfo
     }
 }
 
@@ -63,17 +71,27 @@ public final class KitDocumentSyncTransport: DocumentSyncTransport {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let sinceParam = since.map(formatter.string(from:))
-        let response = try await api.send(Documents.sync(lastSyncAt: sinceParam))
+        let (dto, rateLimitInfo) = try await api.sendWithRateLimitInfo(
+            Documents.sync(lastSyncAt: sinceParam)
+        )
+        // rateLimitInfo is nil when the route does not enforce a limit —
+        // the caller (sync engine) should proceed at full pace in that case.
         return DocumentSyncDelta(
-            syncedAt: response.syncedAt,
-            folders: response.folders.map(FolderNode.init(from:)),
-            documents: response.documents.map(Document.init(from:))
+            syncedAt: dto.syncedAt,
+            folders: dto.folders.map(FolderNode.init(from:)),
+            documents: dto.documents.map(Document.init(from:)),
+            rateLimitInfo: rateLimitInfo
         )
     }
 
     public func pushChange(_ change: DocumentChange) async throws {
         let op = DocumentSyncOperation(from: change)
         let batch = DocumentSyncRequest(operations: [op])
-        _ = try await api.send(Documents.pushSync(batch))
+        let (_, rateLimitInfo) = try await api.sendWithRateLimitInfo(Documents.pushSync(batch))
+        // When rateLimitInfo is nil this route enforces no limit — proceed at
+        // full pace. When non-nil, future pacing logic would throttle here
+        // (e.g. back off when remaining approaches zero).
+        guard rateLimitInfo != nil else { return }
+        // Pacing placeholder — not yet implemented; surfaced when headers arrive.
     }
 }

@@ -103,11 +103,10 @@ public protocol SocialServicing: Sendable {
     /// approval (private account)" so the UI can render the right
     /// confirmation copy without re-fetching.
     ///
-    /// The wire response (`FollowActionResponse`) does not reliably carry
-    /// this distinction in a switchable form, so the implementation infers
-    /// the result by reading the relationship state immediately after the
-    /// call. One follow-up round-trip; acceptable for an action that is
-    /// already user-initiated.
+    /// The wire response carries `{ "follow": { "status": "active" | "pending" } }`
+    /// which is mapped directly to the typed outcome — no follow-up status
+    /// round-trip is required. `followedBy` is NOT in the action response;
+    /// callers that need the inverse direction must call `status(of:)` separately.
     func follow(userId: String) async throws -> FollowAction
 
     /// Reverses a follow on `userId`. No typed outcome — either the call
@@ -210,25 +209,14 @@ public final class SocialService: SocialServicing {
     // MARK: - M5 write surface (PLAN.md §6 M5)
 
     public func follow(userId: String) async throws -> FollowAction {
-        _ = try await api.send(Follow.follow(userId: userId))
-        // The action endpoint returns a small `{ success?, message? }`
-        // envelope that is not reliably switchable across deployments. To
-        // distinguish "now following" from "request pending", re-read the
-        // relationship state and project from the typed flags.
-        //
-        // This is one extra round-trip per follow tap; acceptable because
-        // (a) the action is user-initiated and not on a hot path, and
-        // (b) the App layer also needs the relationship state to re-render
-        // the follow button, so the cost is shared.
-        let statusDTO = try await api.send(Follow.status(userId: userId))
-        let relationship = FollowRelationship(from: statusDTO)
-        if relationship.isFollowing { return .approved }
-        if relationship.hasPendingRequest { return .pending }
-        // Defensive fallback: the server accepted the action but the
-        // relationship state lags. Treat as pending — the M5 UI shows
-        // "Requested" until the next refresh, which is a safe over-cautious
-        // default (and survives a slow eventual-consistency window).
-        return .pending
+        let response = try await api.send(Follow.follow(userId: userId))
+        // The action response now carries `{ "follow": { "status": "active" |
+        // "pending" } }` which lets us derive the outcome without a follow-up
+        // status round-trip. `followedBy` is NOT in the action response —
+        // callers that need the inverse direction must call `status(of:)`
+        // separately. Remove this comment when the backend adds `followedBy`
+        // to the follow action response.
+        return FollowAction(from: response)
     }
 
     public func unfollow(userId: String) async throws {

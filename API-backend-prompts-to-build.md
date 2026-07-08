@@ -10,29 +10,18 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 
 ## Priority 1 — blocking or near-blocking native UX
 
-### 1.1 — Public profile read endpoint `GET /api/users/[username]`
+### 1.1 — Public profile read endpoint `GET /api/users/[username]` — *RESOLVED 2026-07-07*
 
-- **Problem.** No such endpoint exists. The 2026-06-21 spike confirmed every reasonable variation (`/api/users/[username]`, `/api/user/[username]`, `/api/users/[username]/profile`, `/api/profile/[username]`, `/api/u/[username]`, `/api/public/users/[username]`) returns 404. [Decision 0002](docs/decisions/0002-public-profile-fallback.md) records the workaround: project a partial profile from the embedded author of `GET /api/user/[username]/messages`. Users who have never posted publicly cannot be shown at all — they surface as `SocialError.profileUnavailable`.
-- **Proposal.** `GET /api/users/[username]` (no auth required) returning:
+- **Resolved.** The 2026-07-07 live probe confirmed `GET /api/users/[username]` returns **HTTP 200** without auth and the response matches the proposed shape exactly:
   ```json
-  {
-    "id": "string",
-    "username": "string",
-    "displayName": "string",
-    "avatar": "url or null",
-    "headerImage": "url or null",
-    "bio": "string or null",
-    "joinedAt": "iso-8601",
-    "isPrivate": false,
-    "followerCount": 0,
-    "followingCount": 0,
-    "publicMessageCount": 0,
-    "publicListCount": 0,
-    "links": [{"label": "string", "url": "url"}]
-  }
+  {"id":"…","username":"adron","displayName":"Adron Hall","avatar":"…","headerImage":null,
+   "bio":"…","joinedAt":"2026-01-05T04:28:13.570Z","isPrivate":false,
+   "followerCount":6,"followingCount":11,"publicMessageCount":152,"publicListCount":9}
   ```
-- **Impact.** Removes decision 0002. Profile sidebar item, follower/following counts, "no public messages yet" empty state. Unblocks the M5 Social UI getting a real header.
-- **Priority.** P1.
+  Minor gap vs. proposal: no `links` array in the live response. All other fields are present and match.
+- **Follow-up (low-priority).** The `links` array from the original proposal (user-defined profile links) does not appear. Either add it or confirm it is out of scope.
+- **Impact (resolved).** Decision 0002 workaround (project profile from embedded message author) can now be removed. `SocialError.profileUnavailable` for users who have never posted publicly is no longer needed.
+- **Priority.** Resolved.
 
 ### 1.2 — Document a watcher role enumeration on `PUT /api/lists/[id]/watchers/[userId]`
 
@@ -44,9 +33,10 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 ### 1.3 — Decide the auth requirement for `GET /api/messages` and document it definitively
 
 - **Problem.** The 2026-06-22 unauthenticated probe showed `GET /api/messages?limit=1` returning **200** without any credentials, contradicting the API reference and our own auth matrix. Either the docs are wrong, or there is an unintended public exposure of private timeline content.
+- **2026-07-07 re-probe.** Still returns **HTTP 200** without auth and continues to return public-visibility messages. The behavior is unchanged since the June probe. The intended-vs-unintended question remains unanswered.
 - **Proposal.** Confirm intended behavior. If public-by-design: document that `GET /api/messages` returns only public (visibility=public) messages without auth, and only personalized content with auth. If unintended: lock down and return 401.
 - **Impact.** The macOS timeline currently *requires* a Bearer token. If `GET /api/messages` is genuinely public for public posts, we can offer a "browse without signing in" mode pre-onboarding — a real UX win. If unintended exposure, our code is already safe (we always send the Bearer).
-- **Priority.** P1 — security/correctness clarification.
+- **Priority.** P1 — security/correctness clarification. Decision still pending.
 
 ### 1.4 — Per-platform result envelope on `POST /api/messages` cross-post
 
@@ -65,8 +55,9 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 - **Impact.** M6 cross-post UI. Required to render the post-publish status sheet ("Posted to Mastodon ✓ — Bluesky failed: rate limited"). The M6 composer ships the cross-post toggles but **not** the per-platform status sheet; tracked in [`NEXT-WORK.md`](NEXT-WORK.md) NW-2.
 - **Priority.** P1 — feature is dead-on-arrival without it.
 
-### 1.5 — User lookup by handle for list-watcher invites
+### 1.5 — User lookup by handle for list-watcher invites — *Endpoints exist as of 2026-07-07 (auth required, shape unverified)*
 
+- **2026-07-07 probe.** Both `/api/users/lookup` and `/api/users/search` matched routes (`x-matched-path` confirms), returning **401** rather than 404. The endpoints now exist and are auth-gated. The response shape (whether they match the proposed minimal projection) cannot be confirmed without a real Bearer token.
 - **Problem.** The watcher PUT endpoint takes a `userId` (`PUT /api/lists/[id]/watchers/[userId]`), but there is no documented way to resolve a typed handle (e.g. `@adron`) to that user id. The native share-sheet flow needs to render "Add a user…" → type handle → autocomplete → confirm role → PUT. Without a lookup, we can only edit roles for *already-watching* users; the invite path is dead.
 - **Proposal.** Either:
   - **(a)** `GET /api/users/lookup?handle=<username>` (no auth required for public profiles; require auth for private) returning `{ "id": "...", "username": "...", "displayName": "...", "avatar": "url or null", "isPrivate": bool }` &mdash; minimal projection, single-hit lookup.
@@ -78,6 +69,7 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 ### 1.6 — Rate-limit headers on every authenticated response
 
 - **Problem.** The 2026-06-22 probe confirmed **no** `X-RateLimit-*`, `RateLimit-*` (RFC), or `Retry-After` headers in API responses. PLAN.md §8 flagged this as a risk. The client cannot pace itself; we'll learn limits by getting 429'd in production.
+- **2026-07-07 re-probe.** Still **no rate-limit headers** on any response. Unchanged.
 - **Proposal.** Standard headers on every authenticated response:
   - `RateLimit-Limit: 100`
   - `RateLimit-Remaining: 87`
@@ -252,6 +244,7 @@ The list is grouped by priority. Within a band, entries are ordered by the miles
 
 ## Update history
 
+- **2026-07-07 — Live re-probe (P1 sweep).** Confirmed **ask 1.1 resolved**: `GET /api/users/[username]` now returns HTTP 200 with the full proposed profile shape (minor gap: no `links` array). **Ask 1.5 partially unblocked**: both `/api/users/lookup` and `/api/users/search` now exist (401 with auth, not 404); response shape pending token verification. **Ask 1.3** still open — unauthenticated `GET /api/messages` still returns 200, decision/docs still needed. **Ask 1.6** still unresolved — no rate-limit headers on any response. Asks 1.2 and 1.4 remain untestable without auth.
 - **2026-06-25 — Wave 7 (M6 Subscriber + orgs).** Added ask **2.6** (P2) — the native OAuth identity-linking contract maintainer question, filed verbatim from the [2026-06-24 OAuth spike (spike 0002)](docs/spikes/0002-oauth-identity-linking.md) and [Decision 0006](docs/decisions/0006-oauth-identity-linking-browser-handoff.md) (M6 ships the browser-handoff fallback). Cross-referenced the M6 consuming gaps from the new [`NEXT-WORK.md`](NEXT-WORK.md) entries: **1.4** ↔ NW-2 (cross-post per-platform status sheet), **3.3** ↔ NW-3 (scheduled cancel / reschedule), **3.6** ↔ NW-4 (Bluesky / Mastodon cross-post readiness), **2.6** ↔ NW-5 (native OAuth linking), and **1.5** ↔ NW-6 (org member-add-by-handle, now noted on 1.5 as a second consumer of the handle&rarr;userId lookup). Added the Wave 7 note on **2.5** that the M6 media-upload limits ship hard-coded (`TODO(backend ask P2.5)`) until the machine-readable limits land.
 - **2026-06-24** — Wave 6 (M5 Social + Notifications). Added ask **2.3b** (P2 — `POST /api/follow/[userId]` should return the resulting relationship, removing the follow-then-status round-trip) and ask **3.8** (P3 — domain-typed follow-relationship read, so the `FollowRelationshipReader` composition-root shim can be deleted). Marked ask **2.1** resolved (live probe pinned the follow-list envelopes) and downgraded its remaining pagination request to P3.
 - **2026-06-22** — Initial draft. Compiled from the Wave 0.3a auth spike, the Wave 2 public-profile spike (decision 0002), the 2026-06-22 unauthenticated probe, and PLAN.md §1 / §6 / §8.

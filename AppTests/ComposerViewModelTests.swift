@@ -663,6 +663,74 @@ final class ComposerViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.crossPostToMastodon)
         XCTAssertTrue(viewModel.mastodonNotConfigured)
     }
+
+    func test_givenMastodonConfigured_whenEnablingMastodon_thenToggleRemainsEnabled() async {
+        // Happy path: server confirms the instance is configured.
+        let stub = StubMessagesService()
+        let users = StubUserService()
+        users.enqueueMastodonConfigured(success: true)
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus(), userService: users)
+        viewModel.mastodonProviderIdsInput = "mastodon.social"
+
+        await viewModel.setMastodonEnabled(true)
+
+        XCTAssertTrue(viewModel.crossPostToMastodon)
+        XCTAssertFalse(viewModel.mastodonNotConfigured)
+    }
+
+    func test_givenBlueskyConfiguredCheckFails_whenEnablingBluesky_thenNonFatalAndToggleStaysEnabled() async {
+        // Upstream API failure: the check throws but the toggle must remain
+        // enabled (non-fatal per the view model's catch — the server may be
+        // temporarily unreachable).
+        let stub = StubMessagesService()
+        let users = StubUserService()
+        users.enqueueBlueskyConfigured(failure: StubUserService.StubUserError.noOutcome(label: "blueskyConfigured"))
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus(), userService: users)
+
+        await viewModel.setBlueskyEnabled(true)
+
+        // Toggle stays on; the hint flag must NOT be set for a transient error.
+        XCTAssertTrue(viewModel.crossPostToBluesky)
+        XCTAssertFalse(viewModel.blueskyNotConfigured)
+    }
+
+    func test_givenMastodonConfiguredCheckFails_whenEnablingMastodon_thenNonFatalAndToggleStaysEnabled() async {
+        // Upstream API failure: same non-fatal policy applies to Mastodon.
+        let stub = StubMessagesService()
+        let users = StubUserService()
+        users.enqueueMastodonConfigured(failure: StubUserService.StubUserError.noOutcome(label: "mastodonConfigured"))
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus(), userService: users)
+        viewModel.mastodonProviderIdsInput = "mastodon.social"
+
+        await viewModel.setMastodonEnabled(true)
+
+        XCTAssertTrue(viewModel.crossPostToMastodon)
+        XCTAssertFalse(viewModel.mastodonNotConfigured)
+    }
+
+    func test_givenNoUserService_whenEnablingBluesky_thenToggleEnabledWithNoCheck() async {
+        // Boundary: no userService injected (e.g. a test host that omits it).
+        // The toggle should set to true without performing a network check.
+        let stub = StubMessagesService()
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus(), userService: nil)
+
+        await viewModel.setBlueskyEnabled(true)
+
+        XCTAssertTrue(viewModel.crossPostToBluesky)
+        XCTAssertFalse(viewModel.blueskyNotConfigured)
+    }
+
+    func test_givenNoUserService_whenEnablingMastodon_thenToggleEnabledWithNoCheck() async {
+        // Boundary: same nil-userService guard for Mastodon.
+        let stub = StubMessagesService()
+        let viewModel = ComposerViewModel(messages: stub, eventBus: ComposerEventBus(), userService: nil)
+        viewModel.mastodonProviderIdsInput = "mastodon.social"
+
+        await viewModel.setMastodonEnabled(true)
+
+        XCTAssertTrue(viewModel.crossPostToMastodon)
+        XCTAssertFalse(viewModel.mastodonNotConfigured)
+    }
 }
 
 /// Spy that records whether the subscriber-lapse refresh hook fired.

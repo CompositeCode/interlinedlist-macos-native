@@ -440,6 +440,7 @@ final class UserServiceTests: XCTestCase {
     }
 
     func test_givenUnconfiguredBluesky_whenChecking_thenReturnsFalse() async throws {
+        // Boundary: a server that has not configured Bluesky OAuth.
         let api = StubAPIClient()
         await api.enqueue(json: #"{ "configured": false }"#)
         let service = UserService(api: api)
@@ -447,6 +448,22 @@ final class UserServiceTests: XCTestCase {
         let configured = try await service.blueskyConfigured()
 
         XCTAssertFalse(configured)
+    }
+
+    func test_givenBlueskyStatusEndpointFails_whenChecking_thenThrows() async throws {
+        // Upstream API failure: the status endpoint is unreachable (e.g. 401
+        // when the bearer token is expired). The caller is expected to decide
+        // whether to surface or swallow the error.
+        let api = StubAPIClient()
+        await api.enqueue(failure: .unauthorized(serverMessage: "token expired"))
+        let service = UserService(api: api)
+
+        do {
+            _ = try await service.blueskyConfigured()
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .unauthorized(serverMessage: "token expired"))
+        }
     }
 
     // MARK: - mastodonConfigured (NW-4)
@@ -461,6 +478,32 @@ final class UserServiceTests: XCTestCase {
         XCTAssertTrue(configured)
         let recorded = await api.recorded
         XCTAssertEqual(recorded.first?.path, "/api/auth/mastodon/status")
+    }
+
+    func test_givenUnconfiguredMastodon_whenChecking_thenReturnsFalse() async throws {
+        // Boundary: a server that has not configured Mastodon OAuth for the
+        // given instance.
+        let api = StubAPIClient()
+        await api.enqueue(json: #"{ "configured": false }"#)
+        let service = UserService(api: api)
+
+        let configured = try await service.mastodonConfigured(instance: "hachyderm.io")
+
+        XCTAssertFalse(configured)
+    }
+
+    func test_givenMastodonStatusEndpointFails_whenChecking_thenThrows() async throws {
+        // Upstream API failure: the status endpoint returns a server error.
+        let api = StubAPIClient()
+        await api.enqueue(failure: .httpStatus(code: 500, serverMessage: "service error"))
+        let service = UserService(api: api)
+
+        do {
+            _ = try await service.mastodonConfigured(instance: "mastodon.social")
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .httpStatus(code: 500, serverMessage: "service error"))
+        }
     }
 
     // MARK: - identityLinkURLNative (NW-5)

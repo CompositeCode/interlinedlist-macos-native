@@ -244,6 +244,31 @@ final class AuthEndpointTests: XCTestCase {
         XCTAssertTrue(request.query.contains { $0.name == "instance" && $0.value == "" })
     }
 
+    // MARK: - ProviderStatusResponse decode (NW-4)
+
+    func test_givenConfiguredTrue_whenProviderStatusDecoded_thenConfiguredIsTrue() throws {
+        // Happy path: the server reports the provider is configured.
+        let json = #"{"configured":true}"#
+        let decoded = try JSONCoders.makeDecoder().decode(ProviderStatusResponse.self, from: Data(json.utf8))
+        XCTAssertTrue(decoded.configured)
+    }
+
+    func test_givenConfiguredFalse_whenProviderStatusDecoded_thenConfiguredIsFalse() throws {
+        // Boundary: a deployment that has not configured the provider.
+        let json = #"{"configured":false}"#
+        let decoded = try JSONCoders.makeDecoder().decode(ProviderStatusResponse.self, from: Data(json.utf8))
+        XCTAssertFalse(decoded.configured)
+    }
+
+    func test_givenMissingConfiguredField_whenProviderStatusDecoded_thenThrows() throws {
+        // Invalid input: a malformed or partial response must fail rather
+        // than silently defaulting (mirrors the LinkedInStatusResponse test).
+        let json = #"{"other":"value"}"#
+        XCTAssertThrowsError(
+            try JSONCoders.makeDecoder().decode(ProviderStatusResponse.self, from: Data(json.utf8))
+        )
+    }
+
     // MARK: - linkIdentity (POST /api/auth/{provider}/link) — NW-5
 
     func test_givenGitHubCodeAndState_whenLinkIdentityBuilt_thenPostsToGitHubLinkPath() throws {

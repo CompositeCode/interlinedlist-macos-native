@@ -11,15 +11,10 @@ final class SocialServiceWriteTests: XCTestCase {
     // MARK: - follow (public account → approved)
 
     func test_givenPublicTarget_whenFollowing_thenReturnsApproved() async throws {
-        // Given — the follow action succeeds and the subsequent status read
-        // reports `following: true`, so the typed outcome is `.approved`.
+        // Given — the action response carries `{ "follow": { "status": "active" } }`,
+        // which maps directly to `.approved` without a follow-up status read.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.followActionResponse(success: true))
-        await api.enqueue(json: Fixtures.followStatus(
-            following: true,
-            followedBy: false,
-            pendingRequest: false
-        ))
+        await api.enqueue(json: Fixtures.followActionResponse(status: "active"))
         let service = SocialService(api: api)
 
         // When
@@ -28,21 +23,15 @@ final class SocialServiceWriteTests: XCTestCase {
         // Then
         XCTAssertEqual(action, .approved)
         let recorded = await api.recorded
-        XCTAssertEqual(recorded.map(\.method), ["POST", "GET"])
+        XCTAssertEqual(recorded.map(\.method), ["POST"])
         XCTAssertEqual(recorded.first?.path, "/api/follow/user-42")
-        XCTAssertEqual(recorded.last?.path, "/api/follow/user-42/status")
     }
 
     func test_givenPrivateTarget_whenFollowing_thenReturnsPending() async throws {
-        // Given — boundary case: the action succeeded but the relationship
-        // status reads `pendingRequest: true`, not `following`.
+        // Given — the action response carries `{ "follow": { "status": "pending" } }`,
+        // which means the target is a private account awaiting approval.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.followActionResponse(success: true))
-        await api.enqueue(json: Fixtures.followStatus(
-            following: false,
-            followedBy: false,
-            pendingRequest: true
-        ))
+        await api.enqueue(json: Fixtures.followActionResponse(status: "pending"))
         let service = SocialService(api: api)
 
         // When
@@ -50,20 +39,17 @@ final class SocialServiceWriteTests: XCTestCase {
 
         // Then
         XCTAssertEqual(action, .pending)
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.count, 1, "No follow-up status read expected")
     }
 
-    func test_givenLagBetweenActionAndStatus_whenFollowing_thenDefaultsToPending() async throws {
-        // Given — invalid input / eventual-consistency window: the action
-        // accepted but the status snapshot returns neither flag set. The
-        // defensive default is `.pending` (the UI shows "Requested" until
-        // the next refresh).
+    func test_givenActionResponseMissingFollowKey_whenFollowing_thenDefaultsToPending() async throws {
+        // Given — boundary / eventual-consistency window: the action accepted
+        // but the response body omits the "follow" key entirely. The domain
+        // mapper treats `follow: nil` as `.pending` (the safe conservative
+        // default — the UI shows "Requested" until the next refresh).
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.followActionResponse(success: true))
-        await api.enqueue(json: Fixtures.followStatus(
-            following: false,
-            followedBy: false,
-            pendingRequest: false
-        ))
+        await api.enqueue(json: Fixtures.followActionEmpty)
         let service = SocialService(api: api)
 
         // When
@@ -73,9 +59,9 @@ final class SocialServiceWriteTests: XCTestCase {
         XCTAssertEqual(action, .pending)
     }
 
-    func test_givenFollowActionFails_whenFollowing_thenThrowsAndSkipsStatusRead() async throws {
-        // Given — upstream API failure on the write itself; the service
-        // must not call status.
+    func test_givenFollowActionFails_whenFollowing_thenThrowsWithSingleRequest() async throws {
+        // Given — upstream API failure on the write itself; only one request
+        // is ever made (the POST), no follow-up calls.
         let api = StubAPIClient()
         await api.enqueue(failure: .forbidden(serverMessage: "blocked"))
         let service = SocialService(api: api)
@@ -88,7 +74,7 @@ final class SocialServiceWriteTests: XCTestCase {
             XCTAssertEqual(error, .forbidden(serverMessage: "blocked"))
         }
         let recorded = await api.recorded
-        XCTAssertEqual(recorded.count, 1, "Status should not be called after a failed action")
+        XCTAssertEqual(recorded.count, 1, "Only the failed POST is recorded")
     }
 
     // MARK: - unfollow
@@ -96,7 +82,7 @@ final class SocialServiceWriteTests: XCTestCase {
     func test_givenFollowedTarget_whenUnfollowing_thenSucceedsSilently() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.followActionResponse(success: true))
+        await api.enqueue(json: Fixtures.followActionResponse())
         let service = SocialService(api: api)
 
         // When / Then — no return value; we assert no throw + request shape.
@@ -142,7 +128,7 @@ final class SocialServiceWriteTests: XCTestCase {
     func test_givenPendingRequest_whenApproving_thenSucceeds() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.followActionResponse(success: true))
+        await api.enqueue(json: Fixtures.followActionResponse())
         let service = SocialService(api: api)
 
         // When
@@ -174,7 +160,7 @@ final class SocialServiceWriteTests: XCTestCase {
     func test_givenPendingRequest_whenRejecting_thenSucceeds() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.followActionResponse(success: true))
+        await api.enqueue(json: Fixtures.followActionResponse())
         let service = SocialService(api: api)
 
         // When
@@ -206,7 +192,7 @@ final class SocialServiceWriteTests: XCTestCase {
     func test_givenFollower_whenRemoving_thenSucceeds() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.followActionResponse(success: true))
+        await api.enqueue(json: Fixtures.followActionResponse())
         let service = SocialService(api: api)
 
         // When

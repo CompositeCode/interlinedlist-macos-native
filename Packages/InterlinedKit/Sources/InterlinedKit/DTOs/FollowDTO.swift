@@ -99,16 +99,42 @@ public struct FollowRequestsResponse: Codable, Sendable, Equatable {
 
 // MARK: - FollowActionResponse
 
-/// The small confirmation envelope returned by the follow action endpoints
-/// (`POST`/`DELETE /api/follow/[userId]`, approve/reject/remove). Both keys are
-/// optional so the type decodes whether the server returns `{ "success": true }`,
-/// `{ "message": "…" }`, or `{}`.
+/// The confirmation envelope returned by the follow action endpoints
+/// (`POST /api/follow/[userId]`, `DELETE /api/follow/[userId]`, approve/reject/
+/// remove). Shape verified 2026-07-07:
+/// `{ "follow": { "status": "active" | "pending" } }`.
+///
+/// `"active"` means the follow is live (public account, relationship
+/// immediately approved). `"pending"` means a request was queued (private
+/// account, awaiting the target's approval).
+///
+/// `follow` is optional so that unfollow/approve/reject/remove responses
+/// (which may omit this key) still decode without error. The domain mapper
+/// treats a nil or absent `follow` as `.pending` — the safe conservative
+/// default.
+///
+/// Note: `followedBy` is NOT included in the action response. A separate
+/// `GET /api/follow/[userId]/status` call is still required when the caller
+/// needs the inverse direction. Remove this note when the backend adds
+/// `followedBy` to the follow action response.
 public struct FollowActionResponse: Codable, Sendable, Equatable {
-    public let success: Bool?
-    public let message: String?
 
-    public init(success: Bool? = nil, message: String? = nil) {
-        self.success = success
-        self.message = message
+    /// The nested follow-status object. Absent on action endpoints that do not
+    /// return a relationship snapshot (e.g. unfollow, approve, reject, remove).
+    public let follow: FollowStatus?
+
+    public init(follow: FollowStatus? = nil) {
+        self.follow = follow
+    }
+
+    /// The nested `{ "status": "active" | "pending" }` object inside the
+    /// follow action envelope.
+    public struct FollowStatus: Codable, Sendable, Equatable {
+        /// `"active"` — relationship is live. `"pending"` — awaiting approval.
+        public let status: String
+
+        public init(status: String) {
+            self.status = status
+        }
     }
 }

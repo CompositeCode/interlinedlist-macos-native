@@ -334,13 +334,19 @@ enum Fixtures {
         """
     }
 
-    /// `POST /api/follow/[userId]` / approve / reject / remove confirmation.
-    static func followActionResponse(success: Bool = true, message: String? = nil) -> String {
-        let messageJSON = message.map { "\"\($0)\"" } ?? "null"
-        return """
-        { "success": \(success), "message": \(messageJSON) }
+    /// `POST /api/follow/[userId]` confirmation envelope.
+    /// Shape verified 2026-07-07: `{ "follow": { "status": "active" | "pending" } }`.
+    /// Pass `status: "pending"` for a private-account scenario.
+    static func followActionResponse(status: String = "active") -> String {
+        """
+        { "follow": { "status": "\(status)" } }
         """
     }
+
+    /// Minimal action confirmation with no `"follow"` key — decodes as
+    /// `FollowActionResponse(follow: nil)`. Used for unfollow/approve/reject/
+    /// remove where the domain layer discards the decoded value entirely.
+    static let followActionEmpty: String = "{}"
 
     /// `GET /api/follow/requests` envelope — bare `{ requests: [...] }`, no
     /// pagination wrapper (verified live 2026-06-24).

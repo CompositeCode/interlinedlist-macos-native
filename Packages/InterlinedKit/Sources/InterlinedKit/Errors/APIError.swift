@@ -43,9 +43,11 @@ public enum APIError: Error, Sendable {
     /// `400 Bad Request` — request body / query failed server validation.
     case badRequest(serverMessage: String?)
 
-    /// `429 Too Many Requests` — rate limit. The API does not currently
-    /// document rate limit headers; if/when it does, the retry hook in
-    /// `APIClient` will use them.
+    /// `429 Too Many Requests` — rate limit. The backend emits
+    /// `RateLimit-Limit`, `RateLimit-Remaining`, and `RateLimit-Reset` on
+    /// selected routes; `Retry-After` (seconds) may accompany a 429.
+    /// Both are optional — their absence must not be treated as an error.
+    /// The `retryAfter` delay is used by `RetryPolicy.rateLimit(maxDelay:)`.
     case rateLimited(serverMessage: String?, retryAfter: TimeInterval?)
 
     /// Any other non-2xx status code, with the decoded server message if
