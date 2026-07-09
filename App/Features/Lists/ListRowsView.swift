@@ -10,34 +10,14 @@ import InterlinedDomain
 struct ListRowsView: View {
 
     let list: OwnedList
-    let environment: AppEnvironment
+    let viewModel: ListRowsViewModel
 
-    @State private var viewModel: ListRowsViewModel?
     @State private var selection: Set<String> = []
     @State private var deletePending: Bool = false
 
     var body: some View {
-        Group {
-            if let viewModel {
-                content(viewModel: viewModel)
-            } else {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .navigationTitle(list.title)
-        .task {
-            if viewModel == nil {
-                let model = ListRowsViewModel(
-                    lists: environment.lists,
-                    eventBus: environment.listsEventBus,
-                    listId: list.id
-                )
-                viewModel = model
-                await model.initialLoad()
-                await subscribe(viewModel: model)
-            }
-        }
+        content(viewModel: viewModel)
+            .navigationTitle(list.title)
     }
 
     @ViewBuilder
@@ -210,12 +190,4 @@ struct ListRowsView: View {
         return index >= max(0, loaded.count - 5)
     }
 
-    private func subscribe(viewModel: ListRowsViewModel) async {
-        Task { [weak viewModel] in
-            for await event in environment.listsEventBus.events() {
-                guard let viewModel else { return }
-                viewModel.apply(event: event)
-            }
-        }
-    }
 }

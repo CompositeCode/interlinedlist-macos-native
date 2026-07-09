@@ -42,7 +42,7 @@ extension MessagesError: LocalizedError, CustomStringConvertible {
             case .mediaAttachments:
                 return "Attaching media requires an active subscription."
             case .scheduledPosts:
-                return "Scheduling posts requires an active subscription."
+                return "Scheduling messages requires an active subscription."
             case .crossPosting:
                 return "Cross-posting requires an active subscription."
             }

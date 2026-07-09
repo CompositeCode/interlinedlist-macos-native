@@ -50,7 +50,7 @@ public enum Documents {
                 .int("offset", offset)
             ],
             auth: .bearer,
-            paginationKey: "data"
+            paginationKey: "documents"
         )
     }
 
@@ -105,7 +105,7 @@ public enum Documents {
                 .int("offset", offset)
             ],
             auth: .bearer,
-            paginationKey: "data"
+            paginationKey: "folders"
         )
     }
 
@@ -146,7 +146,7 @@ public enum Documents {
                 .int("offset", offset)
             ],
             auth: .bearer,
-            paginationKey: "data"
+            paginationKey: "documents"
         )
     }
 }

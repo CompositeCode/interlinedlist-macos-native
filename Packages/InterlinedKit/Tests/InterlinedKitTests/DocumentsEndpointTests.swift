@@ -28,7 +28,7 @@ final class DocumentsEndpointTests: XCTestCase {
         XCTAssertEqual(Documents.pushSync(DocumentSyncRequest(operations: [])).method, .post)
 
         XCTAssertEqual(Documents.list().path, "/api/documents")
-        XCTAssertEqual(Documents.list().paginationKey, "data")
+        XCTAssertEqual(Documents.list().paginationKey, "documents")
         XCTAssertEqual(Documents.create(CreateDocumentRequest(title: "t", content: "c")).method, .post)
         XCTAssertEqual(Documents.get(id: "9").path, "/api/documents/9")
         XCTAssertEqual(Documents.update(id: "9", UpdateDocumentRequest(title: "x")).method, .patch)
@@ -40,13 +40,13 @@ final class DocumentsEndpointTests: XCTestCase {
         XCTAssertNotNil(upload.body)
 
         XCTAssertEqual(Documents.folders().path, "/api/documents/folders")
-        XCTAssertEqual(Documents.folders().paginationKey, "data")
+        XCTAssertEqual(Documents.folders().paginationKey, "folders")
         XCTAssertEqual(Documents.createFolder(CreateDocumentFolderRequest(name: "n")).method, .post)
         XCTAssertEqual(Documents.folder(id: "f1").path, "/api/documents/folders/f1")
         XCTAssertEqual(Documents.updateFolder(id: "f1", UpdateDocumentFolderRequest(name: "n")).method, .patch)
         XCTAssertEqual(Documents.deleteFolder(id: "f1").method, .delete)
         XCTAssertEqual(Documents.folderDocuments(id: "f1").path, "/api/documents/folders/f1/documents")
-        XCTAssertEqual(Documents.folderDocuments(id: "f1").paginationKey, "data")
+        XCTAssertEqual(Documents.folderDocuments(id: "f1").paginationKey, "documents")
     }
 
     func test_givenLastSyncAt_whenSyncBuilt_thenAddsQueryParameter() {
@@ -75,16 +75,22 @@ final class DocumentsEndpointTests: XCTestCase {
         XCTAssertNotNil(delta.syncedAt)
     }
 
-    func test_givenDocumentEnvelope_whenListSent_thenDecodesUnderDataKey() async throws {
+    func test_givenDocumentEnvelope_whenListSent_thenDecodesUnderDocumentsKey() async throws {
         let (client, transport) = makeClient()
+        // The Documents API returns items under "documents" without a "pagination" envelope.
         await transport.enqueue(.json(#"""
-        {"data":[{"id":"d1","title":"Hello","folderId":"f1"}],
-         "pagination":{"total":1,"limit":50,"offset":0,"hasMore":false}}
+        {"documents":[{"id":"d1","title":"Hello","folderId":"f1"}]}
         """#))
 
-        let page = try await fetchPaginated(DocumentDTO.self, request: Documents.list(folderId: "f1"), using: client)
+        let request = Documents.list(folderId: "f1")
+        let (data, _) = try await client.sendRaw(request)
+        let items = try PaginatedDecoder.decodeItems(
+            DocumentDTO.self,
+            collectionKey: try XCTUnwrap(request.paginationKey),
+            from: data
+        )
 
-        XCTAssertEqual(page.items.first?.folderId, "f1")
+        XCTAssertEqual(items.first?.folderId, "f1")
         let received = await transport.received
         let comps = URLComponents(url: try XCTUnwrap(received[0].url), resolvingAgainstBaseURL: false)
         XCTAssertTrue(comps?.queryItems?.contains(URLQueryItem(name: "folderId", value: "f1")) ?? false)

@@ -1,11 +1,11 @@
 // ComposerWindowView
 //
-// The dedicated composer window opened via ⌘N or the File → New Post
+// The dedicated composer window opened via ⌘N or the File → New Message
 // menu command (PLAN.md §5 — "Composer: separate `Window` scene, ⌘N
 // anywhere, ⌘↩ to publish"). M2 surface: a plain-text body editor, a
 // tag-token input, a visibility segment, and a publish button. M6 adds
 // the subscriber-gated media / scheduled / cross-post controls
-// (PLAN.md §6 M6) — rendered for new posts only, and disabled with an
+// (PLAN.md §6 M6) — rendered for new messages only, and disabled with an
 // upsell hint for non-subscribers (never "enabled but broken").
 //
 // Media picking is SwiftUI-only (Decision 0005): `.fileImporter` +
@@ -111,7 +111,7 @@ struct ComposerWindowView: View {
 
                 visibilityPicker(viewModel: viewModel)
 
-                // M6 — subscriber-gated controls, new posts only.
+                // M6 — subscriber-gated controls, new messages only.
                 if viewModel.showsSubscriberControls {
                     Divider()
                     if !viewModel.canUseSubscriberFeatures {
@@ -198,7 +198,7 @@ struct ComposerWindowView: View {
             }
         }
         .help(viewModel.canUseSubscriberFeatures
-              ? "Attach images or videos to your post."
+              ? "Attach images or videos to your message."
               : "Attaching media requires an active subscription.")
     }
 
@@ -266,8 +266,8 @@ struct ComposerWindowView: View {
             }
             .disabled(!viewModel.canUseSubscriberFeatures)
             .help(viewModel.canUseSubscriberFeatures
-                  ? "Publish this post at a future time."
-                  : "Scheduling posts requires an active subscription.")
+                  ? "Publish this message at a future time."
+                  : "Scheduling messages requires an active subscription.")
 
             if viewModel.isScheduled {
                 DatePicker(
@@ -390,7 +390,7 @@ struct ComposerWindowView: View {
         }
         .pickerStyle(.segmented)
         .frame(maxWidth: 280)
-        .accessibilityLabel("Post visibility")
+        .accessibilityLabel("Message visibility")
     }
 
     @ViewBuilder
@@ -420,7 +420,7 @@ struct ComposerWindowView: View {
             if viewModel.isSubmitting {
                 ProgressView()
                     .controlSize(.small)
-                    .accessibilityLabel("Publishing post")
+                    .accessibilityLabel("Publishing message")
                     .padding(.trailing, 8)
             }
 

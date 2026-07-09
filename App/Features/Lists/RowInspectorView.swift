@@ -15,10 +15,8 @@ import InterlinedDomain
 
 struct RowInspectorView: View {
 
-    let listId: String
-    let environment: AppEnvironment
+    let viewModel: ListRowsViewModel?
 
-    @State private var viewModel: ListRowsViewModel?
     @State private var editingValues: [String: String] = [:]
 
     var body: some View {
@@ -27,18 +25,6 @@ struct RowInspectorView: View {
                 inspector(viewModel: viewModel, row: row)
             } else {
                 placeholder
-            }
-        }
-        .task {
-            if viewModel == nil {
-                let model = ListRowsViewModel(
-                    lists: environment.lists,
-                    eventBus: environment.listsEventBus,
-                    listId: listId
-                )
-                viewModel = model
-                await model.initialLoad()
-                await subscribe(viewModel: model)
             }
         }
     }
@@ -155,12 +141,4 @@ struct RowInspectorView: View {
         }
     }
 
-    private func subscribe(viewModel: ListRowsViewModel) async {
-        Task { [weak viewModel] in
-            for await event in environment.listsEventBus.events() {
-                guard let viewModel else { return }
-                viewModel.apply(event: event)
-            }
-        }
-    }
 }

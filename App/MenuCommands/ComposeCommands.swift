@@ -2,7 +2,7 @@
 //
 // Menu-bar commands that open the composer window (PLAN.md §5 — "⌘N
 // anywhere"). Replaces the default "New" command in the File menu so
-// the shortcut maps to "New Post" rather than SwiftUI's no-op default.
+// the shortcut maps to "New Message" rather than SwiftUI's no-op default.
 //
 // The command is intentionally minimal: it just calls `openWindow(id:)`
 // to bring up a fresh composer scene. All compose state lives inside
@@ -32,7 +32,7 @@ private struct ComposeMenuButton: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button("New Post") {
+        Button("New Message") {
             openWindow(id: ComposeWindowID.newPost)
         }
         .keyboardShortcut("n", modifiers: .command)

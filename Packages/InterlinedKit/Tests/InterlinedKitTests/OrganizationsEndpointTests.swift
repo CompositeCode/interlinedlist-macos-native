@@ -31,7 +31,7 @@ final class OrganizationsEndpointTests: XCTestCase {
         XCTAssertEqual(Organizations.update(id: "o1", UpdateOrganizationRequest(name: "x")).method, .patch)
 
         XCTAssertEqual(Organizations.members(id: "o1").path, "/api/organizations/o1/members")
-        XCTAssertEqual(Organizations.members(id: "o1").paginationKey, "data")
+        XCTAssertEqual(Organizations.members(id: "o1").paginationKey, "members")
         XCTAssertEqual(Organizations.addMember(id: "o1", AddOrganizationMemberRequest(userId: "u2", role: "member")).method, .post)
         XCTAssertEqual(Organizations.updateMember(id: "o1", userId: "u2", UpdateOrganizationMemberRequest(role: "admin")).method, .put)
         XCTAssertEqual(Organizations.updateMember(id: "o1", userId: "u2", UpdateOrganizationMemberRequest(role: "admin")).path, "/api/organizations/o1/members/u2")
@@ -63,7 +63,7 @@ final class OrganizationsEndpointTests: XCTestCase {
     func test_givenMembersEnvelope_whenMembersSent_thenDecodesMembershipRows() async throws {
         let (client, transport) = makeClient()
         await transport.enqueue(.json(#"""
-        {"data":[{"userId":"u1","role":"owner","active":true},{"userId":"u2","role":"member"}],
+        {"members":[{"userId":"u1","role":"owner","active":true},{"userId":"u2","role":"member"}],
          "pagination":{"total":2,"limit":50,"offset":0,"hasMore":false}}
         """#))
 
@@ -115,7 +115,7 @@ final class OrganizationsEndpointTests: XCTestCase {
     func test_givenEmptyMembersEnvelope_whenMembersSent_thenReturnsNoMembers() async throws {
         let (client, transport) = makeClient()
         await transport.enqueue(.json(#"""
-        {"data":[],"pagination":{"total":0,"limit":50,"offset":0,"hasMore":false}}
+        {"members":[],"pagination":{"total":0,"limit":50,"offset":0,"hasMore":false}}
         """#))
 
         let page = try await fetchPaginated(OrganizationMemberDTO.self, request: Organizations.members(id: "o1"), using: client)

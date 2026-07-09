@@ -36,6 +36,25 @@ struct DocumentsSidebarView: View {
             if viewModel.folders.isEmpty, viewModel.isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity)
+            } else if viewModel.folders.isEmpty, let error = viewModel.error {
+                VStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                    Text("Folders unavailable")
+                        .font(.ilMono(10))
+                        .foregroundStyle(.secondary)
+                    Text(error.localizedDescription)
+                        .font(.ilMono(10))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Retry") {
+                        Task { await viewModel.refresh() }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                }
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity)
             } else {
                 let tree = viewModel.tree
                 ForEach(tree.roots) { folder in

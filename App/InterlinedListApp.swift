@@ -116,7 +116,7 @@ struct InterlinedListApp: App {
         // `WindowGroup` because we want a single composer at a time —
         // opening ⌘N twice should re-focus the existing window rather
         // than spawn a second one.
-        Window("New Post", id: ComposeWindowID.newPost) {
+        Window("New Message", id: ComposeWindowID.newPost) {
             ComposerWindowView(mode: .newPost)
                 .environmentObject(environment)
                 .environment(\.appEnvironment, environment)

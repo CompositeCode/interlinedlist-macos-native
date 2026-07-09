@@ -1,6 +1,6 @@
 // CrossPostResultsSheet
 //
-// Sheet shown after a successful post publish when the server returns
+// Sheet shown after a successful message publish when the server returns
 // per-platform cross-post outcomes (NW-2). Displays a status icon,
 // clickable link (ok), or error code (failed) per platform.
 //
@@ -16,7 +16,7 @@ struct CrossPostResultsSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Post Published")
+            Text("Message Published")
                 .font(.ilTitle(18))
 
             VStack(alignment: .leading, spacing: 8) {
@@ -80,7 +80,7 @@ private struct CrossPostRow: View {
         switch result.status {
         case .ok:
             if let url = result.externalURL {
-                Link("View post", destination: url)
+                Link("View message", destination: url)
                     .font(.ilMono(10))
             } else {
                 Text("Published")

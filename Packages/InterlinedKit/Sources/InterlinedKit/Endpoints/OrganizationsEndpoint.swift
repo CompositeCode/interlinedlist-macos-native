@@ -68,7 +68,7 @@ public enum Organizations {
                 .int("offset", offset)
             ],
             auth: .bearer,
-            paginationKey: "data"
+            paginationKey: "members"
         )
     }
 

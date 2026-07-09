@@ -50,6 +50,9 @@ public struct Paginated<Item: Decodable & Sendable>: Sendable {
 /// builders that want simpler call sites can also build a wrapper DTO that
 /// conforms to `Decodable` directly — both patterns are supported.)
 public enum PaginatedDecoder {
+    /// Decodes a full `Paginated<T>` — requires both the collection array and
+    /// a `"pagination"` envelope in the response JSON. Use this for endpoints
+    /// (e.g. Messages) whose responses always include pagination metadata.
     public static func decode<Item: Decodable & Sendable>(
         _ itemType: Item.Type,
         collectionKey: String,
@@ -77,6 +80,27 @@ public enum PaginatedDecoder {
         let items = try decoder.decode([Item].self, from: itemsData)
         let pagination = try decoder.decode(PaginationInfo.self, from: paginationData)
         return Paginated(items: items, pagination: pagination)
+    }
+
+    /// Decodes just the items array from a JSON envelope keyed by
+    /// `collectionKey`. Unlike `decode(_:collectionKey:from:decoder:)`, this
+    /// does NOT require a `"pagination"` envelope — use it for endpoints whose
+    /// list responses omit pagination metadata (e.g. Documents, Folders).
+    public static func decodeItems<Item: Decodable & Sendable>(
+        _ itemType: Item.Type,
+        collectionKey: String,
+        from data: Data,
+        decoder: JSONDecoder = JSONCoders.makeDecoder()
+    ) throws -> [Item] {
+        let container = try decoder.decode([String: JSONValue].self, from: data)
+        guard let rawItems = container[collectionKey] else {
+            throw APIError.decoding(
+                type: "[\(itemType)]",
+                message: "Missing collection key \"\(collectionKey)\""
+            )
+        }
+        let itemsData = try JSONEncoder().encode(rawItems)
+        return try decoder.decode([Item].self, from: itemsData)
     }
 }
 

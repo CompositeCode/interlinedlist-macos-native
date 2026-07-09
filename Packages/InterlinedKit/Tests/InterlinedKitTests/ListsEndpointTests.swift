@@ -27,7 +27,7 @@ final class ListsEndpointTests: XCTestCase {
         XCTAssertEqual(Lists.list().method, .get)
         XCTAssertEqual(Lists.list().path, "/api/lists")
         XCTAssertEqual(Lists.list().auth, .bearer)
-        XCTAssertEqual(Lists.list().paginationKey, "data")
+        XCTAssertEqual(Lists.list().paginationKey, "lists")
 
         let create = Lists.create(CreateListRequest(title: "Books"))
         XCTAssertEqual(create.method, .post)
@@ -44,7 +44,7 @@ final class ListsEndpointTests: XCTestCase {
         XCTAssertEqual(Lists.refresh(id: "7").path, "/api/lists/7/refresh")
 
         XCTAssertEqual(Lists.rows(listId: "7").path, "/api/lists/7/data")
-        XCTAssertEqual(Lists.rows(listId: "7").paginationKey, "data")
+        XCTAssertEqual(Lists.rows(listId: "7").paginationKey, "rows")
         XCTAssertEqual(Lists.createRow(listId: "7", CreateListRowRequest(rowData: [:])).method, .post)
         XCTAssertEqual(Lists.row(listId: "7", rowId: "r1").path, "/api/lists/7/data/r1")
         XCTAssertEqual(Lists.updateRow(listId: "7", rowId: "r1", UpdateListRowRequest(rowData: [:])).method, .patch)
@@ -70,7 +70,7 @@ final class ListsEndpointTests: XCTestCase {
         XCTAssertEqual(Lists.publicList(username: "ada", id: "7").path, "/api/users/ada/lists/7")
         XCTAssertEqual(Lists.publicListRows(username: "ada", id: "7").auth, .none)
         XCTAssertEqual(Lists.publicListRows(username: "ada", id: "7").path, "/api/users/ada/lists/7/data")
-        XCTAssertEqual(Lists.publicListRows(username: "ada", id: "7").paginationKey, "data")
+        XCTAssertEqual(Lists.publicListRows(username: "ada", id: "7").paginationKey, "rows")
     }
 
     func test_givenOptionalQuery_whenListBuilt_thenSkipsNilParameters() {
@@ -81,10 +81,10 @@ final class ListsEndpointTests: XCTestCase {
 
     // MARK: - Happy path
 
-    func test_givenPaginatedListEnvelope_whenListSent_thenDecodesItemsUnderDataKey() async throws {
+    func test_givenPaginatedListEnvelope_whenListSent_thenDecodesItemsUnderListsKey() async throws {
         let (client, transport) = makeClient()
         await transport.enqueue(.json(#"""
-        {"data":[{"id":"1","title":"Books"},{"id":"2","title":"Films"}],
+        {"lists":[{"id":"1","title":"Books"},{"id":"2","title":"Films"}],
          "pagination":{"total":2,"limit":50,"offset":0,"hasMore":false}}
         """#))
 
@@ -98,6 +98,24 @@ final class ListsEndpointTests: XCTestCase {
         XCTAssertEqual(received[0].httpMethod, "GET")
         XCTAssertEqual(received[0].url?.path, "/api/lists")
         XCTAssertEqual(received[0].value(forHTTPHeaderField: "Authorization"), "Bearer il_tok_abc")
+    }
+
+    func test_givenPaginatedRowsEnvelope_whenRowsSent_thenDecodesItemsUnderRowsKey() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"""
+        {"rows":[{"id":"r1","listId":"7","rowData":{"Title":"Dune","Year":1965}},
+                 {"id":"r2","listId":"7","rowData":{"Title":"Foundation","Year":1951}}],
+         "pagination":{"total":2,"limit":50,"offset":0,"hasMore":false}}
+        """#))
+
+        let page = try await fetchPaginated(ListRowDTO.self, request: Lists.rows(listId: "7"), using: client)
+
+        XCTAssertEqual(page.items.map(\.id), ["r1", "r2"])
+        XCTAssertEqual(page.items.first?.rowData["Title"], .string("Dune"))
+        XCTAssertFalse(page.pagination.hasMore)
+
+        let received = await transport.received
+        XCTAssertEqual(received[0].url?.path, "/api/lists/7/data")
     }
 
     func test_givenDynamicSchemaRow_whenRowSent_thenDecodesFlexibleRowData() async throws {
@@ -165,7 +183,7 @@ final class ListsEndpointTests: XCTestCase {
     func test_givenEmptyListEnvelope_whenListSent_thenReturnsNoItems() async throws {
         let (client, transport) = makeClient()
         await transport.enqueue(.json(#"""
-        {"data":[],"pagination":{"total":0,"limit":50,"offset":0,"hasMore":false}}
+        {"lists":[],"pagination":{"total":0,"limit":50,"offset":0,"hasMore":false}}
         """#))
 
         let page = try await fetchPaginated(ListDTO.self, request: Lists.list(), using: client)

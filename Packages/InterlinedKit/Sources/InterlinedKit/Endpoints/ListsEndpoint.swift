@@ -33,7 +33,7 @@ public enum Lists {
                 .int("page", page)
             ],
             auth: .bearer,
-            paginationKey: "data"
+            paginationKey: "lists"
         )
     }
 
@@ -92,7 +92,7 @@ public enum Lists {
                 .int("offset", offset)
             ],
             auth: .bearer,
-            paginationKey: "data"
+            paginationKey: "rows"
         )
     }
 
@@ -169,7 +169,7 @@ public enum Lists {
                 .int("page", page)
             ],
             auth: .none,
-            paginationKey: "data"
+            paginationKey: "lists"
         )
     }
 
@@ -193,7 +193,7 @@ public enum Lists {
                 .int("offset", offset)
             ],
             auth: .none,
-            paginationKey: "data"
+            paginationKey: "rows"
         )
     }
 

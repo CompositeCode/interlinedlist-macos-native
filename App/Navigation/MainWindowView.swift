@@ -45,6 +45,15 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
 }
 
 struct MainWindowView: View {
+    @EnvironmentObject private var environment: AppEnvironment
+
+    // Pre-warm Lists and Documents data as soon as the main window
+    // appears so those sections render instantly when the user navigates
+    // to them, rather than waiting for their own .task to fire.
+    @State private var preloadedListsVM: OwnedListsViewModel?
+    @State private var preloadedFolderTreeVM: FolderTreeViewModel?
+    @State private var preloadedDocumentsListVM: DocumentsListViewModel?
+
     @State private var selection: SidebarSection? = .timeline
 
     // M7 — Data Export sheet state. `pendingExportType` is set by each
@@ -101,12 +110,27 @@ struct MainWindowView: View {
             if let selection {
                 SidebarDetailDispatcher(
                     section: selection,
-                    pendingMessageDeepLinkID: $pendingMessageDeepLinkID
+                    pendingMessageDeepLinkID: $pendingMessageDeepLinkID,
+                    preloadedListsVM: preloadedListsVM,
+                    preloadedFolderTreeVM: preloadedFolderTreeVM,
+                    preloadedDocumentsListVM: preloadedDocumentsListVM
                 )
             } else {
                 Text("Select a section")
                     .foregroundStyle(.secondary)
             }
+        }
+        .task {
+            guard preloadedListsVM == nil else { return }
+            let listsVM = OwnedListsViewModel(lists: environment.lists)
+            let folderTreeVM = FolderTreeViewModel(documents: environment.documentsService)
+            let docsListVM = DocumentsListViewModel(documents: environment.documentsService)
+            preloadedListsVM = listsVM
+            preloadedFolderTreeVM = folderTreeVM
+            preloadedDocumentsListVM = docsListVM
+            Task { await listsVM.initialLoad() }
+            Task { await folderTreeVM.initialLoad() }
+            Task { await docsListVM.reload(in: nil) }
         }
         // M5 menu deep-links — `NotificationsMenuCommands` and
         // `SocialMenuCommands` post these so the sidebar can swap
@@ -195,6 +219,13 @@ private struct SidebarDetailDispatcher: View {
     /// handling so re-appearing timelines don't re-navigate.
     @Binding var pendingMessageDeepLinkID: String?
 
+    /// Pre-warmed view models created by `MainWindowView` on launch.
+    /// Non-nil only for Lists and Documents; all other sections create
+    /// their own view models inside their root views as before.
+    var preloadedListsVM: OwnedListsViewModel? = nil
+    var preloadedFolderTreeVM: FolderTreeViewModel? = nil
+    var preloadedDocumentsListVM: DocumentsListViewModel? = nil
+
     var body: some View {
         switch section {
         case .timeline:
@@ -211,13 +242,16 @@ private struct SidebarDetailDispatcher: View {
             //   • Signed-in users get `OwnedListsRootView` (Lists CRUD).
             //   • Signed-out / unresolved sessions keep the M1 public
             //     browser. The router checks `currentUserStore` directly.
-            ListsSidebarRouter()
+            ListsSidebarRouter(preloadedViewModel: preloadedListsVM)
         case .documents:
             // M4 (Wave 5.3) — Documents UI lands. The folder tree +
             // documents list + Markdown editor/Textual preview replace
             // the M0 placeholder. The placeholder remains in the
             // codebase as a preview fallback while we iterate.
-            DocumentsRootView()
+            DocumentsRootView(
+                preloadedFolderTree: preloadedFolderTreeVM,
+                preloadedDocumentsList: preloadedDocumentsListVM
+            )
         case .organizations:
             // M6 (Wave 7.3) — Organizations feature lands. The orgs list +
             // detail + member roster with role editing replace the M0

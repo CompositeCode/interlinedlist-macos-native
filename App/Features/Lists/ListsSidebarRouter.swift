@@ -14,10 +14,12 @@ struct ListsSidebarRouter: View {
 
     @Environment(\.appEnvironment) private var environment
 
+    var preloadedViewModel: OwnedListsViewModel? = nil
+
     var body: some View {
         Group {
             if let environment, environment.currentUserStore.currentUserID != nil {
-                OwnedListsRootView()
+                OwnedListsRootView(preloadedViewModel: preloadedViewModel)
             } else {
                 ListsBrowserView()
             }

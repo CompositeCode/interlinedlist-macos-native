@@ -1,6 +1,6 @@
 // ComposerViewModel
 //
-// Drives the composer window for new posts and edits (PLAN.md §6 M2 —
+// Drives the composer window for new messages and edits (PLAN.md §6 M2 —
 // "Composer window"; §6 M6 — media / scheduled / cross-post). The view
 // is a thin shell: this owns the body text, the tag-input string, the
 // visibility toggle, the M6 attachment / schedule / cross-post state,
@@ -8,7 +8,7 @@
 //
 // On submit:
 //   • `.edit` → `MessagesServicing.update` (M6 fields don't apply to an
-//     edit — the composer surfaces them only for new posts).
+//     edit — the composer surfaces them only for new messages).
 //   • `.newPost` → upload each attachment to get its hosted URL, then
 //     `MessagesServicing.createPost` with the full M6 field set. The
 //     domain service gates media / schedule / cross-post before the HTTP
@@ -59,7 +59,7 @@ final class ComposerViewModel {
 
     // MARK: - Editable state
 
-    /// Body text of the post. Markdown source — treated as plain text here
+    /// Body text of the message. Markdown source — treated as plain text here
     /// (no toolbar) per PLAN.md §6 M2.
     var body: String
 
@@ -76,7 +76,7 @@ final class ComposerViewModel {
     /// Pending media attachments (local file URLs). Uploaded at send time.
     private(set) var attachments: [ComposerAttachment] = []
 
-    /// Whether the post is scheduled for the future rather than posted now.
+    /// Whether the message is scheduled for the future rather than sent now.
     /// Toggling on seeds `scheduledAt` with a near-future default.
     var isScheduled: Bool = false
 
@@ -127,14 +127,14 @@ final class ComposerViewModel {
     }
 
     /// Whether the M6 controls should appear at all. Edits don't expose media /
-    /// schedule / cross-post — those apply to a fresh post only.
+    /// schedule / cross-post — those apply to a fresh message only.
     var showsSubscriberControls: Bool {
         if case .newPost = mode { return true }
         return false
     }
 
-    /// The primary-action label. Reflects the schedule-vs-post-now affordance
-    /// (PLAN.md §6 M6) for a new post; falls back to the mode's label for an
+    /// The primary-action label. Reflects the schedule-vs-send-now affordance
+    /// (PLAN.md §6 M6) for a new message; falls back to the mode's label for an
     /// edit.
     var publishButtonLabel: String {
         if showsSubscriberControls, isScheduled {
@@ -146,7 +146,7 @@ final class ComposerViewModel {
     // MARK: - Validation
 
     /// Whether the current draft would be accepted for submit. Empty body is
-    /// rejected by the composer (a new post / edit always needs text). A
+    /// rejected by the composer (a new message / edit always needs text). A
     /// future-only schedule is also required when scheduling is on.
     var isPublishable: Bool {
         guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -224,7 +224,7 @@ final class ComposerViewModel {
 
     /// Submits the draft. Validates `isPublishable` first; bails silently if
     /// invalid (the publish button is disabled, but defence-in-depth). For a
-    /// new post: uploads each attachment, then calls `createPost` with the full
+    /// new message: uploads each attachment, then calls `createPost` with the full
     /// M6 field set. For an edit: calls `update`. On success posts a
     /// `ComposerEvent` and flips `didFinish`.
     func submit() async {
@@ -255,7 +255,7 @@ final class ComposerViewModel {
         }
     }
 
-    // MARK: - New-post pipeline
+    // MARK: - New-message pipeline
 
     private func submitNewPost(body trimmedBody: String, tags: [String]) async throws {
         // 1. Upload media. Images and videos run through their own gated

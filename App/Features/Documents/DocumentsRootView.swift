@@ -22,6 +22,13 @@ import InterlinedDomain
 
 struct DocumentsRootView: View {
 
+    /// Pre-warmed view models supplied by `MainWindowView`. When non-nil
+    /// the view skips creation and their individual initial loads; the
+    /// editor and sync-status are always created fresh here since they
+    /// have no network cost at init time.
+    var preloadedFolderTree: FolderTreeViewModel? = nil
+    var preloadedDocumentsList: DocumentsListViewModel? = nil
+
     @Environment(\.appEnvironment) private var environment
     @State private var folderTree: FolderTreeViewModel?
     @State private var documentsList: DocumentsListViewModel?
@@ -114,16 +121,18 @@ struct DocumentsRootView: View {
 
     private func initializeIfNeeded() async {
         guard folderTree == nil, let environment else { return }
-        let tree = FolderTreeViewModel(documents: environment.documentsService)
-        let list = DocumentsListViewModel(documents: environment.documentsService)
+        let tree = preloadedFolderTree ?? FolderTreeViewModel(documents: environment.documentsService)
+        let list = preloadedDocumentsList ?? DocumentsListViewModel(documents: environment.documentsService)
         let edit = DocumentEditorViewModel(documents: environment.documentsService)
         let status = SyncStatusViewModel(documents: environment.documentsService)
         self.folderTree = tree
         self.documentsList = list
         self.editor = edit
         self.syncStatus = status
-        await tree.initialLoad()
-        await list.reload(in: nil)
+        // Skip initial loads for pre-warmed VMs — their loads were already
+        // kicked off by MainWindowView on launch.
+        if preloadedFolderTree == nil { await tree.initialLoad() }
+        if preloadedDocumentsList == nil { await list.reload(in: nil) }
         await subscribeToSyncEvents(
             documentTree: tree,
             list: list,

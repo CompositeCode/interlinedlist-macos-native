@@ -104,7 +104,7 @@ struct RepostSheetView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: ILMetric.radiusSm))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Original post by @\(original.author.username): \(original.text)")
+        .accessibilityLabel("Original message by @\(original.author.username): \(original.text)")
     }
 
     @ViewBuilder

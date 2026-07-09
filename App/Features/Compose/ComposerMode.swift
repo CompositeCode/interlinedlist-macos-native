@@ -2,7 +2,7 @@
 //
 // Discriminator that tells the composer window which write surface to
 // invoke when "Publish" is hit (PLAN.md §6 M2 — composer drives
-// `create` for new posts and `update` for edits; replies and reposts
+// `create` for new messages and `update` for edits; replies and reposts
 // go through the inline reply UI and the repost sheet respectively,
 // not this window).
 //
@@ -20,7 +20,7 @@ import InterlinedDomain
 /// method runs on submit.
 enum ComposerMode: Equatable, Sendable {
 
-    /// Compose a brand-new top-level post.
+    /// Compose a brand-new top-level message.
     case newPost
 
     /// Edit an existing message. Carries the id so `update` can target
@@ -31,8 +31,8 @@ enum ComposerMode: Equatable, Sendable {
     /// Human-friendly title shown in the window's nav bar.
     var windowTitle: String {
         switch self {
-        case .newPost: return "New Post"
-        case .edit: return "Edit Post"
+        case .newPost: return "New Message"
+        case .edit: return "Edit Message"
         }
     }
 

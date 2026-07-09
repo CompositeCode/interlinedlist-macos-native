@@ -25,6 +25,24 @@ struct DocumentsListView: View {
                 ProgressView()
                     .accessibilityLabel("Loading documents")
                     .frame(maxWidth: .infinity)
+            } else if viewModel.documentsLoaded.isEmpty, let error = viewModel.error {
+                VStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                    Text("Could not load documents")
+                        .font(.ilBody())
+                    Text(error.localizedDescription)
+                        .font(.ilMono(10))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Button("Try Again") {
+                        Task { await viewModel.refresh() }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding()
+                .frame(maxWidth: .infinity)
             } else if viewModel.documentsLoaded.isEmpty {
                 Text("No documents yet — create one to begin.")
                     .foregroundStyle(.secondary)
@@ -43,6 +61,8 @@ struct DocumentsListView: View {
             }
         }
         .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .background(Color(.controlBackgroundColor))
         .navigationSplitViewColumnWidth(min: 220, ideal: 280)
         .refreshable {
             await viewModel.refresh()

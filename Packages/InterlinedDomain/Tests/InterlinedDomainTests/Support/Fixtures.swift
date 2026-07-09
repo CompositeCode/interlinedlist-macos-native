@@ -114,8 +114,8 @@ enum Fixtures {
         """
     }
 
-    /// The `{ "data": [...], "pagination": {...} }` envelope used by the
-    /// public-list browse and the row endpoint.
+    /// The `{ "lists": [...], "pagination": {...} }` envelope for both the
+    /// authenticated `/api/lists` and the public `/api/users/[u]/lists` endpoints.
     static func paginatedLists(
         ids: [String],
         total: Int? = nil,
@@ -127,7 +127,7 @@ enum Fixtures {
         let totalValue = total ?? ids.count
         return """
         {
-          "data": [\(objects)],
+          "lists": [\(objects)],
           "pagination": {
             "total": \(totalValue),
             "limit": \(limit),
@@ -160,7 +160,7 @@ enum Fixtures {
         """
     }
 
-    /// The paginated row envelope: `{ "data": [...], "pagination": {...} }`.
+    /// The paginated row envelope: `{ "rows": [...], "pagination": {...} }`.
     static func paginatedRows(
         ids: [String],
         total: Int? = nil,
@@ -172,7 +172,7 @@ enum Fixtures {
         let totalValue = total ?? ids.count
         return """
         {
-          "data": [\(objects)],
+          "rows": [\(objects)],
           "pagination": {
             "total": \(totalValue),
             "limit": \(limit),
@@ -452,7 +452,7 @@ enum Fixtures {
         """
     }
 
-    /// `{ "data": [...], "pagination": {...} }` envelope for documents.
+    /// `{ "documents": [...], "pagination": {...} }` envelope for documents.
     static func paginatedDocuments(
         ids: [String],
         total: Int? = nil,
@@ -464,7 +464,7 @@ enum Fixtures {
         let totalValue = total ?? ids.count
         return """
         {
-          "data": [\(objects)],
+          "documents": [\(objects)],
           "pagination": {
             "total": \(totalValue),
             "limit": \(limit),
@@ -496,7 +496,7 @@ enum Fixtures {
         """
     }
 
-    /// `{ "data": [...], "pagination": {...} }` envelope for folders.
+    /// `{ "folders": [...], "pagination": {...} }` envelope for folders.
     static func paginatedFolders(
         ids: [String],
         total: Int? = nil,
@@ -508,7 +508,7 @@ enum Fixtures {
         let totalValue = total ?? ids.count
         return """
         {
-          "data": [\(objects)],
+          "folders": [\(objects)],
           "pagination": {
             "total": \(totalValue),
             "limit": \(limit),
@@ -618,7 +618,7 @@ enum Fixtures {
         """
     }
 
-    /// The `{ "data": [...], "pagination": {...} }` envelope for members.
+    /// The `{ "members": [...], "pagination": {...} }` envelope for members.
     static func paginatedOrgMembers(
         userIds: [String],
         role: String = "member",
@@ -631,7 +631,7 @@ enum Fixtures {
         let totalValue = total ?? userIds.count
         return """
         {
-          "data": [\(objects)],
+          "members": [\(objects)],
           "pagination": {
             "total": \(totalValue),
             "limit": \(limit),

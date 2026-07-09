@@ -158,14 +158,14 @@ public final class DocumentsService: DocumentsServicing {
             request = Documents.list(folderId: nil, limit: limit, offset: offset)
         }
         let (data, _) = try await api.sendRaw(request)
-        let key = request.paginationKey ?? "data"
-        let paginated = try PaginatedDecoder.decode(
+        let key = request.paginationKey ?? "documents"
+        let items = try PaginatedDecoder.decodeItems(
             DocumentDTO.self,
             collectionKey: key,
             from: data,
             decoder: decoder
         )
-        return paginated.items.map(Document.init(from:))
+        return items.map(Document.init(from:))
     }
 
     public func document(id: String) async throws -> Document {
@@ -278,14 +278,14 @@ public final class DocumentsService: DocumentsServicing {
     public func folders(limit: Int, offset: Int) async throws -> [FolderNode] {
         let request = Documents.folders(limit: limit, offset: offset)
         let (data, _) = try await api.sendRaw(request)
-        let key = request.paginationKey ?? "data"
-        let paginated = try PaginatedDecoder.decode(
+        let key = request.paginationKey ?? "folders"
+        let items = try PaginatedDecoder.decodeItems(
             DocumentFolderDTO.self,
             collectionKey: key,
             from: data,
             decoder: decoder
         )
-        return paginated.items.map(FolderNode.init(from:))
+        return items.map(FolderNode.init(from:))
     }
 
     public func folder(id: String) async throws -> FolderNode {

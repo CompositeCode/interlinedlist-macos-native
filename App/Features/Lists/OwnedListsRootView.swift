@@ -16,8 +16,14 @@ import InterlinedDomain
 
 struct OwnedListsRootView: View {
 
+    /// Pre-warmed view model supplied by `MainWindowView`. When non-nil
+    /// the view skips creation and `initialLoad`; it still subscribes to
+    /// the event bus so cross-window mutations land correctly.
+    var preloadedViewModel: OwnedListsViewModel? = nil
+
     @Environment(\.appEnvironment) private var environment
     @State private var viewModel: OwnedListsViewModel?
+    @State private var rowsViewModel: ListRowsViewModel?
     @State private var showsNewListSheet: Bool = false
     @State private var showsSchemaEditor: Bool = false
     @State private var showsWatchers: Bool = false
@@ -34,11 +40,28 @@ struct OwnedListsRootView: View {
         }
         .task {
             if viewModel == nil, let environment {
-                let model = OwnedListsViewModel(lists: environment.lists)
+                let model: OwnedListsViewModel
+                if let preloaded = preloadedViewModel {
+                    model = preloaded
+                } else {
+                    model = OwnedListsViewModel(lists: environment.lists)
+                    await model.initialLoad()
+                }
                 viewModel = model
-                await model.initialLoad()
                 await subscribeToEventBus(viewModel: model, bus: environment.listsEventBus)
             }
+        }
+        .task(id: viewModel?.selectedListID) {
+            rowsViewModel = nil
+            guard let environment, let listId = viewModel?.selectedListID else { return }
+            let model = ListRowsViewModel(
+                lists: environment.lists,
+                eventBus: environment.listsEventBus,
+                listId: listId
+            )
+            rowsViewModel = model
+            await model.initialLoad()
+            await subscribeRowsEventBus(viewModel: model, bus: environment.listsEventBus)
         }
         .onReceive(NotificationCenter.default.publisher(for: .openNewListSheet)) { _ in
             showsNewListSheet = true
@@ -50,19 +73,13 @@ struct OwnedListsRootView: View {
         NavigationSplitView {
             sidebar(viewModel: viewModel)
         } content: {
-            if let selected = viewModel.selectedList, let environment {
-                ListRowsView(list: selected, environment: environment)
+            if let selected = viewModel.selectedList, let rowsVM = rowsViewModel {
+                ListRowsView(list: selected, viewModel: rowsVM)
             } else {
                 placeholderSelectListState
             }
         } detail: {
-            if let environment, let selected = viewModel.selectedList {
-                RowInspectorView(listId: selected.id, environment: environment)
-            } else {
-                Text("Select a row to inspect")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            RowInspectorView(viewModel: rowsViewModel)
         }
         .navigationTitle("My Lists")
         .toolbar {
@@ -172,6 +189,20 @@ struct OwnedListsRootView: View {
                 ProgressView()
                     .accessibilityLabel("Loading lists")
                     .frame(maxWidth: .infinity)
+            } else if let error = viewModel.error, viewModel.lists_loaded.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Couldn't load lists", systemImage: "exclamationmark.triangle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(error.localizedDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("Retry") {
+                        Task { await viewModel.refresh() }
+                    }
+                    .font(.caption)
+                }
+                .padding(.vertical, 4)
             } else if viewModel.lists_loaded.isEmpty {
                 Text("No lists yet — create one to begin.")
                     .foregroundStyle(.secondary)
@@ -218,10 +249,20 @@ struct OwnedListsRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Subscribe to the lists event bus and feed each event into the
-    /// view model's pure-local-mutation handler.
     private func subscribeToEventBus(
         viewModel: OwnedListsViewModel,
+        bus: ListsEventBus
+    ) async {
+        Task { [weak viewModel] in
+            for await event in bus.events() {
+                guard let viewModel else { return }
+                viewModel.apply(event: event)
+            }
+        }
+    }
+
+    private func subscribeRowsEventBus(
+        viewModel: ListRowsViewModel,
         bus: ListsEventBus
     ) async {
         Task { [weak viewModel] in
