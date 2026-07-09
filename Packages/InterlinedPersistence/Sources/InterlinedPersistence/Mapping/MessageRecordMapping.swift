@@ -99,8 +99,11 @@ extension TimelineScope {
     /// representation in the domain layer.
     var rawScopeKey: String {
         switch self {
-        case .all: return "all"
-        case .mine: return "mine"
+        case .all:       return "all"
+        case .mine:      return "mine"
+        // Following has no API backing yet; a stable key is still needed so
+        // any future cache entries survive enum expansion without corruption.
+        case .following: return "following"
         }
     }
 }

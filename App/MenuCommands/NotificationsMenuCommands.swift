@@ -39,6 +39,20 @@ extension Foundation.Notification.Name {
     /// Posted when the user invokes Notifications → Refresh. The tray
     /// view triggers a re-fetch.
     static let notificationsRefresh = Foundation.Notification.Name("InterlinedList.notificationsRefresh")
+
+    /// Posted by `AppDelegate` when the user taps a delivered system
+    /// notification banner. The `object` is the `NotificationTarget`
+    /// resolved from the banner's `userInfo` dict. `MainWindowView`
+    /// observes this and routes the sidebar to the appropriate section;
+    /// feature views (e.g. `TimelineRootView`) observe it to navigate
+    /// within their own stack.
+    static let notificationDeepLink = Foundation.Notification.Name("InterlinedList.notificationDeepLink")
+
+    /// Posted by `MainWindowView` after it has switched the sidebar to
+    /// `.timeline` in response to a `.message(id:)` deep-link. The
+    /// `object` is the raw `Message.ID` string. `TimelineRootView`
+    /// observes this and pushes `MessageDetailView` for that id.
+    static let timelineOpenMessage = Foundation.Notification.Name("InterlinedList.timelineOpenMessage")
 }
 
 struct NotificationsMenuCommands: Commands {

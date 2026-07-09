@@ -11,6 +11,7 @@
 // dispatcher when it lands — every other line stays untouched.
 
 import SwiftUI
+import InterlinedDomain
 
 /// Sidebar sections shown in the main window. Order mirrors PLAN.md §5
 /// with the M5 addition of `Connections` (the followers/following/
@@ -53,6 +54,14 @@ struct MainWindowView: View {
     @State private var pendingExportType: ExportViewModel.ExportType? = nil
     @State private var showExportSheet = false
 
+    // M5.x — Deep-link routing. When the user taps a system notification
+    // banner and the target is a `.message(id:)`, we switch to the Timeline
+    // sidebar and hand the message ID to `TimelineRootView` via a binding.
+    // `TimelineRootView` sets its `NavigationStack` selection to that ID and
+    // clears this state after handling so re-appearing timelines don't
+    // re-navigate.
+    @State private var pendingMessageDeepLinkID: String? = nil
+
     var body: some View {
         NavigationSplitView {
             List(SidebarSection.allCases, selection: $selection) { section in
@@ -68,7 +77,10 @@ struct MainWindowView: View {
             .navigationSplitViewColumnWidth(min: 180, ideal: 220)
         } detail: {
             if let selection {
-                SidebarDetailDispatcher(section: selection)
+                SidebarDetailDispatcher(
+                    section: selection,
+                    pendingMessageDeepLinkID: $pendingMessageDeepLinkID
+                )
             } else {
                 Text("Select a section")
                     .foregroundStyle(.secondary)
@@ -80,6 +92,32 @@ struct MainWindowView: View {
         // the view tree.
         .onReceive(NotificationCenter.default.publisher(for: .notificationsShow)) { _ in
             selection = .notifications
+        }
+        // M5.x — System notification banner deep-link. `AppDelegate` posts
+        // `.notificationDeepLink` with the resolved `NotificationTarget` as
+        // the `object` when the user taps a delivered banner. We switch the
+        // sidebar to the appropriate section; message targets also set
+        // `pendingMessageDeepLinkID` so `TimelineRootView` can push the
+        // detail view via its own `NavigationStack`.
+        .onReceive(NotificationCenter.default.publisher(for: .notificationDeepLink)) { note in
+            guard let target = note.object as? NotificationTarget else { return }
+            switch target {
+            case .message(let id):
+                selection = .timeline
+                pendingMessageDeepLinkID = id
+            case .list:
+                selection = .lists
+            case .user:
+                // The user who acted is shown in the Connections panel
+                // (followers / following / requests roster).
+                selection = .connections
+            case .organization:
+                selection = .organizations
+            case .unknown:
+                // No typed target — fall back to the notifications tray
+                // so the user sees the item that triggered the banner.
+                selection = .notifications
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .socialShowFollowers)) { _ in
             selection = .connections
@@ -129,11 +167,16 @@ struct MainWindowView: View {
 
 private struct SidebarDetailDispatcher: View {
     let section: SidebarSection
+    /// Binding supplied by `MainWindowView` when a `.message(id:)` deep-
+    /// link fires. Only `.timeline` reads and clears it; every other case
+    /// ignores it. The `Binding` lets `TimelineRootView` nil it out after
+    /// handling so re-appearing timelines don't re-navigate.
+    @Binding var pendingMessageDeepLinkID: String?
 
     var body: some View {
         switch section {
         case .timeline:
-            TimelineRootView()
+            TimelineRootView(pendingDeepLinkMessageID: $pendingMessageDeepLinkID)
         case .scheduled:
             // M6 (Wave 7.2) — the read-only Scheduled posts list lands
             // (PLAN.md §5 "Scheduled sidebar section", §6 M6). Replaces the

@@ -189,6 +189,89 @@ final class MessagesEndpointTests: XCTestCase {
         XCTAssertEqual(decoded.pushedMessage?.message.user.username, "ada")
     }
 
+    // MARK: - crossPosts DTO decoding (NW-2)
+    //
+    // The crossPosts field is an optional array on MessageDTO. These tests
+    // verify the full JSON → DTO decode pipeline (independent of the
+    // domain mapper that converts DTO → CrossPostResult).
+
+    func test_givenMessageWithCrossPostsArray_whenDecoded_thenCrossPostsPopulated() throws {
+        // Happy path: all three live status strings decode into CrossPostResultDTO.
+        let json = #"""
+        {
+          "id": "m-xp", "content": "cross-posted", "publiclyVisible": true, "userId": "u1",
+          "parentId": null, "linkMetadata": null, "imageUrls": null, "videoUrls": null,
+          "crossPostUrls": null, "scheduledAt": null, "tags": null,
+          "createdAt": "2026-06-16T12:00:00Z", "updatedAt": "2026-06-16T12:00:00Z",
+          "digCount": 0, "pushCount": 0, "pushedMessageId": null,
+          "user": { "id": "u1", "username": "ada", "displayName": "Ada", "avatar": null },
+          "pushedMessage": null, "dugByMe": false,
+          "crossPosts": [
+            { "platform": "mastodon", "providerId": "mastodon.social", "status": "ok", "externalUrl": "https://mastodon.social/@ada/1", "error": null },
+            { "platform": "bluesky",  "providerId": null,              "status": "failed", "externalUrl": null, "error": "rate_limited" },
+            { "platform": "linkedin", "providerId": null,              "status": "pending", "externalUrl": null, "error": null }
+          ]
+        }
+        """#
+        let dto = try JSONCoders.makeDecoder().decode(MessageDTO.self, from: Data(json.utf8))
+        let results = try XCTUnwrap(dto.crossPosts)
+        XCTAssertEqual(results.count, 3)
+        XCTAssertEqual(results[0].platform, "mastodon")
+        XCTAssertEqual(results[0].providerId, "mastodon.social")
+        XCTAssertEqual(results[0].status, "ok")
+        XCTAssertEqual(results[0].externalUrl, "https://mastodon.social/@ada/1")
+        XCTAssertNil(results[0].error)
+        XCTAssertEqual(results[1].platform, "bluesky")
+        XCTAssertEqual(results[1].status, "failed")
+        XCTAssertEqual(results[1].error, "rate_limited")
+        XCTAssertNil(results[1].externalUrl)
+        XCTAssertEqual(results[2].platform, "linkedin")
+        XCTAssertEqual(results[2].status, "pending")
+    }
+
+    func test_givenMessageWithNullCrossPosts_whenDecoded_thenCrossPostsIsNil() throws {
+        // Boundary: server sends crossPosts: null (no cross-posting was attempted).
+        let json = #"""
+        {
+          "id": "m-nc", "content": "plain", "publiclyVisible": true, "userId": "u1",
+          "parentId": null, "linkMetadata": null, "imageUrls": null, "videoUrls": null,
+          "crossPostUrls": null, "scheduledAt": null, "tags": null,
+          "createdAt": "2026-06-16T12:00:00Z", "updatedAt": "2026-06-16T12:00:00Z",
+          "digCount": 0, "pushCount": 0, "pushedMessageId": null,
+          "user": { "id": "u1", "username": "ada", "displayName": null, "avatar": null },
+          "pushedMessage": null, "dugByMe": false,
+          "crossPosts": null
+        }
+        """#
+        let dto = try JSONCoders.makeDecoder().decode(MessageDTO.self, from: Data(json.utf8))
+        XCTAssertNil(dto.crossPosts)
+    }
+
+    func test_givenMessageWithEmptyCrossPostsArray_whenDecoded_thenCrossPostsIsEmpty() throws {
+        // Boundary: server sends crossPosts: [] (fan-out attempted but no targets).
+        let json = #"""
+        {
+          "id": "m-ec", "content": "no targets", "publiclyVisible": true, "userId": "u1",
+          "parentId": null, "linkMetadata": null, "imageUrls": null, "videoUrls": null,
+          "crossPostUrls": null, "scheduledAt": null, "tags": null,
+          "createdAt": "2026-06-16T12:00:00Z", "updatedAt": "2026-06-16T12:00:00Z",
+          "digCount": 0, "pushCount": 0, "pushedMessageId": null,
+          "user": { "id": "u1", "username": "ada", "displayName": null, "avatar": null },
+          "pushedMessage": null, "dugByMe": false,
+          "crossPosts": []
+        }
+        """#
+        let dto = try JSONCoders.makeDecoder().decode(MessageDTO.self, from: Data(json.utf8))
+        XCTAssertEqual(dto.crossPosts, [])
+    }
+
+    func test_givenMessageMissingCrossPostsKey_whenDecoded_thenCrossPostsIsNil() throws {
+        // Boundary: older API responses that omit the crossPosts key entirely.
+        // The standard messageJSON fixture above has no crossPosts key.
+        let dto = try JSONCoders.makeDecoder().decode(MessageDTO.self, from: Data(messageJSON.utf8))
+        XCTAssertNil(dto.crossPosts)
+    }
+
     // MARK: - create
 
     func test_givenPlainPost_whenCreateBuilt_thenPostsContentOnly() throws {

@@ -6,10 +6,10 @@
 // error / empty logic in the view model so unit tests cover the
 // behavior without touching SwiftUI.
 //
-// v1 is read-only (backend ask P3.3 — no cancel / reschedule endpoint):
-// the list surfaces what is queued and the empty state points the user
-// at the composer for scheduling a new post. Rows carry no destructive
-// affordance.
+// Rows support cancel (DELETE /api/messages/[id]) and reschedule
+// (PUT /api/messages/[id] with a new `scheduledAt`). Both operations
+// use the optimistic-UI pattern (NW-3): the list is updated locally
+// before the network call and rolled back on failure.
 //
 // Per Decision 0003 the view consumes only `InterlinedDomain`.
 

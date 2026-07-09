@@ -230,6 +230,19 @@ struct MessageRowView: View {
                 }
             }
         }
+
+        // Report — visible for every message regardless of ownership
+        // (App Store Review Guideline 1.2: User-Generated Content requires
+        // a mechanism to report objectionable content). No backend report
+        // endpoint exists yet — open the support URL so users can contact
+        // the team directly.
+        Button {
+            if let url = URL(string: "https://interlinedlist.com/support") {
+                NSWorkspace.shared.open(url)
+            }
+        } label: {
+            Label("Report\u{2026}", systemImage: "flag")
+        }
     }
 
     private func repostBanner(original: Message) -> some View {

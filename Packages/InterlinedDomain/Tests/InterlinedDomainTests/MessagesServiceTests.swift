@@ -660,6 +660,80 @@ final class MessagesServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - Timeline: .following scope (App Store — Coming Soon gating)
+    //
+    // The Following feed has no API endpoint yet. The service must return
+    // an empty page immediately without touching the network or the cache
+    // (App Store Review Guideline 2.1: every visible control must work or
+    // show a graceful unavailable state).
+
+    func test_givenFollowingScope_whenLoadingTimeline_thenReturnsEmptyPageWithoutAPICall() async throws {
+        // Given — nothing enqueued: any accidental API call makes the stub throw.
+        let api = StubAPIClient()
+        let service = MessagesService(api: api)
+
+        // When
+        let page = try await service.timeline(scope: .following, tag: nil, limit: 20, offset: 0)
+
+        // Then — empty page is returned and the API was never contacted.
+        XCTAssertTrue(page.messages.isEmpty)
+        XCTAssertFalse(page.hasMore)
+        XCTAssertNil(page.nextOffset)
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty, "No API request must be made for the .following scope")
+    }
+
+    func test_givenFollowingScopeWithTagFilter_whenLoadingTimeline_thenReturnsBoundaryEmptyPageWithoutAPICall() async throws {
+        // Given — tag filter must not cause a network call either.
+        let api = StubAPIClient()
+        let service = MessagesService(api: api)
+
+        // When
+        let page = try await service.timeline(scope: .following, tag: "swift", limit: 10, offset: 5)
+
+        // Then — still an empty page regardless of tag / pagination params.
+        XCTAssertTrue(page.messages.isEmpty)
+        XCTAssertFalse(page.hasMore)
+        XCTAssertNil(page.nextOffset)
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty, "No API request must be made for the .following scope even with a tag filter")
+    }
+
+    func test_givenFollowingScopeWithStore_whenLoadingTimeline_thenCacheIsNotWritten() async throws {
+        // Given — a store is wired so we can verify it is not mutated.
+        let api = StubAPIClient()
+        let store = InMemoryMessageStore()
+        let service = MessagesService(api: api, store: store)
+
+        // When
+        _ = try await service.timeline(scope: .following, tag: nil, limit: 20, offset: 0)
+
+        // Then — cache must remain empty (no store write for a not-yet-live scope).
+        let cached = await store.cachedTimeline(scope: .following, tag: nil)
+        XCTAssertTrue(cached.isEmpty, "Following timeline must not be written to the cache")
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty)
+    }
+
+    func test_givenFollowingScope_whenStreamingTimeline_thenYieldsOneEmptyPageWithoutAPICall() async throws {
+        // Given — nothing enqueued; any API call causes an in-stream throw.
+        let api = StubAPIClient()
+        let service = MessagesService(api: api)
+
+        // When — collect all pages the stream yields.
+        var pages: [TimelinePage] = []
+        for try await page in service.timelineStream(scope: .following, tag: nil, limit: 20, offset: 0) {
+            pages.append(page)
+        }
+
+        // Then — exactly one empty page is yielded and no API call is recorded.
+        XCTAssertEqual(pages.count, 1)
+        XCTAssertTrue(pages[0].messages.isEmpty)
+        XCTAssertFalse(pages[0].hasMore)
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty, "No API request must be made when streaming the .following scope")
+    }
+
     // MARK: - Helpers
 
     private func sampleDTO(id: String) -> MessageDTO {

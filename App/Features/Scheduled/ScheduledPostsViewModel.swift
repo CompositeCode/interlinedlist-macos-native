@@ -1,15 +1,15 @@
 // ScheduledPostsViewModel
 //
-// Drives `ScheduledPostsRootView`: the read-only list of the caller's
-// pending scheduled posts (PLAN.md §1 "Scheduled posts", §5 "Scheduled
-// sidebar section", §6 M6). Reads through `MessagesServicing.scheduledPosts()`
-// only — no direct API access — so unit tests substitute a stub service.
+// Drives `ScheduledPostsRootView`: the list of the caller's pending
+// scheduled posts (PLAN.md §1 "Scheduled posts", §5 "Scheduled sidebar
+// section", §6 M6). Reads through `MessagesServicing.scheduledPosts()` —
+// no direct API access — so unit tests substitute a stub service.
 //
-// v1 is intentionally read-only. The API exposes no cancel / reschedule
-// endpoint (backend ask P3.3), so the list shows what is queued and links
-// the user to the composer for creating new scheduled posts; rows carry no
-// delete / edit affordance. When P3.3 lands, the row gains a destructive
-// action and this view model grows an optimistic-removal path.
+// NW-3: cancel and reschedule are now supported. Both use the optimistic-UI
+// pattern (snapshot → mutate locally → service call → on success replace
+// with server copy; on failure restore snapshot). The row context menu
+// surfaces both actions; `actionError` captures the last mutation failure
+// without replacing the loaded list.
 //
 // Per Decision 0003 this view model consumes only `InterlinedDomain`.
 

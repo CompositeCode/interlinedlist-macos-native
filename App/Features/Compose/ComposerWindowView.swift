@@ -65,7 +65,30 @@ struct ComposerWindowView: View {
             }
         }
         .onChange(of: viewModel?.didFinish) { _, finished in
-            if finished == true { dismiss() }
+            // When cross-post results are present the sheet owns the final
+            // dismiss (the Done button calls dismissCrossPostResults then
+            // dismiss). Only auto-dismiss here when there is nothing to show.
+            if finished == true, viewModel?.crossPostResults == nil {
+                dismiss()
+            }
+        }
+        // NW-2: present the per-platform cross-post status sheet after a
+        // successful publish. The sheet's Done button calls
+        // `dismissCrossPostResults()` and then closes the window.
+        .sheet(isPresented: Binding(
+            get: { viewModel?.crossPostResults != nil },
+            set: { newValue in
+                if !newValue {
+                    viewModel?.dismissCrossPostResults()
+                }
+            }
+        )) {
+            if let results = viewModel?.crossPostResults {
+                CrossPostResultsSheet(results: results) {
+                    viewModel?.dismissCrossPostResults()
+                    dismiss()
+                }
+            }
         }
     }
 

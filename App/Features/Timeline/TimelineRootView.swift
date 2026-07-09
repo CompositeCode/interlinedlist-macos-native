@@ -34,6 +34,18 @@ struct TimelineRootView: View {
     @State private var editTarget: Message?
     @State private var deleteTarget: Message?
 
+    // M5.x — deep-link routing. When a system notification banner for a
+    // message is tapped, `MainWindowView` sets this binding to the target
+    // message ID before switching the sidebar to `.timeline`. The view
+    // navigates to that message and clears the binding so a re-appearing
+    // timeline doesn't re-navigate. Default `.constant(nil)` keeps every
+    // existing call site parameter-free.
+    @Binding private var pendingDeepLinkMessageID: String?
+
+    init(pendingDeepLinkMessageID: Binding<String?> = .constant(nil)) {
+        self._pendingDeepLinkMessageID = pendingDeepLinkMessageID
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -97,6 +109,24 @@ struct TimelineRootView: View {
         } message: { _ in
             Text("This action cannot be undone.")
         }
+        // M5.x — deep-link navigation. `pendingDeepLinkMessageID` is set
+        // by `MainWindowView` when the user taps a system notification
+        // banner targeting a message. We handle it on appear (the sidebar
+        // just switched to timeline) and on change (timeline was already
+        // visible when the banner was tapped), then immediately clear the
+        // binding so re-appearing timelines don't re-navigate.
+        .onAppear {
+            if let id = pendingDeepLinkMessageID {
+                selection = id
+                pendingDeepLinkMessageID = nil
+            }
+        }
+        .onChange(of: pendingDeepLinkMessageID) { _, newID in
+            if let id = newID {
+                selection = id
+                pendingDeepLinkMessageID = nil
+            }
+        }
     }
 
     /// Stable token derived from the environment identity so
@@ -133,6 +163,7 @@ struct TimelineRootView: View {
             ) {
                 Text("All").tag(TimelineScope.all)
                 Text("Mine").tag(TimelineScope.mine)
+                Text("Following").tag(TimelineScope.following)
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 220)
@@ -168,7 +199,13 @@ struct TimelineRootView: View {
 
     @ViewBuilder
     private func content(viewModel: TimelineViewModel) -> some View {
-        if let error = viewModel.error, viewModel.messagesLoaded.isEmpty {
+        // Following has no API endpoint yet — always show the coming-soon
+        // state regardless of load / error / empty conditions (App Store
+        // Guideline 2.1: every visible control must work or show a graceful
+        // unavailable state).
+        if viewModel.scope == .following {
+            followingComingSoonState
+        } else if let error = viewModel.error, viewModel.messagesLoaded.isEmpty {
             errorState(error: error, viewModel: viewModel)
         } else if viewModel.messagesLoaded.isEmpty, viewModel.isLoading {
             loadingState
@@ -243,6 +280,19 @@ struct TimelineRootView: View {
             Text("No messages")
                 .font(.ilSubtitle())
             Text("Posts in this feed will appear here.")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var followingComingSoonState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "person.2")
+                .font(.ilDisplay(36))
+                .foregroundStyle(.secondary)
+            Text("Following feed coming soon")
+                .font(.ilSubtitle())
+            Text("The Following timeline is not yet available.")
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

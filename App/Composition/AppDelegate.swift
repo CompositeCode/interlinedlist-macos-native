@@ -15,14 +15,15 @@
 import AppKit
 import SwiftUI
 import UserNotifications
+import InterlinedDomain
 
 /// `NSApplicationDelegate` adapter installed via
 /// `@NSApplicationDelegateAdaptor` in `InterlinedListApp`. Owns:
 ///
 /// 1. The dock-tile badge writer (`updateDockBadge(unreadCount:)`).
-/// 2. The `UNUserNotificationCenterDelegate` hook so that activating a
-///    delivered notification brings the app forward (deep-link routing
-///    proper lands in a follow-up — see `// TODO(M5.x)` below).
+/// 2. The `UNUserNotificationCenterDelegate` hook that activates the app
+///    and routes to the relevant content when the user taps a delivered
+///    banner — see `userNotificationCenter(_:didReceive:withCompletionHandler:)`.
 ///
 /// Everything else stays pure SwiftUI.
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -62,17 +63,27 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         completionHandler([.banner, .sound])
     }
 
-    /// Called when the user clicks a delivered notification. Routes the
-    /// main window to the Notifications sidebar section and activates
-    /// the app. The `NotificationsRootView` will refresh on appear so
-    /// the relevant item is visible.
+    /// Called when the user taps a delivered notification banner. Brings
+    /// the app forward, then resolves a typed `NotificationTarget` from
+    /// the banner's `userInfo` dict and posts `.notificationDeepLink` so
+    /// `MainWindowView` can route the sidebar and feature views can push
+    /// the relevant detail on their own navigation stacks.
+    ///
+    /// Fallback: when the `userInfo` dict does not carry enough keys to
+    /// produce a typed target — e.g. any notification scheduled before
+    /// this routing was added — the resolved target is
+    /// `.unknown(actionURL: nil)` and `MainWindowView` falls back to
+    /// selecting the Notifications sidebar section, preserving the
+    /// pre-M5.x behaviour.
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
         NSApp.activate(ignoringOtherApps: true)
-        NotificationCenter.default.post(name: .notificationsShow, object: nil)
+        let userInfo = response.notification.request.content.userInfo
+        let target = NotificationTarget(userInfo: userInfo)
+        NotificationCenter.default.post(name: .notificationDeepLink, object: target)
         completionHandler()
     }
 }

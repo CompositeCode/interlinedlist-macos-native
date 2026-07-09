@@ -61,6 +61,9 @@ struct LinkedAccountsView: View {
             }
 
             Section("Link an account") {
+                Text("Linking an account opens your default browser to complete authorization. Return to InterlinedList when done.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 if viewModel.isLinking {
                     HStack {
                         ProgressView()

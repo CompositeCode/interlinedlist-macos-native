@@ -345,6 +345,13 @@ public final class MessagesService: MessagesServicing {
         limit: Int,
         offset: Int
     ) async throws -> TimelinePage {
+        // The Following feed has no API endpoint yet. Return an empty page
+        // immediately — no network call, no store write — so the view model
+        // surfaces a "coming soon" empty state rather than a spinner that
+        // never resolves or a spurious API error (App Store Guideline 2.1).
+        if scope == .following {
+            return TimelinePage(messages: [], hasMore: false, nextOffset: nil)
+        }
         do {
             let page = try await fetchTimelinePage(scope: scope, tag: tag, limit: limit, offset: offset)
             await store?.replaceTimeline(page.messages, scope: scope, tag: tag)
