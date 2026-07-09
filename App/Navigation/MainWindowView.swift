@@ -64,9 +64,31 @@ struct MainWindowView: View {
 
     var body: some View {
         NavigationSplitView {
-            List(SidebarSection.allCases, selection: $selection) { section in
-                Label(section.rawValue, systemImage: section.systemImage)
-                    .tag(section)
+            List(selection: $selection) {
+                Label(SidebarSection.timeline.rawValue, systemImage: SidebarSection.timeline.systemImage)
+                    .tag(SidebarSection.timeline)
+                    .foregroundStyle(ILColor.onMasthead)
+                Label(SidebarSection.scheduled.rawValue, systemImage: SidebarSection.scheduled.systemImage)
+                    .tag(SidebarSection.scheduled)
+                    .foregroundStyle(ILColor.onMasthead)
+                    .padding(.leading, 16)
+                Label(SidebarSection.notifications.rawValue, systemImage: SidebarSection.notifications.systemImage)
+                    .tag(SidebarSection.notifications)
+                    .foregroundStyle(ILColor.onMasthead)
+                Label(SidebarSection.lists.rawValue, systemImage: SidebarSection.lists.systemImage)
+                    .tag(SidebarSection.lists)
+                    .foregroundStyle(ILColor.onMasthead)
+                Label(SidebarSection.documents.rawValue, systemImage: SidebarSection.documents.systemImage)
+                    .tag(SidebarSection.documents)
+                    .foregroundStyle(ILColor.onMasthead)
+                Label(SidebarSection.organizations.rawValue, systemImage: SidebarSection.organizations.systemImage)
+                    .tag(SidebarSection.organizations)
+                    .foregroundStyle(ILColor.onMasthead)
+                Label(SidebarSection.profile.rawValue, systemImage: SidebarSection.profile.systemImage)
+                    .tag(SidebarSection.profile)
+                    .foregroundStyle(ILColor.onMasthead)
+                Label(SidebarSection.connections.rawValue, systemImage: SidebarSection.connections.systemImage)
+                    .tag(SidebarSection.connections)
                     .foregroundStyle(ILColor.onMasthead)
             }
             .listStyle(.sidebar)
