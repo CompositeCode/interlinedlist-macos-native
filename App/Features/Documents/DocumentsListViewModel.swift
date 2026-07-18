@@ -145,6 +145,31 @@ final class DocumentsListViewModel {
         }
     }
 
+    /// Creates a new document seeded from a client-side `DocumentTemplate`
+    /// (feature-gaps.md §1.4). The chosen template supplies the starter
+    /// Markdown body; the title defaults to the template name but the caller
+    /// may override it, and the user can rename it in the editor afterward.
+    ///
+    /// This routes through the same `createDocument(title:body:isPublic:)` path
+    /// as a blank document — a template is purely a seed, so seeding from
+    /// `.blank` is identical to today's "new blank document" behavior. There is
+    /// no templates endpoint; the catalog is bundled in `InterlinedDomain`. If
+    /// the API later exposes templates this can switch to a server fetch without
+    /// changing this signature.
+    @discardableResult
+    func createDocument(
+        from template: DocumentTemplate,
+        title: String? = nil,
+        isPublic: Bool = false
+    ) async -> Document? {
+        let resolvedTitle = title ?? template.name
+        return await createDocument(
+            title: resolvedTitle,
+            body: template.bodyMarkdown,
+            isPublic: isPublic
+        )
+    }
+
     /// Deletes a document. Optimistic — removes from the rendered list
     /// first, then calls the service; on failure restores the snapshot
     /// and surfaces the error.

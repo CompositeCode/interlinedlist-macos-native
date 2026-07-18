@@ -20,6 +20,13 @@ extension Notification.Name {
     /// in the currently-selected folder.
     static let documentsNewDocument = Notification.Name("InterlinedList.documentsNewDocument")
 
+    /// Posted when the user invokes Documents → New from Template….
+    /// `DocumentsRootView` observes this and presents the template picker
+    /// sheet (feature-gaps.md §1.4). Client-side: seeds a new document from a
+    /// bundled starter-Markdown catalog, then routes it through the normal
+    /// create path.
+    static let documentsNewFromTemplate = Notification.Name("InterlinedList.documentsNewFromTemplate")
+
     /// Posted when the user invokes Documents → Sync Now. The same
     /// notification fires from the toolbar button so the sync path is
     /// single-sourced.
@@ -40,6 +47,13 @@ private struct DocumentsMenuButtons: View {
             NotificationCenter.default.post(name: .documentsNewDocument, object: nil)
         }
         .keyboardShortcut("n", modifiers: [.option, .command])
+
+        Button("New from Template…") {
+            NotificationCenter.default.post(name: .documentsNewFromTemplate, object: nil)
+        }
+        .keyboardShortcut("n", modifiers: [.option, .command, .shift])
+
+        Divider()
 
         Button("Sync Now") {
             NotificationCenter.default.post(name: .documentsSyncNow, object: nil)
