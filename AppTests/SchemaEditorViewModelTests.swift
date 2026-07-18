@@ -172,11 +172,149 @@ final class SchemaEditorViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.didFinish)
     }
 
+    // MARK: - select options (§1.1)
+
+    func test_givenSelectFieldFromSchema_whenInitialising_thenSeedsOptions() {
+        // Happy path — a `select` column's options hydrate the editable row.
+        let viewModel = makeViewModel(
+            initial: ListSchema(fields: [
+                SchemaField(name: "Priority", type: .select, enumValues: ["low", "high"])
+            ])
+        )
+
+        XCTAssertEqual(viewModel.fields.first?.type, .select)
+        XCTAssertEqual(viewModel.fields.first?.options, ["low", "high"])
+    }
+
+    func test_givenSelectField_whenAddingOption_thenAppendsBlankOption() {
+        let viewModel = makeViewModel(
+            initial: ListSchema(fields: [SchemaField(name: "P", type: .select, enumValues: ["a"])])
+        )
+        let id = viewModel.fields[0].id
+
+        viewModel.addOption(toFieldID: id)
+
+        XCTAssertEqual(viewModel.fields[0].options, ["a", ""])
+    }
+
+    func test_givenSelectField_whenSettingAndRemovingOptions_thenMutatesInPlace() {
+        let viewModel = makeViewModel(
+            initial: ListSchema(fields: [SchemaField(name: "P", type: .select, enumValues: ["a", "b", "c"])])
+        )
+        let id = viewModel.fields[0].id
+
+        viewModel.setOption("z", forFieldID: id, at: 1)
+        viewModel.removeOption(fromFieldID: id, at: 0)
+
+        XCTAssertEqual(viewModel.fields[0].options, ["z", "c"])
+    }
+
+    func test_givenSelectField_whenSwitchingTypeAway_thenDiscardsOptions() {
+        // Boundary — options must not survive a switch to a non-select type,
+        // or `save()` would carry a stale set into the DSL.
+        let viewModel = makeViewModel(
+            initial: ListSchema(fields: [SchemaField(name: "P", type: .select, enumValues: ["a", "b"])])
+        )
+        let id = viewModel.fields[0].id
+
+        viewModel.setType(.text, forFieldID: id)
+
+        XCTAssertTrue(viewModel.fields[0].options.isEmpty)
+    }
+
+    func test_givenSelectWithNoOptions_whenValidating_thenReturnsError() {
+        // Invalid input — a select with an empty option set fails validation,
+        // mirroring the DSL parser's `.emptySelectOptions`.
+        let viewModel = makeViewModel(initial: .empty)
+        viewModel.addField()
+        let id = viewModel.fields[0].id
+        viewModel.fields[0].name = "P"
+        viewModel.setType(.select, forFieldID: id)
+
+        XCTAssertNotNil(viewModel.validationError(for: viewModel.fields[0]))
+        XCTAssertFalse(viewModel.isValid)
+    }
+
+    func test_givenSelectWithDuplicateOptions_whenValidating_thenReturnsError() {
+        // Invalid input — duplicate options fail validation, mirroring the
+        // parser's `.duplicateSelectOption`.
+        let viewModel = makeViewModel(
+            initial: ListSchema(fields: [
+                SchemaField(name: "P", type: .select, enumValues: ["a", "a"])
+            ])
+        )
+
+        XCTAssertNotNil(viewModel.validationError(for: viewModel.fields[0]))
+        XCTAssertFalse(viewModel.isValid)
+    }
+
+    func test_givenValidSelectSchema_whenSaving_thenRoundTripsOptionsToService() async {
+        // Happy path — a valid `select` column saves with its options intact.
+        let stub = StubListsService()
+        let saved = ListSchema(fields: [
+            SchemaField(name: "Priority", type: .select, enumValues: ["low", "high"])
+        ])
+        await stub.enqueueUpdateSchema(success: saved)
+        let viewModel = SchemaEditorViewModel(
+            lists: stub,
+            eventBus: ListsEventBus(),
+            listId: "L1",
+            role: .owner,
+            initialSchema: saved
+        )
+
+        await viewModel.save()
+
+        XCTAssertTrue(viewModel.didFinish)
+        let sent = await stub.lastUpdatedSchema
+        XCTAssertEqual(sent?.fields.first?.type, .select)
+        XCTAssertEqual(sent?.fields.first?.enumValues, ["low", "high"])
+    }
+
+    func test_givenInvalidSelectSchema_whenSaving_thenDoesNotCallService() async {
+        // Invalid input — a select with no options must not reach the service.
+        let stub = StubListsService()
+        let viewModel = makeViewModel(
+            initial: ListSchema(fields: [SchemaField(name: "P", type: .select, enumValues: [])]),
+            lists: stub
+        )
+
+        await viewModel.save()
+
+        let recorded = await stub.recorded
+        XCTAssertTrue(recorded.isEmpty)
+        XCTAssertFalse(viewModel.didFinish)
+    }
+
+    func test_givenMarkdownField_whenSaving_thenSerialisesWithNoOptions() async {
+        // Markdown is long-text: saves as a bare token, no options attached.
+        let stub = StubListsService()
+        let saved = ListSchema(fields: [SchemaField(name: "Body", type: .markdown)])
+        await stub.enqueueUpdateSchema(success: saved)
+        let viewModel = SchemaEditorViewModel(
+            lists: stub,
+            eventBus: ListsEventBus(),
+            listId: "L1",
+            role: .owner,
+            initialSchema: saved
+        )
+
+        await viewModel.save()
+
+        let sent = await stub.lastUpdatedSchema
+        XCTAssertEqual(sent?.fields.first?.type, .markdown)
+        XCTAssertNil(sent?.fields.first?.enumValues)
+    }
+
     // MARK: - helpers
 
-    private func makeViewModel(initial: ListSchema, role: WatcherRole = .owner) -> SchemaEditorViewModel {
+    private func makeViewModel(
+        initial: ListSchema,
+        role: WatcherRole = .owner,
+        lists: StubListsService = StubListsService()
+    ) -> SchemaEditorViewModel {
         SchemaEditorViewModel(
-            lists: StubListsService(),
+            lists: lists,
             eventBus: ListsEventBus(),
             listId: "L1",
             role: role,

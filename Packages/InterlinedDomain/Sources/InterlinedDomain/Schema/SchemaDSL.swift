@@ -28,6 +28,16 @@ public enum SchemaDSLError: Error, Sendable, Equatable {
     /// Two columns share the same name — schemas forbid duplicates so the
     /// cell map (`[String: ListCellValue]`) stays unambiguous.
     case duplicateFieldName(String)
+
+    /// A `select` column declared an empty option list — `select()` or
+    /// `select` with no options. A single-choice column needs at least one
+    /// option to be meaningful. The field name is included for the toast.
+    case emptySelectOptions(field: String)
+
+    /// A `select` column repeated the same option — options must be a set so
+    /// the picker never renders two identical rows. The offending option is
+    /// included so the editor can highlight it.
+    case duplicateSelectOption(field: String, option: String)
 }
 
 extension SchemaDSLError: LocalizedError, CustomStringConvertible {
@@ -43,6 +53,10 @@ extension SchemaDSLError: LocalizedError, CustomStringConvertible {
             return "Schema type \"\(raw)\" is not a recognised type."
         case .duplicateFieldName(let name):
             return "Schema field \"\(name)\" is declared more than once."
+        case .emptySelectOptions(let field):
+            return "Schema field \"\(field)\" is a select but declares no options."
+        case .duplicateSelectOption(let field, let option):
+            return "Schema field \"\(field)\" repeats the select option \"\(option)\"."
         }
     }
 }
@@ -52,14 +66,29 @@ extension SchemaDSLError: LocalizedError, CustomStringConvertible {
 /// Parser and serializer for the InterlinedList schema DSL
 /// (`"Title:text, Year:number, Released:date"`).
 ///
-/// ## DSL grammar (M3 starter set — see prompts file item 2.2)
+/// ## DSL grammar (M3 starter set + §1.1 select/markdown)
 ///
 /// ```
 /// schema       := field ( "," field )*
-/// field        := name ":" type
+/// field        := name ":" type [ "(" options ")" ]
 /// name         := one-or-more characters, no comma, no colon, trimmed
 /// type         := one of the SchemaFieldType DSL tokens
+/// options      := option ( "|" option )*          -- select only
+/// option       := one-or-more characters, no pipe, no parens, trimmed
 /// ```
+///
+/// The optional `"(" options ")"` suffix applies to `select` only
+/// (`Priority:select(low|med|high)`). The option list is `|`-delimited so it
+/// carries no top-level commas — the plain comma split still separates
+/// fields. Empty option lists (`select()`) and duplicate options are typed
+/// errors (`.emptySelectOptions` / `.duplicateSelectOption`). Non-`select`
+/// types reject a trailing `(...)` as a syntax error. `markdown` parses like
+/// `text` (no options).
+///
+/// The `select(...)` option grammar is a **client convention** — the API
+/// documents the `markdown` token but not `select`'s option syntax (see
+/// `SchemaFieldType.select`). It round-trips only through this file, so it is
+/// the one place to adjust if the server pins a different token/delimiter.
 ///
 /// Whitespace around commas and colons is tolerated (and stripped) on parse,
 /// and re-emitted in canonical form by `serialize` so that `parse → serialize`
@@ -109,23 +138,109 @@ public enum SchemaDSL {
                 throw SchemaDSLError.invalidFieldSyntax(rawField: token)
             }
             let name = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
-            let typeToken = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !name.isEmpty, !typeToken.isEmpty else {
+            let typeSpec = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, !typeSpec.isEmpty else {
                 throw SchemaDSLError.invalidFieldSyntax(rawField: token)
             }
+
+            // Split the type spec into its bare token and an optional
+            // `(...)` option suffix. `select(low|med|high)` → ("select",
+            // "low|med|high"); a bare `text` → ("text", nil).
+            let (typeToken, optionsBody) = try Self.splitTypeSpec(typeSpec, rawField: token)
+
             guard let type = SchemaFieldType(dslToken: typeToken) else {
                 throw SchemaDSLError.unknownType(rawType: typeToken)
             }
+
+            // Option suffixes are only valid for option-carrying types
+            // (`select`). A trailing `(...)` on any other type is a syntax
+            // error so `text(a|b)` does not silently drop the options.
+            let enumValues = try Self.resolveOptions(
+                optionsBody,
+                for: type,
+                fieldName: name,
+                rawField: token
+            )
+
             // Duplicate-name check is case-sensitive — column names are
             // case-sensitive at the row-data layer too.
             guard !seenNames.contains(name) else {
                 throw SchemaDSLError.duplicateFieldName(name)
             }
             seenNames.insert(name)
-            fields.append(SchemaField(name: name, type: type))
+            fields.append(SchemaField(name: name, type: type, enumValues: enumValues))
         }
 
         return ListSchema(fields: fields)
+    }
+
+    // MARK: Type-spec + options parsing
+
+    /// Splits a type spec into its bare token and optional `(...)` body.
+    ///
+    /// `"select(low|med|high)"` → `("select", "low|med|high")`;
+    /// `"text"` → `("text", nil)`. A `(` with no matching trailing `)`,
+    /// or trailing characters after the `)`, is a syntax error.
+    private static func splitTypeSpec(
+        _ spec: String,
+        rawField: String
+    ) throws -> (token: String, optionsBody: String?) {
+        guard let openIndex = spec.firstIndex(of: "(") else {
+            // No paren group: the whole spec is the type token. A stray
+            // closing paren with no opener is malformed.
+            guard !spec.contains(")") else {
+                throw SchemaDSLError.invalidFieldSyntax(rawField: rawField)
+            }
+            return (spec, nil)
+        }
+        // Must close with `)` as the final character, with nothing after it.
+        guard spec.hasSuffix(")") else {
+            throw SchemaDSLError.invalidFieldSyntax(rawField: rawField)
+        }
+        let token = String(spec[spec.startIndex..<openIndex])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let bodyStart = spec.index(after: openIndex)
+        let bodyEnd = spec.index(before: spec.endIndex) // the trailing `)`
+        let body = String(spec[bodyStart..<bodyEnd])
+        guard !token.isEmpty else {
+            throw SchemaDSLError.invalidFieldSyntax(rawField: rawField)
+        }
+        return (token, body)
+    }
+
+    /// Validates and normalises a `select` option body, or asserts that
+    /// non-option types carry no `(...)` suffix.
+    ///
+    /// - Returns: the ordered option array for `select`; `nil` otherwise.
+    private static func resolveOptions(
+        _ body: String?,
+        for type: SchemaFieldType,
+        fieldName: String,
+        rawField: String
+    ) throws -> [String]? {
+        guard type.carriesOptions else {
+            // A `(...)` suffix on a non-option type is a syntax error.
+            if body != nil {
+                throw SchemaDSLError.invalidFieldSyntax(rawField: rawField)
+            }
+            return nil
+        }
+        // `select` requires a `(...)` body with at least one option.
+        guard let body else {
+            throw SchemaDSLError.emptySelectOptions(field: fieldName)
+        }
+        let options = body
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        // Reject empty option lists and any blank option (e.g. `a||b`).
+        guard !options.isEmpty, !options.contains(where: \.isEmpty) else {
+            throw SchemaDSLError.emptySelectOptions(field: fieldName)
+        }
+        var seen: Set<String> = []
+        for option in options where !seen.insert(option).inserted {
+            throw SchemaDSLError.duplicateSelectOption(field: fieldName, option: option)
+        }
+        return options
     }
 
     // MARK: Serialize
@@ -143,7 +258,18 @@ public enum SchemaDSL {
     /// wire never carries it.
     public static func serialize(_ schema: ListSchema) -> String {
         schema.fields
-            .map { "\($0.name):\($0.type.dslToken)" }
+            .map { field in
+                let base = "\(field.name):\(field.type.dslToken)"
+                // `select` re-emits its ordered option set inline. A select
+                // with no options is a malformed in-memory value the editor
+                // should never produce; guard defensively by omitting the
+                // `()` so a reparse fails loudly rather than silently.
+                guard field.type.carriesOptions,
+                      let options = field.enumValues, !options.isEmpty else {
+                    return base
+                }
+                return "\(base)(\(options.joined(separator: "|")))"
+            }
             .joined(separator: ", ")
     }
 }
