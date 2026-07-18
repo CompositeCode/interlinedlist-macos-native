@@ -108,4 +108,4 @@ Composer (Markdown, image+video, scheduling incl. cancel/reschedule, per-message
 3. **Follow-ups:** per-document / per-thread "Export as Markdown" buttons (engine ready); grid on the public `ListDetailView`.
 4. **§4 ship** — Sparkle finalization + notarization.
 
-_Done this session: §1.1 schema select/markdown, §1.2 grid, §1.3 Markdown export (engine + UI), §1.4 templates, §1.5 link previews._
+*Done this session: §1.1 schema select/markdown, §1.2 grid, §1.3 Markdown export (engine + UI), §1.4 templates, §1.5 link previews.*
