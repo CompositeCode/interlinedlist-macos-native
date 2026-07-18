@@ -66,7 +66,12 @@ extension Message {
                 Repost.message(Message(from: box.message))
             },
             scheduledAt: dto.scheduledAt,
-            crossPostResults: (dto.crossPosts ?? []).map(CrossPostResult.init(from:))
+            crossPostResults: (dto.crossPosts ?? []).map(CrossPostResult.init(from:)),
+            // feature-gaps §1.5: thread server-rendered link previews through.
+            // `compactMap` drops entries whose `url` string will not parse so a
+            // `LinkPreview` always carries a usable `URL`. Not persisted in
+            // SwiftData — re-derived from the DTO on every load (see Message).
+            linkPreviews: (dto.linkMetadata?.links ?? []).compactMap(LinkPreview.init(from:))
         )
     }
 }
@@ -101,6 +106,27 @@ extension CrossPostResult {
             providerId: dto.providerId,
             status: status,
             externalURL: dto.externalUrl.flatMap(URL.init(string:))
+        )
+    }
+}
+
+extension LinkPreview {
+    /// Maps a single server-rendered link preview (feature-gaps §1.5).
+    ///
+    /// Returns `nil` when the wire `url` string will not parse, so the caller's
+    /// `compactMap` drops it — a `LinkPreview` is only ever constructed with a
+    /// usable `URL`. The `imageUrl` string is parsed with the same tolerance and
+    /// silently dropped when malformed (the card degrades to no thumbnail rather
+    /// than failing to render).
+    public init?(from dto: LinkPreviewDTO) {
+        guard let url = URL(string: dto.url) else { return nil }
+        self.init(
+            url: url,
+            platform: dto.platform,
+            fetchStatus: dto.fetchStatus,
+            title: dto.title,
+            description: dto.description,
+            imageURL: dto.imageUrl.flatMap(URL.init(string:))
         )
     }
 }
