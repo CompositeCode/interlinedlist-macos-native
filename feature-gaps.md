@@ -16,11 +16,11 @@ The native app is **at or very near full parity**. Every documented API endpoint
 | Cross-post Mastodon/Bluesky/LinkedIn, per-message targets, **result summary**, **pre-flight readiness** | ✅ Shipped |
 | Structured lists: CRUD, nesting, connections graph, watchers (**invite by @handle**) | ✅ Shipped |
 | Schema DSL field types (`text, number, date, select, boolean, url, markdown`) | ✅ **`select` + `markdown` added this session** (kept `email`) |
-| List row views: cards / **grid** / ERD | ⚠️ Cards shipped; **grid = §1.2 (queued, now unblocked)**; ERD = scope TBD |
+| List row views: cards / **grid** / ERD | ✅ Cards + **grid (real Table)** shipped; ERD = scope TBD |
 | Documents: Markdown editor, folders, image upload, public/private, offline sync | ✅ Shipped |
 | Document **templates** | ✅ **Added this session** (Blank / Meeting Notes / Daily Log / PRD) |
 | Rich link previews on posts | ✅ **Added this session** (server metadata → preview card) |
-| Exports: **Markdown** for lists / documents / threads | ⚙️ **Engine shipped** (`MarkdownExporter`); UI wiring = §1.3 remaining |
+| Exports: **Markdown** for lists / documents / threads | ✅ Engine + **My Lists → Markdown** UI shipped; per-doc/thread buttons = follow-up |
 | Exports: CSV | ✅ Shipped |
 | Scheduled post edit/cancel | ✅ Shipped (was mis-listed as blocked — see §2b) |
 | Organizations & roles (**add member by @handle**) | ✅ Shipped |
@@ -39,17 +39,17 @@ The native app is **at or very near full parity**. Every documented API endpoint
 
 `SchemaFieldType` gained `.select` (ordered options via `SchemaField.enumValues`, DSL `Field:select(a|b|c)`) and `.markdown` (long text, Textual preview in `RowInspectorView`). Editor + row cells + DSL parser/serializer updated; 25 new tests. **Backend confirmation needed** on the exact `select` token/delimiter and `email` acceptance — see `feature-blockages.md` NB-4.
 
-### 1.2 — List row views: grid, then ERD  ⚠️ QUEUED (now unblocked)
+### 1.2 — List row views: grid, then ERD  ✅ GRID DONE (this session); ERD scoped separately
 
-Rows still render as a **card list only**. The `Table` deferral reason (macOS 14.4 `TableColumnForEach`) is **moot** — the app targets macOS 15. Agent A has vacated the Lists files, so this is ready to build.
+`ListRowsView.tableMode` (owned lists) now renders a **real SwiftUI `Table`** with one typed column per schema field via `TableColumnForEach` (valid at the macOS 15 target; the stale 14.4 fallback comment is removed). Pagination is a Load-More footer (Table has no per-row appearance hook); cards mode keeps scroll-to-load. Columns come from the schema, falling back to the sorted union of row keys.
 
-> **Prompt for Claude:** "Add a cards/grid view switcher to `ListDetailView`, persisted per list. Grid = SwiftUI `Table` with one `TableColumn` per `ListSchema` field, typed by `SchemaFieldType` (now safe on macOS 15 — update the stale card-only comment). Drive columns from the schema, reuse `ListRowsViewModel` for paging. BDD-test column derivation + empty-schema fallback. Do NOT build ERD yet — first open the web app's ERD for a sample list and report what 'ERD' means there (schema field graph vs. the existing list-to-list connection graph) so we scope it correctly."
+**ERD remains open** — before building, confirm what "ERD" means in the web app (schema field graph vs. the existing list-to-list connection graph) so it's scoped correctly. The public `ListDetailView` (read-only browse) still shows cards only; a grid there is a smaller follow-up.
 
-### 1.3 — Markdown export  ⚙️ ENGINE DONE; UI remaining
+### 1.3 — Markdown export  ✅ DONE (this session)
 
-`MarkdownExporter` (`InterlinedDomain`) renders documents, threads, and lists-as-tables (pipe/newline-escaped), 15 tests. **Remaining:** wire it into the UI. The `/api/exports/*` endpoints are CSV-only, so bulk export re-fetches via domain services client-side (see `feature-blockages.md` NB-3 for the server-side ask). Per-item entry points (document toolbar, thread menu, list menu) can now be added since the Lists/Docs/Timeline files are free.
+`MarkdownExporter` (`InterlinedDomain`) renders documents, threads, and lists-as-tables (pipe/newline-escaped), 15 tests. The Export sheet now offers **"Export My Lists as Markdown"** — `ExportViewModel` paginates owned lists + rows and renders them into a `MarkdownFileDocument` (`.md`) via a second `fileExporter`; 4 view-model tests. The `/api/exports/*` endpoints are CSV-only, so this composes client-side (server-side ask = `blocker-prompts.md` P2-F).
 
-> **Prompt for Claude:** "Wire `MarkdownExporter` into the UI. Add a `.md` `FileDocument` variant next to `ExportDocument`. In the central Export sheet, add a 'Markdown' format for **My Lists** (fetch owned lists + rows via `ListsServicing`, render with `markdown(forLists:)`) — inject `lists` into `ExportViewModel`, update `ExportView` + `ExportViewModelTests` accordingly. Then add per-item 'Export as Markdown' commands: document editor toolbar (`markdown(for:)`), message-thread menu (`markdown(forThreadRoot:replies:)`). BDD-test the view-model orchestration (empty account, pagination, error)."
+**Follow-up (engine already supports it):** per-item "Export as Markdown" affordances — document editor toolbar (`markdown(for:)`) and message-thread menu (`markdown(forThreadRoot:replies:)`).
 
 ### 1.4 — Document templates  ✅ DONE (this session)
 
@@ -103,7 +103,9 @@ Composer (Markdown, image+video, scheduling incl. cancel/reschedule, per-message
 
 ## Suggested order of remaining work
 
-1. **§1.3 Markdown export UI** — engine is done; wire the Export sheet + per-item commands.
-2. **§1.2 Grid view** — unblocked by macOS 15; scope ERD separately after checking the web app.
-3. **Backend:** hand `feature-blockages.md` NB-1 (following feed) and NB-2 (GitHub issues) to the API team — they unlock the most parity.
+1. **Backend:** hand `blocker-prompts.md` **P1-G** (following feed) and **P1-H** (GitHub issue writes) to the API team — they unlock the most parity.
+2. **ERD view** — confirm what "ERD" means in the web app, then build (grid is done).
+3. **Follow-ups:** per-document / per-thread "Export as Markdown" buttons (engine ready); grid on the public `ListDetailView`.
 4. **§4 ship** — Sparkle finalization + notarization.
+
+_Done this session: §1.1 schema select/markdown, §1.2 grid, §1.3 Markdown export (engine + UI), §1.4 templates, §1.5 link previews._
