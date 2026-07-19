@@ -52,6 +52,9 @@ struct MessageRowView: View {
                 repostBanner(original: repost.original)
             }
             bodyText
+            if !renderablePreviews.isEmpty {
+                linkPreviews
+            }
             if !message.tags.isEmpty {
                 tagChips
             }
@@ -119,6 +122,21 @@ struct MessageRowView: View {
             .foregroundStyle(.primary)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The subset of `message.linkPreviews` the domain deems worth showing
+    /// (feature-gaps §1.5). A bare URL with no resolved metadata is filtered
+    /// out here — the row degrades to no card rather than an empty one.
+    private var renderablePreviews: [LinkPreview] {
+        message.linkPreviews.filter(\.isRenderable)
+    }
+
+    private var linkPreviews: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(renderablePreviews) { preview in
+                LinkPreviewCardView(preview: preview)
+            }
+        }
     }
 
     private var tagChips: some View {

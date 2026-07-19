@@ -68,6 +68,12 @@ actor StubListsService: ListsServicing {
 
     private(set) var recorded: [RecordedListsCall] = []
 
+    /// The full `ListSchema` passed to the most recent `updateSchema` call.
+    /// The recorded-call log only captures `fieldsCount`; tests that need to
+    /// assert per-field detail (e.g. a `select` column's `enumValues` round-
+    /// tripping through save) read this instead.
+    private(set) var lastUpdatedSchema: ListSchema?
+
     // MARK: Programmable enqueue helpers
     func enqueueMyLists(success page: OwnedListsPage) { myListsOutcomes.append(.success(page)) }
     func enqueueMyLists(failure error: Error) { myListsOutcomes.append(.failure(error)) }
@@ -176,6 +182,7 @@ actor StubListsService: ListsServicing {
 
     func updateSchema(of listId: String, schema: ListSchema) async throws -> ListSchema {
         recorded.append(.init(kind: .updateSchema(listId: listId, fieldsCount: schema.fields.count)))
+        lastUpdatedSchema = schema
         return try take(&updateSchemaOutcomes, label: "updateSchema")
     }
 

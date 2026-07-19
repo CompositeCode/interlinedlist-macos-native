@@ -35,6 +35,9 @@ struct DocumentsRootView: View {
     @State private var editor: DocumentEditorViewModel?
     @State private var syncStatus: SyncStatusViewModel?
 
+    /// Drives the "New from Template…" picker sheet (feature-gaps.md §1.4).
+    @State private var isTemplatePickerPresented = false
+
     var body: some View {
         Group {
             if let environment, let folderTree, let documentsList, let editor, let syncStatus {
@@ -55,8 +58,18 @@ struct DocumentsRootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .documentsNewDocument)) { _ in
             Task { await handleNewDocument() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .documentsNewFromTemplate)) { _ in
+            isTemplatePickerPresented = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .documentsSyncNow)) { _ in
             Task { await syncStatus?.syncNow() }
+        }
+        .sheet(isPresented: $isTemplatePickerPresented) {
+            if let documentsList {
+                DocumentTemplatePickerView(viewModel: documentsList) { created in
+                    editor?.bind(to: created)
+                }
+            }
         }
     }
 
@@ -103,6 +116,14 @@ struct DocumentsRootView: View {
                 }
                 .keyboardShortcut("n", modifiers: [.option, .command])
                 .help("Create a new document in this folder")
+
+                Button {
+                    isTemplatePickerPresented = true
+                } label: {
+                    Label("New from Template", systemImage: "doc.badge.gearshape")
+                }
+                .keyboardShortcut("n", modifiers: [.option, .command, .shift])
+                .help("Create a new document from a starter template")
 
                 Button {
                     Task { await syncStatus.syncNow() }

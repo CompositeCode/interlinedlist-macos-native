@@ -118,6 +118,116 @@ final class DocumentsListViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.documentsLoaded.isEmpty)
     }
 
+    // MARK: - createDocument(from template:)
+
+    func test_givenNamedTemplate_whenCreatingFromTemplate_thenSeedsTitleAndBody() async {
+        // Happy path: the template's name becomes the title and its Markdown
+        // becomes the body on the create call.
+        let stub = StubDocumentsService()
+        await stub.enqueueDocuments(success: [])
+        let template = DocumentTemplate.meetingNotes
+        let created = DocumentsFixtures.document(
+            id: "D1",
+            title: template.name,
+            body: template.bodyMarkdown
+        )
+        await stub.enqueueCreate(success: created)
+        let viewModel = DocumentsListViewModel(documents: stub)
+        await viewModel.reload(in: nil)
+
+        let result = await viewModel.createDocument(from: template)
+
+        XCTAssertEqual(result?.id, "D1")
+        XCTAssertEqual(viewModel.documentsLoaded.first?.id, "D1")
+        XCTAssertEqual(viewModel.selectedDocumentID, "D1")
+        XCTAssertNil(viewModel.error)
+
+        let recorded = await stub.recorded
+        let createCall = recorded.compactMap { call -> (String, String)? in
+            if case let .create(title, body, _, _) = call.kind { return (title, body) }
+            return nil
+        }.first
+        XCTAssertEqual(createCall?.0, template.name)
+        XCTAssertEqual(createCall?.1, template.bodyMarkdown)
+    }
+
+    func test_givenBlankTemplate_whenCreatingFromTemplate_thenSeedsEmptyBody() async {
+        // Boundary: the Blank template is the identity path — an empty body,
+        // exactly like today's "new blank document" action.
+        let stub = StubDocumentsService()
+        await stub.enqueueDocuments(success: [])
+        let created = DocumentsFixtures.document(id: "D1", title: "Blank", body: "")
+        await stub.enqueueCreate(success: created)
+        let viewModel = DocumentsListViewModel(documents: stub)
+        await viewModel.reload(in: nil)
+
+        let result = await viewModel.createDocument(from: .blank)
+
+        XCTAssertEqual(result?.id, "D1")
+        let recorded = await stub.recorded
+        let createCall = recorded.compactMap { call -> (String, String)? in
+            if case let .create(title, body, _, _) = call.kind { return (title, body) }
+            return nil
+        }.first
+        XCTAssertEqual(createCall?.0, "Blank")
+        XCTAssertEqual(createCall?.1, "")
+    }
+
+    func test_givenBlankTitleOverride_whenCreatingFromTemplate_thenRejectsBeforeService() async {
+        // Invalid input: an explicit whitespace title override is rejected up
+        // front (via the shared create guard) and no create call is made.
+        let stub = StubDocumentsService()
+        await stub.enqueueDocuments(success: [])
+        let viewModel = DocumentsListViewModel(documents: stub)
+        await viewModel.reload(in: nil)
+
+        let result = await viewModel.createDocument(from: .meetingNotes, title: "   ")
+
+        XCTAssertNil(result)
+        XCTAssertEqual(viewModel.error as? DocumentsUIError, .invalidDocumentTitle)
+        let recorded = await stub.recorded
+        let createCalls = recorded.filter {
+            if case .create = $0.kind { return true } else { return false }
+        }
+        XCTAssertTrue(createCalls.isEmpty)
+    }
+
+    func test_givenAPIFailure_whenCreatingFromTemplate_thenSurfacesError() async {
+        // Upstream failure: the service throws and the error surfaces; the
+        // rendered list is untouched.
+        let stub = StubDocumentsService()
+        await stub.enqueueDocuments(success: [])
+        let failure = TestError.upstream("denied")
+        await stub.enqueueCreate(failure: failure)
+        let viewModel = DocumentsListViewModel(documents: stub)
+        await viewModel.reload(in: nil)
+
+        let result = await viewModel.createDocument(from: .dailyLog)
+
+        XCTAssertNil(result)
+        XCTAssertEqual(viewModel.error as? TestError, failure)
+        XCTAssertTrue(viewModel.documentsLoaded.isEmpty)
+    }
+
+    func test_givenExplicitTitle_whenCreatingFromTemplate_thenUsesOverrideNotTemplateName() async {
+        // The caller may override the default (template name) title.
+        let stub = StubDocumentsService()
+        await stub.enqueueDocuments(success: [])
+        let created = DocumentsFixtures.document(id: "D1", title: "Q3 Planning")
+        await stub.enqueueCreate(success: created)
+        let viewModel = DocumentsListViewModel(documents: stub)
+        await viewModel.reload(in: nil)
+
+        _ = await viewModel.createDocument(from: .meetingNotes, title: "Q3 Planning")
+
+        let recorded = await stub.recorded
+        let createTitle = recorded.compactMap { call -> String? in
+            if case let .create(title, _, _, _) = call.kind { return title }
+            return nil
+        }.first
+        XCTAssertEqual(createTitle, "Q3 Planning")
+    }
+
     // MARK: - deleteDocument
 
     func test_givenLoadedDocument_whenDeleting_thenRemovesAndClearsSelection() async {

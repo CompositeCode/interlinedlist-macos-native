@@ -213,7 +213,11 @@ final class ListRowsViewModel {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return .null }
         switch type {
-        case .text, .url, .email, .date:
+        case .text, .url, .email, .date, .select, .markdown:
+            // `select` stores the chosen option's raw text; `markdown`
+            // stores raw Markdown source. Both are string-valued cells —
+            // the option-set constraint is enforced by the picker UI, not
+            // here (this helper also drives free-text entry).
             return .string(trimmed)
         case .number:
             if let intValue = Int(trimmed) { return .int(intValue) }

@@ -152,6 +152,22 @@ final class ListRowsViewModelTests: XCTestCase {
         XCTAssertEqual(ListRowsViewModel.parse("0", as: .boolean), .bool(false))
     }
 
+    func test_givenSelectOption_whenParsingAsSelect_thenReturnsString() {
+        // §1.1 — a select cell stores the chosen option's raw text.
+        XCTAssertEqual(ListRowsViewModel.parse("high", as: .select), .string("high"))
+    }
+
+    func test_givenMarkdownSource_whenParsingAsMarkdown_thenReturnsString() {
+        // §1.1 — a markdown cell stores raw Markdown source verbatim.
+        XCTAssertEqual(ListRowsViewModel.parse("# Title", as: .markdown), .string("# Title"))
+    }
+
+    func test_givenWhitespace_whenParsingAsSelectOrMarkdown_thenReturnsNull() {
+        // Boundary — a cleared select/markdown cell projects to null.
+        XCTAssertEqual(ListRowsViewModel.parse("   ", as: .select), .null)
+        XCTAssertEqual(ListRowsViewModel.parse("", as: .markdown), .null)
+    }
+
     // MARK: - apply(event:)
 
     func test_givenRowEventForOtherList_whenApplied_thenIsNoop() async {
