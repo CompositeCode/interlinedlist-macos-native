@@ -113,7 +113,7 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" build/InterlinedList-unsigned.zip
 
       - name: Upload unsigned .app artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: InterlinedList-unsigned-${{ github.sha }}
           path: build/InterlinedList-unsigned.zip
