@@ -150,6 +150,48 @@ final class AppEnvironment: ObservableObject {
     /// endpoints and returns domain `CSVExport` values.
     let exportsService: ExportsServicing
 
+    /// The global-search surface the Search feature binds against
+    /// (the-gaps.md G5). Exposed as the protocol so test doubles
+    /// substitute in. Fans out over messages / lists / documents and
+    /// returns domain values.
+    let search: SearchServicing
+
+    /// The moderation surface the Blocked & Muted settings pane and the
+    /// per-user / per-message report affordances bind against
+    /// (the-gaps.md G2). Exposed as the protocol so test doubles
+    /// substitute in.
+    let moderation: ModerationServicing
+
+    /// The Direct Messages surface the Messages feature binds against
+    /// (the-gaps.md G1). Exposed as the protocol so test doubles
+    /// substitute in. Wraps the `/api/messages/*` DM endpoints (folders,
+    /// thread, send, recipients, unread, read/trash/restore) and returns
+    /// domain `DirectMessage` / `DMThread` / `DMPage` values.
+    let directMessages: DirectMessagesServicing
+
+    /// Cross-window event bus for the Direct Messages feature (the-gaps.md
+    /// G1). Sending / reading / trashing posts to this bus so the DM list,
+    /// an open thread, and the unread-badge coordinator update in place
+    /// without a refetch.
+    let directMessagesEventBus: DirectMessagesEventBus
+
+    /// Live list-folders surface (the-gaps.md G6). Folders are
+    /// subscriber-gated on create, so the service is rebuilt on each
+    /// access with the current account's entitlements — mirroring
+    /// `liveEntitlements`, so a mid-session subscription change re-gates
+    /// folder creation without stale state. The read / rename / move /
+    /// delete paths are ungated and unaffected.
+    var listFolders: ListFoldersServicing {
+        ListFoldersService(
+            api: listFoldersAPI,
+            entitlements: EntitlementsService(user: currentUserStore.currentUser)
+        )
+    }
+
+    /// The shared kit-layer API client retained so `listFolders` can
+    /// rebuild the folders service with live entitlements on each access.
+    private let listFoldersAPI: APIClientProtocol
+
     /// Designated initializer used by tests and previews that want to
     /// inject a fully synthetic service graph. Production code calls
     /// `live()` instead.
@@ -171,7 +213,12 @@ final class AppEnvironment: ObservableObject {
         followRelationshipReader: FollowRelationshipReading,
         orgService: OrgServicing,
         userService: UserServicing,
-        exportsService: ExportsServicing
+        exportsService: ExportsServicing,
+        search: SearchServicing,
+        moderation: ModerationServicing,
+        directMessages: DirectMessagesServicing,
+        directMessagesEventBus: DirectMessagesEventBus,
+        listFoldersAPI: APIClientProtocol
     ) {
         self.messages = messages
         self.lists = lists
@@ -191,6 +238,11 @@ final class AppEnvironment: ObservableObject {
         self.orgService = orgService
         self.userService = userService
         self.exportsService = exportsService
+        self.search = search
+        self.moderation = moderation
+        self.directMessages = directMessages
+        self.directMessagesEventBus = directMessagesEventBus
+        self.listFoldersAPI = listFoldersAPI
     }
 
     /// Builds the production service graph:
@@ -307,6 +359,24 @@ final class AppEnvironment: ObservableObject {
         // decision-0001 session-only allowlist (`/api/exports/*`), already
         // routed by the shared `authTransport`.
         let exportsService = ExportsService(api: api)
+        // Web-parity batch (the-gaps.md G5 / G2 / G6). All three reuse the
+        // same kit-layer `APIClient` like `lists` / `social` do — their
+        // endpoints are already routed by the shared `authTransport`.
+        //   • Search — full-text over messages / lists / documents (G5).
+        //   • Moderation — blocks / mutes / reports (G2).
+        //   • List folders — the API client is retained on the environment
+        //     so `listFolders` can rebuild the service with live
+        //     entitlements per access (folders are subscriber-gated on
+        //     create, G6).
+        let search = SearchService(api: api)
+        let moderation = ModerationService(api: api)
+        // Direct Messages (the-gaps.md G1). Reuses the same kit-layer
+        // `APIClient` like `lists` / `social` / `search` do — the DM
+        // endpoints are already routed by the shared `authTransport`. The
+        // event bus is a singleton so the DM list, an open thread, and the
+        // dock-badge coordinator all see the same stream.
+        let directMessages = DirectMessagesService(api: api)
+        let directMessagesEventBus = DirectMessagesEventBus()
         return AppEnvironment(
             messages: messages,
             lists: lists,
@@ -325,7 +395,12 @@ final class AppEnvironment: ObservableObject {
             followRelationshipReader: followRelationshipReader,
             orgService: orgService,
             userService: userService,
-            exportsService: exportsService
+            exportsService: exportsService,
+            search: search,
+            moderation: moderation,
+            directMessages: directMessages,
+            directMessagesEventBus: directMessagesEventBus,
+            listFoldersAPI: api
         )
     }
 

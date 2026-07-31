@@ -1,5 +1,7 @@
 # Feature Parity Gaps — macOS app vs. interlinedlist.com
 
+> **⚠️ Superseded (2026-07-31).** This file is now historical. The live web API has grown well beyond the surface this doc reviewed (Direct Messages, Share Links, Moderation, List Folders, Search, GitHub issue writes, X/Twitter, billing, push, …). The current, live-verified gap list and implementation plan live in **[`the-gaps.md`](the-gaps.md)** — use that as the working document. Kept here for provenance.
+
 **Reviewed:** 2026-07-18 · **Branch:** `dev` · **Basis:** [interlinedlist.com/features](https://interlinedlist.com/features) cross-referenced against the App target, `InterlinedDomain`, `InterlinedKit`, and `InterlinedPersistence`.
 
 > **2026-07-18 implementation update.** Most of the client-closable gaps in §1 were **built this session** (schema `select`/`markdown`, link previews, document templates, and the Markdown-export engine). The build is green: **App 375 tests / 0 failures, InterlinedDomain 475 / 0** (Kit 224, Persistence 120 unchanged). Backend-blocked items are tracked in **[`feature-blockages.md`](feature-blockages.md)**, which is reconciled against the canonical **[`blocker-prompts.md`](blocker-prompts.md)**. Several items the first draft called "blocked" turned out to be **already shipped** — see §2b.

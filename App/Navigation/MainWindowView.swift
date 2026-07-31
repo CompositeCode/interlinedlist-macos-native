@@ -18,9 +18,11 @@ import InterlinedDomain
 /// requests roster panel — added in Wave 6.3 to surface the
 /// dedicated Requests management UI alongside the inline tray rows).
 enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
+    case search = "Search"
     case timeline = "Timeline"
     case scheduled = "Scheduled"
     case notifications = "Notifications"
+    case messages = "Messages"
     case lists = "Lists"
     case documents = "Documents"
     case organizations = "Organizations"
@@ -32,9 +34,11 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
     /// SF Symbol name for the row icon. Pure presentation hint; no semantics.
     var systemImage: String {
         switch self {
+        case .search: return "magnifyingglass"
         case .timeline: return "house"
         case .scheduled: return "calendar"
         case .notifications: return "bell"
+        case .messages: return "bubble.left.and.bubble.right"
         case .lists: return "list.bullet.rectangle"
         case .documents: return "doc.text"
         case .organizations: return "building.2"
@@ -74,6 +78,9 @@ struct MainWindowView: View {
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
+                Label(SidebarSection.search.rawValue, systemImage: SidebarSection.search.systemImage)
+                    .tag(SidebarSection.search)
+                    .foregroundStyle(ILColor.onMasthead)
                 Label(SidebarSection.timeline.rawValue, systemImage: SidebarSection.timeline.systemImage)
                     .tag(SidebarSection.timeline)
                     .foregroundStyle(ILColor.onMasthead)
@@ -83,6 +90,9 @@ struct MainWindowView: View {
                     .padding(.leading, 16)
                 Label(SidebarSection.notifications.rawValue, systemImage: SidebarSection.notifications.systemImage)
                     .tag(SidebarSection.notifications)
+                    .foregroundStyle(ILColor.onMasthead)
+                Label(SidebarSection.messages.rawValue, systemImage: SidebarSection.messages.systemImage)
+                    .tag(SidebarSection.messages)
                     .foregroundStyle(ILColor.onMasthead)
                 Label(SidebarSection.lists.rawValue, systemImage: SidebarSection.lists.systemImage)
                     .tag(SidebarSection.lists)
@@ -138,6 +148,27 @@ struct MainWindowView: View {
         // the view tree.
         .onReceive(NotificationCenter.default.publisher(for: .notificationsShow)) { _ in
             selection = .notifications
+        }
+        // Web-parity (the-gaps.md G5) — the ⌘F menu command posts
+        // `.searchShow`; switch the sidebar to Search, then re-post
+        // `.searchFocus` so the field takes focus once it is on screen.
+        .onReceive(NotificationCenter.default.publisher(for: .searchShow)) { _ in
+            selection = .search
+            NotificationCenter.default.post(name: .searchFocus, object: nil)
+        }
+        // A document search hit has no typed deep-link target, so the
+        // search view routes here to land the user on the Documents
+        // section.
+        .onReceive(NotificationCenter.default.publisher(for: .searchShowDocuments)) { _ in
+            selection = .documents
+        }
+        // Direct Messages (the-gaps.md G1) — the ⌥⌘M menu command and the
+        // profile "Message" button post `.directMessagesShow` to route the
+        // sidebar to Messages. The `.directMessagesOpenThread` event that
+        // may accompany it is observed by `DirectMessagesRootView` itself,
+        // which selects the target conversation once it is on screen.
+        .onReceive(NotificationCenter.default.publisher(for: .directMessagesShow)) { _ in
+            selection = .messages
         }
         // M5.x — System notification banner deep-link. `AppDelegate` posts
         // `.notificationDeepLink` with the resolved `NotificationTarget` as
@@ -228,6 +259,11 @@ private struct SidebarDetailDispatcher: View {
 
     var body: some View {
         switch section {
+        case .search:
+            // Web-parity (the-gaps.md G5) — the global search surface
+            // over messages / lists / documents. Routed from the sidebar
+            // and from the ⌘F menu command.
+            SearchRootView()
         case .timeline:
             TimelineRootView(pendingDeepLinkMessageID: $pendingMessageDeepLinkID)
         case .scheduled:
@@ -237,6 +273,12 @@ private struct SidebarDetailDispatcher: View {
             ScheduledPostsRootView()
         case .notifications:
             NotificationsRootView()
+        case .messages:
+            // Web-parity (the-gaps.md G1) — the Direct Messages surface:
+            // folder switcher → conversation list → thread. Routed from
+            // the sidebar, the ⌥⌘M menu command, and the profile
+            // "Message" button.
+            DirectMessagesRootView()
         case .lists:
             // M3 (Wave 4.3) — sign-in routing:
             //   • Signed-in users get `OwnedListsRootView` (Lists CRUD).
