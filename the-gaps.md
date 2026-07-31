@@ -64,7 +64,7 @@ Build has started, backend-first (each gap's layers: Kit → Domain → Persiste
 | **G2 Moderation** | ✅ | ✅ 19 tests | n/a | ⏳ agent | `Moderation` endpoint + `ModerationService` (block/mute/report/isBlocking); fire-and-forget via `sendVoid` |
 | **G6 List Folders** | ✅ | ✅ 17 tests | ⏳ | ✅ agent | `ListFolders` endpoint + `ListFoldersService` (subscriber gate + cycle-safe tree builder); sidebar folder tree wired |
 | **G1 Direct Messages** | ✅ | ✅ 20 tests | ⏭ deferred | ✅ agent | Wire shape captured via one authorized recon DM (trashed). Full UI: folder/conversation/thread panes, `threadUpdates` polling, composer + recipient picker, profile "Message" action, `UnreadBadgeAggregator` (DM + notifications sum). Persistence needs a domain-side store seam (follow-up). |
-| **G3 Share Links** | ✅ | ✅ 18 tests | n/a | ⏳ agent | Wire shapes captured via reversible create→capture→revoke on the test list. `Sharing` endpoint + `SharingService` (lists + documents: create/list/resolve/revoke/claim; subscriber-gated create; `ShareRole` Viewer/Editor/Admin). Collaborator per-person grants = follow-up. |
+| **G3 Share Links** | ✅ | ✅ 18 tests | n/a | ✅ agent | Share Links panel (create/list/revoke + role picker + subscriber upsell) on Lists + Documents toolbars; `ResolveShareView` landing via `ShareURLParser` (`interlinedlist://` + pasted URLs) with claim. Collaborator per-person grants = follow-up. |
 | **D2 Public profile** | ⏳ | — | — | — | Shape verified live (`{id,username,displayName,avatar,headerImage,bio,joinedAt,isPrivate,follower/following/publicMessage/publicListCount}`); ready to add `Users.profile` + replace decision-0002 fallback. |
 | G4, G7–G14 | — | — | — | — | not started |
 

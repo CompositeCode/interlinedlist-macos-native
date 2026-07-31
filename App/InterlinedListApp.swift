@@ -199,6 +199,13 @@ private struct AppRootView: View {
             Task { try? await environment.session.signOut() }
         }
         .onOpenURL { url in
+            // Share Links (the-gaps.md G3) — a `…/lists/shared/{token}` or
+            // `…/documents/shared/{token}` URL (pasted, or delivered via the
+            // `interlinedlist://` scheme) routes to the resolve/claim landing.
+            // Handled first so it does not disturb the OAuth fallback below;
+            // `handle` returns `false` for any non-share URL.
+            if ShareLinkDeepLink.handle(url) { return }
+
             // `interlinedlist://oauth/callback` is the native OAuth redirect URI
             // registered in Info.plist (NW-5). ASWebAuthenticationSession intercepts
             // the URL automatically; this handler is a fallback in case the system

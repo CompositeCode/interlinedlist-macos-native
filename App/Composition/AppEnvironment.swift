@@ -192,6 +192,29 @@ final class AppEnvironment: ObservableObject {
     /// rebuild the folders service with live entitlements on each access.
     private let listFoldersAPI: APIClientProtocol
 
+    /// Live share-links surface (the-gaps.md G3). Creating a link is
+    /// subscriber-gated, so — exactly like `listFolders` — the service is
+    /// rebuilt on each access with the current account's entitlements, so a
+    /// mid-session subscription change re-gates link creation without stale
+    /// state. The list / resolve / revoke / claim paths are ungated and
+    /// unaffected.
+    var sharing: SharingServicing {
+        SharingService(
+            api: sharingAPI,
+            entitlements: EntitlementsService(user: currentUserStore.currentUser)
+        )
+    }
+
+    /// The shared kit-layer API client retained so `sharing` can rebuild the
+    /// sharing service with live entitlements on each access.
+    private let sharingAPI: APIClientProtocol
+
+    /// Base URL used to compose canonical web share URLs (`…/lists/shared/…`)
+    /// when the server does not return a pre-built `ShareLink.url`. Defaults
+    /// to the production host; the App layer reads it through the domain-only
+    /// `URL` type so no kit import leaks into the sharing views.
+    let shareBaseURL: URL
+
     /// Designated initializer used by tests and previews that want to
     /// inject a fully synthetic service graph. Production code calls
     /// `live()` instead.
@@ -218,7 +241,9 @@ final class AppEnvironment: ObservableObject {
         moderation: ModerationServicing,
         directMessages: DirectMessagesServicing,
         directMessagesEventBus: DirectMessagesEventBus,
-        listFoldersAPI: APIClientProtocol
+        listFoldersAPI: APIClientProtocol,
+        sharingAPI: APIClientProtocol,
+        shareBaseURL: URL
     ) {
         self.messages = messages
         self.lists = lists
@@ -243,6 +268,8 @@ final class AppEnvironment: ObservableObject {
         self.directMessages = directMessages
         self.directMessagesEventBus = directMessagesEventBus
         self.listFoldersAPI = listFoldersAPI
+        self.sharingAPI = sharingAPI
+        self.shareBaseURL = shareBaseURL
     }
 
     /// Builds the production service graph:
@@ -400,7 +427,15 @@ final class AppEnvironment: ObservableObject {
             moderation: moderation,
             directMessages: directMessages,
             directMessagesEventBus: directMessagesEventBus,
-            listFoldersAPI: api
+            listFoldersAPI: api,
+            // Share Links (the-gaps.md G3) reuse the same kit-layer
+            // `APIClient`; the API client is retained on the environment so
+            // `sharing` can rebuild the service with live entitlements per
+            // access (link creation is subscriber-gated). The base URL feeds
+            // the canonical web-URL builder for links the server returns
+            // without a pre-built `url`.
+            sharingAPI: api,
+            shareBaseURL: InterlinedKit.defaultBaseURL
         )
     }
 

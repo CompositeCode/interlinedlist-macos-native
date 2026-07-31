@@ -75,6 +75,11 @@ struct MainWindowView: View {
     // re-navigate.
     @State private var pendingMessageDeepLinkID: String? = nil
 
+    // Share Links (the-gaps.md G3) — when an opened share URL resolves to a
+    // `ParsedShare`, `ShareLinkDeepLink` posts `.openShareLink` and this
+    // state drives the `ResolveShareView` landing sheet.
+    @State private var pendingShare: ParsedShare? = nil
+
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
@@ -225,6 +230,26 @@ struct MainWindowView: View {
         }
         .sheet(isPresented: $showExportSheet, onDismiss: { pendingExportType = nil }) {
             ExportView(initialExportType: pendingExportType)
+        }
+        // Share Links (the-gaps.md G3) — an opened share URL posts
+        // `.openShareLink` with the `ParsedShare`. Present the resolve/claim
+        // landing; on a successful claim, route the sidebar to the resource
+        // section so the user lands where they now have access.
+        .onReceive(NotificationCenter.default.publisher(for: .openShareLink)) { note in
+            guard let parsed = note.object as? ParsedShare else { return }
+            pendingShare = parsed
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { pendingShare != nil },
+                set: { if !$0 { pendingShare = nil } }
+            )
+        ) {
+            if let parsed = pendingShare {
+                ResolveShareView(parsed: parsed, environment: environment) { _ in
+                    selection = parsed.kind == .list ? .lists : .documents
+                }
+            }
         }
     }
 }

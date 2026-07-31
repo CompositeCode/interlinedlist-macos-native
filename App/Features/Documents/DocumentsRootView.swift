@@ -38,6 +38,10 @@ struct DocumentsRootView: View {
     /// Drives the "New from Template…" picker sheet (feature-gaps.md §1.4).
     @State private var isTemplatePickerPresented = false
 
+    /// Drives the Share Links panel for the document currently open in the
+    /// editor (the-gaps.md G3).
+    @State private var isShareLinksPresented = false
+
     var body: some View {
         Group {
             if let environment, let folderTree, let documentsList, let editor, let syncStatus {
@@ -126,6 +130,14 @@ struct DocumentsRootView: View {
                 .help("Create a new document from a starter template")
 
                 Button {
+                    isShareLinksPresented = true
+                } label: {
+                    Label("Share Links", systemImage: "link.badge.plus")
+                }
+                .disabled(editor.document == nil)
+                .help("Create and manage shareable links for this document")
+
+                Button {
                     Task { await syncStatus.syncNow() }
                 } label: {
                     Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
@@ -134,6 +146,11 @@ struct DocumentsRootView: View {
                 .help("Pull remote changes and push local edits")
 
                 SyncStatusView(viewModel: syncStatus)
+            }
+        }
+        .sheet(isPresented: $isShareLinksPresented) {
+            if let documentID = editor.document?.id {
+                ShareLinksView(target: .document(id: documentID), environment: environment)
             }
         }
     }
