@@ -25,6 +25,20 @@ struct SettingsRootView: View {
                 .tabItem {
                     Label("Account", systemImage: "person.crop.circle")
                 }
+
+            // Web-parity (the-gaps.md G2) — blocked / muted account
+            // management with inline unblock / unmute.
+            BlockedAndMutedView()
+                .tabItem {
+                    Label("Blocked & Muted", systemImage: "hand.raised")
+                }
+
+            // Document sync agent (synch-plan.md) — enable the background helper
+            // that mirrors documents to a local folder for Obsidian.
+            DocumentSyncSettingsView()
+                .tabItem {
+                    Label("Document Sync", systemImage: "arrow.triangle.2.circlepath")
+                }
         }
         .frame(width: 560, height: 500)
     }

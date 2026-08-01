@@ -14,11 +14,18 @@ import Foundation
 /// - `mastodon` → 307 to `<instance>/oauth/authorize` (requires an `instance`)
 /// - `bluesky`  → 307 to `bsky.social/oauth/authorize` (AT-proto PAR/DPoP)
 /// - `linkedin` → 307 to `linkedin.com/oauth/v2/authorization`
+/// - `twitter`  → 307 to X/Twitter's OAuth authorize page (G7). The provider
+///   slug is `twitter` (not `x`): the live routes are
+///   `/api/auth/twitter/{authorize,callback,status}`, and
+///   `GET /api/auth/twitter/status` returns
+///   `{ configured: true, redirectUri: ".../api/auth/twitter/callback" }`
+///   (verified live 2026-07-31).
 public enum OAuthProvider: String, Sendable, Equatable, CaseIterable {
     case github
     case mastodon
     case bluesky
     case linkedin
+    case twitter
 }
 
 // MARK: - LinkedInStatusResponse
@@ -33,6 +40,30 @@ public enum OAuthProvider: String, Sendable, Equatable, CaseIterable {
 /// `docs/spikes/0002-oauth-identity-linking.md`.
 public struct LinkedInStatusResponse: Decodable, Sendable, Equatable {
     /// Whether the server has a LinkedIn OAuth client configured.
+    public let configured: Bool
+    /// The registered OAuth redirect/callback URL (a web URL on the
+    /// `interlinedlist.com` domain).
+    public let redirectUri: String
+
+    public init(configured: Bool, redirectUri: String) {
+        self.configured = configured
+        self.redirectUri = redirectUri
+    }
+}
+
+// MARK: - TwitterStatusResponse (G7)
+
+/// Response body for `GET /api/auth/twitter/status` (public, no auth):
+/// `{ "configured": true, "redirectUri": "https://…/api/auth/twitter/callback" }`.
+///
+/// Same shape as `LinkedInStatusResponse` (a `{ configured, redirectUri }`
+/// pair) rather than the `configured`-only `ProviderStatusResponse` used by
+/// Bluesky / Mastodon — verified live 2026-07-31, which returned
+/// `{ configured: true, redirectUri: ".../api/auth/twitter/callback" }`.
+/// `redirectUri` is the registered **web** callback URL (an
+/// `https://interlinedlist.com/…` URL, not a native custom scheme).
+public struct TwitterStatusResponse: Decodable, Sendable, Equatable {
+    /// Whether the server has an X/Twitter OAuth client configured.
     public let configured: Bool
     /// The registered OAuth redirect/callback URL (a web URL on the
     /// `interlinedlist.com` domain).

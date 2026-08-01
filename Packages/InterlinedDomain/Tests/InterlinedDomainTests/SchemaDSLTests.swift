@@ -34,8 +34,9 @@ final class SchemaDSLTests: XCTestCase {
     // MARK: - Every type
 
     func test_givenAllSupportedTypes_whenParsing_thenEachTypeIsRecognised() throws {
-        // Given — one column per supported `SchemaFieldType`.
-        let source = "A:text, B:number, C:boolean, D:date, E:url, F:email"
+        // Given — one column per supported `SchemaFieldType`. `select` needs
+        // an inline option set; the rest are bare tokens.
+        let source = "A:text, B:number, C:boolean, D:date, E:url, F:email, G:select(x|y), H:markdown"
 
         // When
         let schema = try SchemaDSL.parse(source)
@@ -245,5 +246,126 @@ final class SchemaDSLTests: XCTestCase {
         // When / Then
         XCTAssertEqual(schema.field(named: "Year")?.type, .number)
         XCTAssertNil(schema.field(named: "Missing"))
+    }
+
+    // MARK: - select options (§1.1)
+
+    func test_givenSelectWithOptions_whenParsing_thenCapturesOrderedOptions() throws {
+        // Happy path — the ordered option set is captured on `enumValues`.
+        let schema = try SchemaDSL.parse("Priority:select(low|med|high)")
+
+        let field = try XCTUnwrap(schema.fields.first)
+        XCTAssertEqual(field.type, .select)
+        XCTAssertEqual(field.enumValues, ["low", "med", "high"])
+    }
+
+    func test_givenSelectAlongsideOtherFields_whenParsing_thenSplitsFieldsCorrectly() throws {
+        // The pipe-delimited option list must not be mistaken for a field
+        // boundary — commas still separate fields, pipes separate options.
+        let schema = try SchemaDSL.parse("Title:text, Priority:select(low|med|high), Done:boolean")
+
+        XCTAssertEqual(schema.fields.map(\.name), ["Title", "Priority", "Done"])
+        XCTAssertEqual(schema.fields.map(\.type), [.text, .select, .boolean])
+        XCTAssertEqual(schema.field(named: "Priority")?.enumValues, ["low", "med", "high"])
+    }
+
+    func test_givenSelectWithWhitespaceInOptions_whenParsing_thenTrimsEachOption() throws {
+        // Whitespace tolerance extends into the option list.
+        let schema = try SchemaDSL.parse("P:select(  low |  med  | high )")
+
+        XCTAssertEqual(schema.field(named: "P")?.enumValues, ["low", "med", "high"])
+    }
+
+    func test_givenSelectSchema_whenSerializedAndReparsed_thenRoundTripsOptions() throws {
+        // Round-trip: options survive serialize → parse with order intact.
+        let original = ListSchema(fields: [
+            SchemaField(name: "Title", type: .text),
+            SchemaField(name: "Priority", type: .select, enumValues: ["low", "med", "high"]),
+            SchemaField(name: "Notes", type: .markdown)
+        ])
+
+        let serialized = SchemaDSL.serialize(original)
+        let reparsed = try SchemaDSL.parse(serialized)
+
+        XCTAssertEqual(serialized, "Title:text, Priority:select(low|med|high), Notes:markdown")
+        XCTAssertEqual(reparsed, original)
+    }
+
+    func test_givenSingleOptionSelect_whenParsing_thenAcceptsOneOption() throws {
+        // Boundary — a single option is valid (a degenerate but legal set).
+        let schema = try SchemaDSL.parse("Status:select(active)")
+
+        XCTAssertEqual(schema.field(named: "Status")?.enumValues, ["active"])
+    }
+
+    // MARK: - select option validation (§1.1)
+
+    func test_givenSelectWithEmptyOptionList_whenParsing_thenThrowsEmptySelectOptions() {
+        // Invalid input — `select()` declares no options.
+        XCTAssertThrowsError(try SchemaDSL.parse("P:select()")) { error in
+            XCTAssertEqual(error as? SchemaDSLError, .emptySelectOptions(field: "P"))
+        }
+    }
+
+    func test_givenSelectWithNoParens_whenParsing_thenThrowsEmptySelectOptions() {
+        // Invalid input — a bare `select` with no `(...)` at all.
+        XCTAssertThrowsError(try SchemaDSL.parse("P:select")) { error in
+            XCTAssertEqual(error as? SchemaDSLError, .emptySelectOptions(field: "P"))
+        }
+    }
+
+    func test_givenSelectWithBlankOption_whenParsing_thenThrowsEmptySelectOptions() {
+        // Boundary — `a||b` yields a blank middle option; rejected.
+        XCTAssertThrowsError(try SchemaDSL.parse("P:select(a||b)")) { error in
+            XCTAssertEqual(error as? SchemaDSLError, .emptySelectOptions(field: "P"))
+        }
+    }
+
+    func test_givenSelectWithDuplicateOptions_whenParsing_thenThrowsDuplicateSelectOption() {
+        // Invalid input — the same option twice.
+        XCTAssertThrowsError(try SchemaDSL.parse("P:select(low|med|low)")) { error in
+            XCTAssertEqual(
+                error as? SchemaDSLError,
+                .duplicateSelectOption(field: "P", option: "low")
+            )
+        }
+    }
+
+    func test_givenNonSelectTypeWithOptions_whenParsing_thenThrowsInvalidFieldSyntax() {
+        // Invalid input — options on a type that does not carry them.
+        XCTAssertThrowsError(try SchemaDSL.parse("P:text(a|b)")) { error in
+            XCTAssertEqual(error as? SchemaDSLError, .invalidFieldSyntax(rawField: "P:text(a|b)"))
+        }
+    }
+
+    func test_givenUnclosedSelectParen_whenParsing_thenThrowsInvalidFieldSyntax() {
+        // Invalid input — missing closing paren.
+        XCTAssertThrowsError(try SchemaDSL.parse("P:select(a|b")) { error in
+            guard case .invalidFieldSyntax = error as? SchemaDSLError else {
+                return XCTFail("Expected invalidFieldSyntax, got \(error)")
+            }
+        }
+    }
+
+    // MARK: - markdown (§1.1)
+
+    func test_givenMarkdownField_whenParsing_thenParsesLikeTextWithNoOptions() throws {
+        // markdown is a long-text type: no options, recognised by token.
+        let schema = try SchemaDSL.parse("Body:markdown")
+
+        let field = try XCTUnwrap(schema.fields.first)
+        XCTAssertEqual(field.type, .markdown)
+        XCTAssertNil(field.enumValues)
+    }
+
+    func test_givenMarkdownWithOptions_whenParsing_thenThrowsInvalidFieldSyntax() {
+        // Boundary — markdown carries no options, so a `(...)` suffix is
+        // rejected the same way as any other non-select type.
+        XCTAssertThrowsError(try SchemaDSL.parse("Body:markdown(a|b)")) { error in
+            XCTAssertEqual(
+                error as? SchemaDSLError,
+                .invalidFieldSyntax(rawField: "Body:markdown(a|b)")
+            )
+        }
     }
 }

@@ -48,6 +48,18 @@ public struct Message: Sendable, Equatable, Identifiable {
     /// return cross-post data for this response.
     public let crossPostResults: [CrossPostResult]
 
+    /// Server-rendered rich link previews for URLs found in the body
+    /// (feature-gaps §1.5). Empty when the message contains no links or the
+    /// server did not resolve any preview metadata for this response.
+    ///
+    /// SCOPE DECISION (feature-gaps §1.5): link previews are treated as a
+    /// fetch-time / UI concern and are **not** persisted in SwiftData
+    /// (`MessageRecord`). They are re-derived from the DTO on every load,
+    /// refreshing naturally on the next fetch. This deliberately avoids a
+    /// SwiftData schema migration; the trade-off is that previews are absent
+    /// when a row is rendered purely from the local cache before a refresh.
+    public let linkPreviews: [LinkPreview]
+
     public init(
         id: String,
         author: UserSummary,
@@ -63,7 +75,8 @@ public struct Message: Sendable, Equatable, Identifiable {
         parentID: String? = nil,
         repost: Repost? = nil,
         scheduledAt: Date? = nil,
-        crossPostResults: [CrossPostResult] = []
+        crossPostResults: [CrossPostResult] = [],
+        linkPreviews: [LinkPreview] = []
     ) {
         self.id = id
         self.author = author
@@ -80,6 +93,7 @@ public struct Message: Sendable, Equatable, Identifiable {
         self.repost = repost
         self.scheduledAt = scheduledAt
         self.crossPostResults = crossPostResults
+        self.linkPreviews = linkPreviews
     }
 }
 
@@ -124,6 +138,84 @@ public struct CrossPostResult: Sendable, Equatable {
         self.providerId = providerId
         self.status = status
         self.externalURL = externalURL
+    }
+}
+
+// MARK: - LinkPreview (feature-gaps §1.5)
+
+/// A server-rendered rich link preview attached to a message.
+///
+/// Maps from `LinkPreviewDTO`. The wire `url` string is coerced to a `URL`
+/// during mapping and entries whose `url` will not parse are dropped, so a
+/// `LinkPreview` always carries a usable `url`. The remaining fields mirror the
+/// server's Open Graph resolution and stay optional because the server may not
+/// have finished (or succeeded at) fetching them.
+public struct LinkPreview: Sendable, Equatable, Identifiable {
+    /// The resolved link. Doubles as the stable identity for `ForEach`.
+    public let url: URL
+    /// Source platform label the server attached (e.g. "youtube", "github"),
+    /// when it recognised one.
+    public let platform: String?
+    /// The server's fetch-state string for this preview. The exact vocabulary
+    /// (which value means "ready") is **not documented** in the API reference
+    /// as of 2026-07-18 — see `isFetchStatusReady`. Kept as the raw string so
+    /// no information is lost and the client stays forward-compatible.
+    public let fetchStatus: String?
+    public let title: String?
+    public let description: String?
+    public let imageURL: URL?
+
+    public var id: URL { url }
+
+    public init(
+        url: URL,
+        platform: String? = nil,
+        fetchStatus: String? = nil,
+        title: String? = nil,
+        description: String? = nil,
+        imageURL: URL? = nil
+    ) {
+        self.url = url
+        self.platform = platform
+        self.fetchStatus = fetchStatus
+        self.title = title
+        self.description = description
+        self.imageURL = imageURL
+    }
+
+    /// Whether `fetchStatus` names a state the client recognises as a completed,
+    /// successful fetch.
+    ///
+    /// NOTE (backend question, feature-gaps §1.5): the API reference does not
+    /// document the `fetchStatus` vocabulary, so we cannot be certain which
+    /// string means "ready". This matches a small, case-insensitive set of the
+    /// conventional success tokens. It is intentionally **not** the sole gate on
+    /// rendering — `isRenderable` also renders whenever a title or image is
+    /// present — so an unknown-but-successful status string never hides an
+    /// otherwise-complete card.
+    public var isFetchStatusReady: Bool {
+        guard let status = fetchStatus?.lowercased() else { return false }
+        return ["ready", "success", "succeeded", "ok", "complete", "completed", "fetched"].contains(status)
+    }
+
+    /// Whether this preview carries enough resolved metadata to be worth
+    /// rendering as a card. True when the server reports a ready fetch status
+    /// OR when a human-meaningful field (title or image) is present. A bare URL
+    /// with no resolved metadata returns `false` — the UI degrades to nothing
+    /// (or a minimal chip) rather than an empty card.
+    public var isRenderable: Bool {
+        if isFetchStatusReady { return true }
+        if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        if imageURL != nil { return true }
+        return false
+    }
+
+    /// The host component shown as the card subtitle (e.g. "github.com"),
+    /// stripped of a leading `www.`. Falls back to the full URL string when the
+    /// URL has no host.
+    public var displayHost: String {
+        guard let host = url.host else { return url.absoluteString }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 }
 

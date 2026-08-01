@@ -122,6 +122,16 @@ public enum Auth {
         Request(method: .get, path: "/api/auth/linkedin/status", auth: .none)
     }
 
+    /// `GET /api/auth/twitter/status` — report whether X/Twitter OAuth is
+    /// configured and the registered redirect URI (G7). **Public** (`.none`),
+    /// mirroring `linkedinStatus()`: verified live 2026-07-31, the endpoint
+    /// returned `200` with
+    /// `{ "configured": true, "redirectUri": "https://…/api/auth/twitter/callback" }`
+    /// to an unauthenticated caller. The provider slug is `twitter` (not `x`).
+    public static func twitterStatus() -> Request<TwitterStatusResponse> {
+        Request(method: .get, path: "/api/auth/twitter/status", auth: .none)
+    }
+
     /// `GET /api/auth/bluesky/status` — whether Bluesky OAuth is configured
     /// on the server. Bearer-authenticated (NW-4).
     public static func blueskyStatus() -> Request<ProviderStatusResponse> {

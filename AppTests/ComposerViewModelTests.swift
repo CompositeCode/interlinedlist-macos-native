@@ -41,7 +41,7 @@ final class ComposerViewModelTests: XCTestCase {
         // M6 options for a plain post.
         let recorded = await stub.recorded
         XCTAssertEqual(recorded.count, 1)
-        if case .createPost(let body, let tags, let visibility, let imageURLs, let videoURLs, let scheduledAt, let mastodon, let bluesky, let linkedIn) = recorded.first?.kind {
+        if case .createPost(let body, let tags, let visibility, let imageURLs, let videoURLs, let scheduledAt, let mastodon, let bluesky, let linkedIn, let twitter) = recorded.first?.kind {
             XCTAssertEqual(body, "hello")
             XCTAssertEqual(tags, [])
             XCTAssertEqual(visibility, .public)
@@ -51,6 +51,7 @@ final class ComposerViewModelTests: XCTestCase {
             XCTAssertTrue(mastodon.isEmpty)
             XCTAssertFalse(bluesky)
             XCTAssertFalse(linkedIn)
+            XCTAssertFalse(twitter)
         } else {
             XCTFail("Expected a `createPost` call, got \(String(describing: recorded.first))")
         }
@@ -240,7 +241,7 @@ final class ComposerViewModelTests: XCTestCase {
         guard case .uploadImage = recorded[0].kind else {
             return XCTFail("Expected uploadImage first, got \(recorded[0].kind)")
         }
-        if case .createPost(_, _, _, let imageURLs, let videoURLs, _, _, _, _) = recorded[1].kind {
+        if case .createPost(_, _, _, let imageURLs, let videoURLs, _, _, _, _, _) = recorded[1].kind {
             XCTAssertEqual(imageURLs, ["https://cdn/uploaded.png"])
             XCTAssertTrue(videoURLs.isEmpty)
         } else {
@@ -269,7 +270,7 @@ final class ComposerViewModelTests: XCTestCase {
         } else {
             XCTFail("Expected uploadVideo, got \(String(describing: recorded.first?.kind))")
         }
-        if case .createPost(_, _, _, _, let videoURLs, _, _, _, _) = recorded.last?.kind {
+        if case .createPost(_, _, _, _, let videoURLs, _, _, _, _, _) = recorded.last?.kind {
             XCTAssertEqual(videoURLs, ["https://cdn/uploaded.mp4"])
         } else {
             XCTFail("Expected createPost, got \(String(describing: recorded.last?.kind))")
@@ -334,7 +335,7 @@ final class ComposerViewModelTests: XCTestCase {
 
         // Then
         let recorded = await stub.recorded
-        if case .createPost(_, _, _, _, _, let scheduledAt, _, _, _) = recorded.first?.kind {
+        if case .createPost(_, _, _, _, _, let scheduledAt, _, _, _, _) = recorded.first?.kind {
             XCTAssertEqual(scheduledAt, when)
         } else {
             XCTFail("Expected createPost with scheduledAt, got \(String(describing: recorded.first?.kind))")
@@ -365,7 +366,7 @@ final class ComposerViewModelTests: XCTestCase {
     // MARK: - M6 cross-post flag passthrough
 
     func test_givenCrossPostToggles_whenSubmitting_thenPassesFlagsAndProviderIds() async throws {
-        // Given — a subscriber enables Mastodon (with ids), Bluesky, LinkedIn.
+        // Given — a subscriber enables Mastodon (with ids), Bluesky, LinkedIn, X.
         let stub = StubMessagesService()
         await stub.enqueueCreatePost(success: MessageFixtures.message(id: "m-xpost"))
         let viewModel = subscriberViewModel(messages: stub)
@@ -374,20 +375,71 @@ final class ComposerViewModelTests: XCTestCase {
         viewModel.mastodonProviderIdsInput = "p-1, p-2 p-2"
         viewModel.crossPostToBluesky = true
         viewModel.crossPostToLinkedIn = true
+        viewModel.crossPostToTwitter = true
 
         // When
         await viewModel.submit()
 
         // Then
         let recorded = await stub.recorded
-        if case .createPost(_, _, _, _, _, _, let mastodon, let bluesky, let linkedIn) = recorded.first?.kind {
+        if case .createPost(_, _, _, _, _, _, let mastodon, let bluesky, let linkedIn, let twitter) = recorded.first?.kind {
             XCTAssertEqual(mastodon, ["p-1", "p-2"]) // deduped, order preserved
             XCTAssertTrue(bluesky)
             XCTAssertTrue(linkedIn)
+            XCTAssertTrue(twitter)
         } else {
             XCTFail("Expected createPost, got \(String(describing: recorded.first?.kind))")
         }
         XCTAssertTrue(viewModel.didFinish)
+    }
+
+    // MARK: - G7 X / Twitter cross-post flag passthrough
+
+    func test_givenTwitterToggleOnly_whenSubmitting_thenPassesTwitterFlagAndLeavesOthersOff() async throws {
+        // Happy path (G7): enabling only the X toggle threads
+        // `crossPostToTwitter: true` through `createPost` while every other
+        // cross-post target stays off — proving the X flag is wired
+        // independently, exactly like LinkedIn.
+        let stub = StubMessagesService()
+        await stub.enqueueCreatePost(success: MessageFixtures.message(id: "m-x-only"))
+        let viewModel = subscriberViewModel(messages: stub)
+        viewModel.body = "hello X"
+        viewModel.crossPostToTwitter = true
+
+        // When
+        await viewModel.submit()
+
+        // Then
+        let recorded = await stub.recorded
+        if case .createPost(_, _, _, _, _, _, let mastodon, let bluesky, let linkedIn, let twitter) = recorded.first?.kind {
+            XCTAssertTrue(twitter)
+            XCTAssertTrue(mastodon.isEmpty)
+            XCTAssertFalse(bluesky)
+            XCTAssertFalse(linkedIn)
+        } else {
+            XCTFail("Expected createPost, got \(String(describing: recorded.first?.kind))")
+        }
+        XCTAssertTrue(viewModel.didFinish)
+    }
+
+    func test_givenTwitterToggleDefault_whenSubmittingPlainPost_thenTwitterFlagIsFalse() async throws {
+        // Boundary (G7): a plain post never opts into X — the default
+        // `crossPostToTwitter` is false and must reach `createPost` as false.
+        let stub = StubMessagesService()
+        await stub.enqueueCreatePost(success: MessageFixtures.message(id: "m-x-default"))
+        let viewModel = subscriberViewModel(messages: stub)
+        viewModel.body = "plain"
+
+        // When
+        await viewModel.submit()
+
+        // Then
+        let recorded = await stub.recorded
+        if case .createPost(_, _, _, _, _, _, _, _, _, let twitter) = recorded.first?.kind {
+            XCTAssertFalse(twitter)
+        } else {
+            XCTFail("Expected createPost, got \(String(describing: recorded.first?.kind))")
+        }
     }
 
     func test_givenMastodonToggledOff_whenSubmitting_thenSendsNoProviderIds() async throws {
@@ -405,7 +457,7 @@ final class ComposerViewModelTests: XCTestCase {
 
         // Then
         let recorded = await stub.recorded
-        if case .createPost(_, _, _, _, _, _, let mastodon, _, _) = recorded.first?.kind {
+        if case .createPost(_, _, _, _, _, _, let mastodon, _, _, _) = recorded.first?.kind {
             XCTAssertTrue(mastodon.isEmpty)
         } else {
             XCTFail("Expected createPost, got \(String(describing: recorded.first?.kind))")

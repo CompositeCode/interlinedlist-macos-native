@@ -30,6 +30,13 @@ Last probed: 2026-07-07. Updated: 2026-07-08.
 | P3-C | `lastRefreshedAt` + `refreshStatus` on lists + `githubSource` on POST | ❌ Open |
 | P3-D | Token revocation + `GET /api/user/sessions` | ❌ Open |
 | P3-E | `RateLimit-*` headers universally | 🟡 Partial — on 2 routes only; macOS nil-guards correctly |
+| P1-G | Following / home feed endpoint | ❌ Open — client UI wired, short-circuits to empty (added 2026-07-18) |
+| P1-H | GitHub issue create/comment + labels/assignees | ❌ Open — largest parity gap; extends P3-C (added 2026-07-18) |
+| P2-F | Markdown export format / per-item export | ❌ Open — client renders MD itself for now (added 2026-07-18) |
+| P2-G | Schema DSL `select`/`markdown` token spec | ❌ Open — client shipped both; needs token/validation confirm (added 2026-07-18) |
+| P3-F | Link-preview `fetchStatus` value docs | ❌ Open — client renders previews; gate is forward-compatible (added 2026-07-18) |
+| P3-G | List "save to my lists" clone-with-rows | ❌ Open — copies metadata+schema only (added 2026-07-18) |
+| P3-H | Message edit verb: `PATCH` (docs) vs `PUT` (client) | ❌ Open — reconcile reference and client (added 2026-07-18) |
 
 ---
 
@@ -228,10 +235,73 @@ Add `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset` to every authent
 
 ---
 
+## Open — Web-parity pass (added 2026-07-18)
+
+Surfaced by the 2026-07-18 feature-parity review against interlinedlist.com/features. P1-G and P1-H unlock the most user-visible parity.
+
+### P1-G — Following / home feed endpoint
+
+**Status:** The macOS client's `TimelineScope.following` is fully UI-wired (All / Mine / Following picker), but `MessagesService.timeline` short-circuits `.following` to an empty page because no endpoint exists — it shows a "coming soon" empty state.
+
+**PROMPT:**
+
+You are working on the InterlinedList API (interlinedlist.com). Add a followed-accounts timeline feed. Preferred: extend `GET /api/messages` with `?scope=following` (or add `GET /api/feed/following`), returning only messages authored by accounts the caller follows, using the **same paginated envelope** as `GET /api/messages` (same `limit`/`offset`/`hasMore` shape). Bearer auth. Document it. The macOS client already has the UI wired and flips one branch to consume it.
+
+### P1-H — GitHub issue create/comment + labels/assignees
+
+**Status:** The client has a read-only `GitHubListSource` projection refreshed manually. P3-C covers refresh *metadata*; this covers issue **writes** and **labels/assignees**, which the site advertises ("create and comment on issues within platform," "automatic label and assignee pulling").
+
+**PROMPT:**
+
+You are working on the InterlinedList API (interlinedlist.com). Extend GitHub-synced lists so the macOS client can reach the advertised issue features. Define and document: (1) issue **labels** and **assignees** as fields on GitHub-sourced list rows; (2) an endpoint to **create a GitHub issue** from a synced list; (3) an endpoint to **comment on an issue**. Provide the request/response shapes. Coordinate with P3-C (refresh metadata + `githubSource` on create).
+
+### P2-F — Markdown export format / per-item export
+
+**Status:** `/api/exports/*` returns CSV only (no format negotiation, no per-item endpoints). The macOS client now renders Markdown itself from domain models (`MarkdownExporter`), which requires N+1 refetches for bulk export.
+
+**PROMPT:**
+
+You are working on the InterlinedList API (interlinedlist.com). Add Markdown export. (1) A format param on the four export endpoints, e.g. `GET /api/exports/lists?format=md` (or `Accept: text/markdown`), returning Markdown. (2) Per-resource export endpoints: `GET /api/documents/[id]/export?format=md`, `GET /api/messages/[id]/thread/export?format=md`, `GET /api/lists/[id]/export?format=md`. Lists should render as Markdown tables ("structured table conversion").
+
+### P2-G — Schema DSL `select`/`markdown` token spec
+
+**Status:** The macOS client shipped `select` and `markdown` schema field types (2026-07-18). The DSL type taxonomy has never been enumerated by the API (this is the old `API-backend-prompts-to-build.md` item 2.2). The schema crosses the wire as a DSL string round-tripping through the client's parser only, so these client assumptions are **unverified**.
+
+**PROMPT:**
+
+You are working on the InterlinedList API (interlinedlist.com). Document and confirm the list schema DSL type tokens the macOS client now emits: (1) **`select`** with an ordered option set — the client uses `Field:select(a|b|c)` (token `select`, `(...)` wrapper, `|` delimiter). Confirm the token, the delimiter, and whether the server persists and re-emits the option list verbatim on `GET .../schema` or normalizes it. (2) **`markdown`** — confirm the cell value is a plain JSON string of raw Markdown. (3) Confirm the server accepts the existing **`email`** token on `PUT .../schema`.
+
+### P3-F — Link-preview `fetchStatus` value docs
+
+**Status:** The server returns `linkMetadata.links[].fetchStatus`; the client now renders preview cards and gates on a forward-compatible set of "ready-ish" values plus title/image presence.
+
+**PROMPT:**
+
+You are working on the InterlinedList API (interlinedlist.com). Document the closed value set for `fetchStatus` on message `linkMetadata.links[]` — specifically which value means "preview ready to show" vs. "still fetching" vs. "failed" — so the macOS client can gate rendering on the authoritative token(s).
+
+### P3-G — List "save to my lists" clone-with-rows
+
+**Status:** `ListDetailViewModel.saveToMyLists` copies metadata + schema only; a documented degradation because no clone endpoint exists.
+
+**PROMPT:**
+
+You are working on the InterlinedList API (interlinedlist.com). Add `POST /api/lists/[id]/clone` (or a rows-copy option on save) that duplicates a public list's rows into a new owned list, so "save to my lists" can carry the data, not just the schema.
+
+### P3-H — Message edit verb reconciliation (`PATCH` vs `PUT`)
+
+**Status:** The API reference documents `PATCH /api/messages/[id]` for message edit; the shipped macOS client issues `PUT` (both work live). Reference and client disagree.
+
+**PROMPT:**
+
+You are working on the InterlinedList API (interlinedlist.com). The API reference documents message edit as `PATCH /api/messages/[id]`, but the macOS client sends `PUT` and it works. Confirm the canonical verb and either update the reference to match the live behavior or document that both are accepted.
+
+---
+
 ## Change log
 
 | Date | Change |
 |------|--------|
+| 2026-07-18 | Web-parity pass: added P1-G (following feed), P1-H (GitHub issue writes), P2-F (Markdown export), P2-G (schema DSL select/markdown), P3-F (link-preview fetchStatus), P3-G (list clone), P3-H (PATCH/PUT). Confirmed P1-A/P1-C/P1-D still resolved + wired via code (scheduled cancel/reschedule, bluesky/mastodon readiness, watcher/org invite-by-handle). |
 | 2026-07-08 | Recreated from `API-backend-prompts-to-build.md` + `Backend-Handoff-Prompts.md` (both deleted). Marked P1-A, P1-B, P1-C, P1-D, P2-A resolved — confirmed via live probe and macOS NW features complete. |
 | 2026-07-07 | Live probe: P2-A resolved, P1-A endpoints exist (not 404), P3-E still absent. |
 | 2026-07-04 | `Backend-Handoff-Prompts.md` authored with copy-paste prompts. |

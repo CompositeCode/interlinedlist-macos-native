@@ -27,6 +27,7 @@ struct OwnedListsRootView: View {
     @State private var showsNewListSheet: Bool = false
     @State private var showsSchemaEditor: Bool = false
     @State private var showsWatchers: Bool = false
+    @State private var showsShareLinks: Bool = false
     @State private var showsConnections: Bool = false
     @State private var listIDPendingDelete: String?
 
@@ -118,9 +119,18 @@ struct OwnedListsRootView: View {
                 Button {
                     showsWatchers = true
                 } label: {
-                    Label("Share", systemImage: "person.2")
+                    Label("Watchers", systemImage: "person.2")
                 }
                 .disabled(viewModel.selectedListID == nil)
+                .help("Manage who can see and edit this list")
+
+                Button {
+                    showsShareLinks = true
+                } label: {
+                    Label("Share Links", systemImage: "link.badge.plus")
+                }
+                .disabled(viewModel.selectedListID == nil)
+                .help("Create and manage shareable links for this list")
 
                 Button {
                     showsConnections = true
@@ -146,6 +156,11 @@ struct OwnedListsRootView: View {
         .sheet(isPresented: $showsWatchers) {
             if let environment, let listId = viewModel.selectedListID {
                 WatchersView(listId: listId, environment: environment)
+            }
+        }
+        .sheet(isPresented: $showsShareLinks) {
+            if let environment, let listId = viewModel.selectedListID {
+                ShareLinksView(target: .list(id: listId), environment: environment)
             }
         }
         .sheet(isPresented: $showsConnections) {
@@ -185,6 +200,11 @@ struct OwnedListsRootView: View {
             get: { viewModel.selectedListID },
             set: { viewModel.select(id: $0) }
         )) {
+            // Web-parity (the-gaps.md G6) — folder tree above the lists.
+            // Self-contained section that owns its own folders view model.
+            ListFoldersSectionView()
+
+            Section("Lists") {
             if viewModel.lists_loaded.isEmpty, viewModel.isLoading {
                 ProgressView()
                     .accessibilityLabel("Loading lists")
@@ -215,6 +235,7 @@ struct OwnedListsRootView: View {
                     )
                 }
             }
+            } // Section("Lists")
         }
         .listStyle(.sidebar)
         .navigationSplitViewColumnWidth(min: 220, ideal: 260)

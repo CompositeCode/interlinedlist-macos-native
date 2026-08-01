@@ -30,7 +30,8 @@ enum MessageFixtures {
         repostCount: Int = 0,
         replyCount: Int? = nil,
         parentID: String? = nil,
-        repost: Repost? = nil
+        repost: Repost? = nil,
+        linkPreviews: [LinkPreview] = []
     ) -> Message {
         Message(
             id: id,
@@ -46,7 +47,8 @@ enum MessageFixtures {
             replyCount: replyCount,
             parentID: parentID,
             repost: repost,
-            scheduledAt: nil
+            scheduledAt: nil,
+            linkPreviews: linkPreviews
         )
     }
 

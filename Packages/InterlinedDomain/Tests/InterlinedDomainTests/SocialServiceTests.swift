@@ -178,12 +178,41 @@ final class SocialServiceTests: XCTestCase {
         }
     }
 
-    // MARK: - profile (decision 0002 — public-profile fallback)
+    // MARK: - profile (D2 public endpoint + decision-0002 fallback)
 
-    func test_givenUsernameWithMessages_whenLoadingProfile_thenMapsEmbeddedUser() async throws {
-        // Given — the username's public-messages feed has at least one entry,
-        // so the embedded author is available to project from.
+    func test_givenPublicProfileEndpoint_whenLoadingProfile_thenMapsRichProfile() async throws {
+        // Given — the dedicated `GET /api/users/{username}` endpoint (D2).
         let api = StubAPIClient()
+        await api.enqueue(json: #"""
+        {"id":"user-ada","username":"ada","displayName":"Ada Lovelace",
+         "avatar":"https://cdn/ada.png","headerImage":null,"bio":"Countess of Computing",
+         "joinedAt":"2026-03-23T23:23:59.755Z","isPrivate":false,
+         "followerCount":42,"followingCount":7,"publicMessageCount":10,"publicListCount":2}
+        """#)
+        let service = SocialService(api: api)
+
+        // When
+        let profile = try await service.profile(username: "ada")
+
+        // Then — the rich payload maps straight through (no counts stitch).
+        XCTAssertEqual(profile.id, "user-ada")
+        XCTAssertEqual(profile.username, "ada")
+        XCTAssertEqual(profile.bio, "Countess of Computing")
+        XCTAssertEqual(profile.followerCount, 42)
+        XCTAssertEqual(profile.followingCount, 7)
+        XCTAssertNotNil(profile.joinedAt)
+
+        // And — it hits the public-profile path, not the message fallback.
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.path, "/api/users/ada")
+    }
+
+    func test_givenProfileEndpoint404_whenLoadingProfile_thenFallsBackToEmbeddedAuthor() async throws {
+        // Given — a pre-migration server that 404s the profile endpoint; the
+        // decision-0002 fallback derives identity from the embedded author.
+        let api = StubAPIClient()
+        await api.enqueue(failure: .notFound(serverMessage: "no profile endpoint"))
         await api.enqueue(json: Fixtures.paginatedMessages(ids: ["m-1"]))
         let service = SocialService(api: api)
 
@@ -194,20 +223,17 @@ final class SocialServiceTests: XCTestCase {
         XCTAssertEqual(profile.id, "user-ada")
         XCTAssertEqual(profile.username, "ada")
         XCTAssertEqual(profile.displayName, "Ada Lovelace")
-        XCTAssertEqual(profile.avatarURL?.absoluteString, "https://cdn.interlinedlist.com/ada.png")
 
-        // And — request shape: tiny page (limit 1, offset 0), no full feed pull.
+        // And — the fallback hit the tiny public-messages page.
         let recorded = await api.recorded
-        XCTAssertEqual(recorded.first?.path, "/api/user/ada/messages")
-        XCTAssertEqual(recorded.first?.query["limit"], "1")
-        XCTAssertEqual(recorded.first?.query["offset"], "0")
+        XCTAssertEqual(recorded.last?.path, "/api/user/ada/messages")
+        XCTAssertEqual(recorded.last?.query["limit"], "1")
     }
 
-    func test_givenUsernameWithMessages_whenLoadingProfile_thenRicherFieldsAreNilForM1() async throws {
-        // Given — happy path again, but asserting the M1 limitation is
-        // encoded as a test rather than a hidden assumption: the fallback
-        // cannot populate bio/counts/joinedAt, so they must be `nil`.
+    func test_givenFallbackAuthor_whenLoadingProfile_thenRicherFieldsAreNil() async throws {
+        // Given — the fallback path cannot populate bio/counts/joinedAt.
         let api = StubAPIClient()
+        await api.enqueue(failure: .notFound(serverMessage: "no profile endpoint"))
         await api.enqueue(json: Fixtures.paginatedMessages(ids: ["m-1"]))
         let service = SocialService(api: api)
 
@@ -222,10 +248,10 @@ final class SocialServiceTests: XCTestCase {
         XCTAssertFalse(profile.isPrivate)
     }
 
-    func test_givenUsernameWithNoMessages_whenLoadingProfile_thenThrowsProfileUnavailable() async throws {
-        // Given — boundary / empty path: zero public messages means no
-        // embedded author to project from.
+    func test_givenFallbackWithNoMessages_whenLoadingProfile_thenThrowsProfileUnavailable() async throws {
+        // Given — endpoint 404s AND the user has zero public messages.
         let api = StubAPIClient()
+        await api.enqueue(failure: .notFound(serverMessage: "no profile endpoint"))
         await api.enqueue(json: Fixtures.paginatedMessages(ids: []))
         let service = SocialService(api: api)
 
@@ -238,10 +264,10 @@ final class SocialServiceTests: XCTestCase {
         }
     }
 
-    func test_givenAPIReturns404_whenLoadingProfile_thenThrowsAPIError() async throws {
-        // Given — upstream API failure: username does not exist.
+    func test_givenProfileEndpointServerError_whenLoadingProfile_thenThrowsWithoutFallback() async throws {
+        // Given — a non-404 failure must propagate, not trigger the fallback.
         let api = StubAPIClient()
-        await api.enqueue(failure: .notFound(serverMessage: "user not found"))
+        await api.enqueue(failure: .httpStatus(code: 500, serverMessage: "boom"))
         let service = SocialService(api: api)
 
         // When / Then
@@ -249,8 +275,12 @@ final class SocialServiceTests: XCTestCase {
             _ = try await service.profile(username: "nobody")
             XCTFail("Expected an APIError")
         } catch let error as APIError {
-            XCTAssertEqual(error, .notFound(serverMessage: "user not found"))
+            XCTAssertEqual(error, .httpStatus(code: 500, serverMessage: "boom"))
         }
+        // And — no fallback message call was made.
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.path, "/api/users/nobody")
     }
 
     func test_givenAPIReturnsMalformedPayload_whenLoadingProfile_thenThrowsDecoding() async throws {

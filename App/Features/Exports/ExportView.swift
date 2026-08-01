@@ -45,7 +45,7 @@ struct ExportView: View {
         }
         .task {
             guard viewModel == nil, let environment else { return }
-            let vm = ExportViewModel(exportsService: environment.exportsService)
+            let vm = ExportViewModel(exportsService: environment.exportsService, lists: environment.lists)
             viewModel = vm
             if let initialExportType {
                 vm.export(initialExportType)
@@ -123,6 +123,20 @@ private struct ExportContentView: View {
                 viewModel.errorMessage = error.localizedDescription
             }
         }
+        .fileExporter(
+            isPresented: Binding(
+                get: { viewModel.pendingMarkdownExport != nil },
+                set: { if !$0 { viewModel.pendingMarkdownExport = nil } }
+            ),
+            document: MarkdownFileDocument(viewModel.pendingMarkdownExport?.text),
+            contentType: .markdownText,
+            defaultFilename: viewModel.pendingMarkdownExport?.filename ?? "export"
+        ) { result in
+            viewModel.pendingMarkdownExport = nil
+            if case .failure(let error) = result {
+                viewModel.errorMessage = error.localizedDescription
+            }
+        }
     }
 }
 
@@ -143,6 +157,15 @@ private struct ExportRowView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
+            if type == .lists {
+                // Lists also export as Markdown tables ("structured table
+                // conversion"); other types remain CSV-only for now.
+                Button("Markdown…") {
+                    viewModel.exportListsAsMarkdown()
+                }
+                .disabled(viewModel.isExporting)
+                .accessibilityLabel("Export My Lists as Markdown")
+            }
             Button("Export CSV…") {
                 viewModel.export(type)
             }
@@ -183,5 +206,44 @@ struct ExportDocument: FileDocument {
 
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: data)
+    }
+}
+
+// MARK: - MarkdownFileDocument
+
+/// A `FileDocument` wrapping a rendered Markdown string for the `.fileExporter`
+/// save panel — the AppKit-free way to save the client-composed Markdown export
+/// (feature-gaps.md §1.3) without an `NSSavePanel`.
+struct MarkdownFileDocument: FileDocument {
+    static let readableContentTypes: [UTType] = [.markdownText, .plainText]
+
+    let text: String
+
+    /// Accepts `nil` so the `.fileExporter`'s `document:` parameter is always
+    /// satisfied even before a Markdown export is pending; `isPresented` gates
+    /// when the dialog actually appears.
+    init(_ text: String?) {
+        self.text = text ?? ""
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        if let data = configuration.file.regularFileContents {
+            self.text = String(decoding: data, as: UTF8.self)
+        } else {
+            self.text = ""
+        }
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
+
+extension UTType {
+    /// Markdown (`.md`). Resolves to the system-declared `net.daringfireball.markdown`
+    /// on macOS 15, falling back to a dynamic type conforming to plain text so the
+    /// save panel still applies a `.md` extension.
+    static var markdownText: UTType {
+        UTType(filenameExtension: "md", conformingTo: .plainText) ?? .plainText
     }
 }

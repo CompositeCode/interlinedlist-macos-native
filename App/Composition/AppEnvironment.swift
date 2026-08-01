@@ -94,6 +94,15 @@ final class AppEnvironment: ObservableObject {
     /// doubles substitute in.
     let documentsService: DocumentsServicing
 
+    /// The server-side document-templates surface (the-gaps.md G12) — the
+    /// user's own saved template documents. Distinct from the client-side
+    /// `DocumentTemplate.builtIn` catalog: this lists / creates-from / seeds
+    /// server templates so the "New from Template" picker can show a
+    /// "Your templates" section. Exposed as the protocol so test doubles
+    /// substitute in. Ungated, so it is a plain stored service (no live
+    /// entitlements rebuild).
+    let documentTemplatesService: DocumentTemplatesServicing
+
     /// The owner of `/api/documents/sync` — the M4 offline backbone
     /// (PLAN.md §3, §6 M4). The App layer reaches in directly for the
     /// `syncNow()` button on the toolbar; the rest of the App talks to
@@ -150,6 +159,71 @@ final class AppEnvironment: ObservableObject {
     /// endpoints and returns domain `CSVExport` values.
     let exportsService: ExportsServicing
 
+    /// The global-search surface the Search feature binds against
+    /// (the-gaps.md G5). Exposed as the protocol so test doubles
+    /// substitute in. Fans out over messages / lists / documents and
+    /// returns domain values.
+    let search: SearchServicing
+
+    /// The moderation surface the Blocked & Muted settings pane and the
+    /// per-user / per-message report affordances bind against
+    /// (the-gaps.md G2). Exposed as the protocol so test doubles
+    /// substitute in.
+    let moderation: ModerationServicing
+
+    /// The Direct Messages surface the Messages feature binds against
+    /// (the-gaps.md G1). Exposed as the protocol so test doubles
+    /// substitute in. Wraps the `/api/messages/*` DM endpoints (folders,
+    /// thread, send, recipients, unread, read/trash/restore) and returns
+    /// domain `DirectMessage` / `DMThread` / `DMPage` values.
+    let directMessages: DirectMessagesServicing
+
+    /// Cross-window event bus for the Direct Messages feature (the-gaps.md
+    /// G1). Sending / reading / trashing posts to this bus so the DM list,
+    /// an open thread, and the unread-badge coordinator update in place
+    /// without a refetch.
+    let directMessagesEventBus: DirectMessagesEventBus
+
+    /// Live list-folders surface (the-gaps.md G6). Folders are
+    /// subscriber-gated on create, so the service is rebuilt on each
+    /// access with the current account's entitlements — mirroring
+    /// `liveEntitlements`, so a mid-session subscription change re-gates
+    /// folder creation without stale state. The read / rename / move /
+    /// delete paths are ungated and unaffected.
+    var listFolders: ListFoldersServicing {
+        ListFoldersService(
+            api: listFoldersAPI,
+            entitlements: EntitlementsService(user: currentUserStore.currentUser)
+        )
+    }
+
+    /// The shared kit-layer API client retained so `listFolders` can
+    /// rebuild the folders service with live entitlements on each access.
+    private let listFoldersAPI: APIClientProtocol
+
+    /// Live share-links surface (the-gaps.md G3). Creating a link is
+    /// subscriber-gated, so — exactly like `listFolders` — the service is
+    /// rebuilt on each access with the current account's entitlements, so a
+    /// mid-session subscription change re-gates link creation without stale
+    /// state. The list / resolve / revoke / claim paths are ungated and
+    /// unaffected.
+    var sharing: SharingServicing {
+        SharingService(
+            api: sharingAPI,
+            entitlements: EntitlementsService(user: currentUserStore.currentUser)
+        )
+    }
+
+    /// The shared kit-layer API client retained so `sharing` can rebuild the
+    /// sharing service with live entitlements on each access.
+    private let sharingAPI: APIClientProtocol
+
+    /// Base URL used to compose canonical web share URLs (`…/lists/shared/…`)
+    /// when the server does not return a pre-built `ShareLink.url`. Defaults
+    /// to the production host; the App layer reads it through the domain-only
+    /// `URL` type so no kit import leaks into the sharing views.
+    let shareBaseURL: URL
+
     /// Designated initializer used by tests and previews that want to
     /// inject a fully synthetic service graph. Production code calls
     /// `live()` instead.
@@ -163,6 +237,7 @@ final class AppEnvironment: ObservableObject {
         listsEventBus: ListsEventBus,
         listsStore: ListsStore,
         documentsService: DocumentsServicing,
+        documentTemplatesService: DocumentTemplatesServicing,
         documentSyncEngine: DocumentSyncEngine,
         documentSyncEvents: AsyncStream<DocumentSyncEvent>,
         notificationsService: NotificationsServicing,
@@ -171,7 +246,14 @@ final class AppEnvironment: ObservableObject {
         followRelationshipReader: FollowRelationshipReading,
         orgService: OrgServicing,
         userService: UserServicing,
-        exportsService: ExportsServicing
+        exportsService: ExportsServicing,
+        search: SearchServicing,
+        moderation: ModerationServicing,
+        directMessages: DirectMessagesServicing,
+        directMessagesEventBus: DirectMessagesEventBus,
+        listFoldersAPI: APIClientProtocol,
+        sharingAPI: APIClientProtocol,
+        shareBaseURL: URL
     ) {
         self.messages = messages
         self.lists = lists
@@ -182,6 +264,7 @@ final class AppEnvironment: ObservableObject {
         self.listsEventBus = listsEventBus
         self.listsStore = listsStore
         self.documentsService = documentsService
+        self.documentTemplatesService = documentTemplatesService
         self.documentSyncEngine = documentSyncEngine
         self.documentSyncEvents = documentSyncEvents
         self.notificationsService = notificationsService
@@ -191,6 +274,13 @@ final class AppEnvironment: ObservableObject {
         self.orgService = orgService
         self.userService = userService
         self.exportsService = exportsService
+        self.search = search
+        self.moderation = moderation
+        self.directMessages = directMessages
+        self.directMessagesEventBus = directMessagesEventBus
+        self.listFoldersAPI = listFoldersAPI
+        self.sharingAPI = sharingAPI
+        self.shareBaseURL = shareBaseURL
     }
 
     /// Builds the production service graph:
@@ -215,7 +305,10 @@ final class AppEnvironment: ObservableObject {
     /// a single session, and document sync (M4) is what actually
     /// needs persistence.
     static func live() -> AppEnvironment {
-        let tokenStore = KeychainTokenStore()
+        // Store the bearer token in the shared Keychain access group so the
+        // bundled document-sync agent can read it (silent, single sign-in).
+        // On first read after upgrade the store migrates any legacy token.
+        let tokenStore = KeychainTokenStore(accessGroup: SyncServiceController.sharedKeychainAccessGroup)
         let credentialStore = KeychainCredentialStore()
         // Dedicated URLSession with ephemeral (in-memory) cookie storage so the
         // session-login cookie is isolated from URLSession.shared and never
@@ -284,6 +377,11 @@ final class AppEnvironment: ObservableObject {
             api: api,
             sync: documentSyncEngine
         )
+        // Server document templates (the-gaps.md G12). Reuses the same
+        // kit-layer `APIClient` like the other services do — the
+        // `/api/documents/templates` endpoints are already routed by the
+        // shared `authTransport`. Ungated, so a plain stored service.
+        let documentTemplatesService = DocumentTemplatesService(api: api)
         let documentSyncEvents = documentSyncEngine.events
         // M5 — Notifications + Social write surface (PLAN.md §6 M5).
         // `NotificationsService` already exists with the read + mark
@@ -307,6 +405,24 @@ final class AppEnvironment: ObservableObject {
         // decision-0001 session-only allowlist (`/api/exports/*`), already
         // routed by the shared `authTransport`.
         let exportsService = ExportsService(api: api)
+        // Web-parity batch (the-gaps.md G5 / G2 / G6). All three reuse the
+        // same kit-layer `APIClient` like `lists` / `social` do — their
+        // endpoints are already routed by the shared `authTransport`.
+        //   • Search — full-text over messages / lists / documents (G5).
+        //   • Moderation — blocks / mutes / reports (G2).
+        //   • List folders — the API client is retained on the environment
+        //     so `listFolders` can rebuild the service with live
+        //     entitlements per access (folders are subscriber-gated on
+        //     create, G6).
+        let search = SearchService(api: api)
+        let moderation = ModerationService(api: api)
+        // Direct Messages (the-gaps.md G1). Reuses the same kit-layer
+        // `APIClient` like `lists` / `social` / `search` do — the DM
+        // endpoints are already routed by the shared `authTransport`. The
+        // event bus is a singleton so the DM list, an open thread, and the
+        // dock-badge coordinator all see the same stream.
+        let directMessages = DirectMessagesService(api: api)
+        let directMessagesEventBus = DirectMessagesEventBus()
         return AppEnvironment(
             messages: messages,
             lists: lists,
@@ -317,6 +433,7 @@ final class AppEnvironment: ObservableObject {
             listsEventBus: listsEventBus,
             listsStore: listsStore,
             documentsService: documentsService,
+            documentTemplatesService: documentTemplatesService,
             documentSyncEngine: documentSyncEngine,
             documentSyncEvents: documentSyncEvents,
             notificationsService: notificationsService,
@@ -325,7 +442,20 @@ final class AppEnvironment: ObservableObject {
             followRelationshipReader: followRelationshipReader,
             orgService: orgService,
             userService: userService,
-            exportsService: exportsService
+            exportsService: exportsService,
+            search: search,
+            moderation: moderation,
+            directMessages: directMessages,
+            directMessagesEventBus: directMessagesEventBus,
+            listFoldersAPI: api,
+            // Share Links (the-gaps.md G3) reuse the same kit-layer
+            // `APIClient`; the API client is retained on the environment so
+            // `sharing` can rebuild the service with live entitlements per
+            // access (link creation is subscriber-gated). The base URL feeds
+            // the canonical web-URL builder for links the server returns
+            // without a pre-built `url`.
+            sharingAPI: api,
+            shareBaseURL: InterlinedKit.defaultBaseURL
         )
     }
 
