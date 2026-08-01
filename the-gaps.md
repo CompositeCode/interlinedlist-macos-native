@@ -47,7 +47,7 @@ Legend — **Status:** ❌ absent · ◑ partial · **Tier:** free / **Sub** (su
 | **G14** | **Utility surfaces** — optional `/api/limits`-driven composer validation (message length / media limits); weather/geolocation/image-proxy helpers | ❌ | free | **P4** | S | ✅ | Optional polish, not billing. `/api/limits` shape verified (§2). |
 
 ### Still-open items carried forward from the old `feature-gaps.md`
-- **Following feed** (old NB-1) — `TimelineScope.following` is UI-wired but returned empty; a `scope=following` feed endpoint was pending. **Re-verify against live** (`GET /api/messages` scope params) — may now be closable. **P1.**
+- **Following feed** (old NB-1) — **re-verified 2026-07-31: still backend-blocked.** `GET /api/messages` ignores `feed`/`scope`/`following`/`filter` params (all return the same 216-total "all" feed), and `POST /api/user/update {viewingPreference}` returns 405. No working client-side following-feed mechanism exists; the app's short-circuit stays. Needs a backend feed endpoint (or a documented `viewingPreference` write path). **Backend-blocked.**
 - **Per-document / per-thread "Export as Markdown"** buttons — the `MarkdownExporter` engine already supports them; only the toolbar/menu affordances are missing. **P3, S.**
 - **ERD list view** — the third documented list view mode (cards ✅, grid ✅, ERD ❌). Confirm whether "ERD" means the schema-field graph or the existing list-to-list connection graph before building. **P3.**
 - **Public grid on read-only `ListDetailView`** — owned lists render a real `Table`; the public browse view still shows cards only. **P4, S.**
