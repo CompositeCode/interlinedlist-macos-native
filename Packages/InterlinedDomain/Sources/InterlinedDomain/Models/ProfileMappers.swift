@@ -51,6 +51,28 @@ extension UserProfile {
         )
     }
 
+    /// Builds a public profile from the dedicated `GET /api/users/{username}`
+    /// endpoint (the-gaps.md D2). Unlike the decision-0002 embedded-author
+    /// fallback, this source is rich: bio, join date, private flag, and
+    /// follower/following counts all come straight from the payload, so no
+    /// separate `counts(of:)` stitch is required.
+    public init(from dto: PublicProfileDTO) {
+        let summary = UserSummary(
+            id: dto.id,
+            username: dto.username,
+            displayName: dto.displayName ?? dto.username,
+            avatarURL: dto.avatar.flatMap(URL.init(string:))
+        )
+        self.init(
+            summary: summary,
+            bio: dto.bio,
+            followerCount: dto.followerCount,
+            followingCount: dto.followingCount,
+            isPrivate: dto.isPrivate ?? false,
+            joinedAt: dto.joinedAt
+        )
+    }
+
     /// Returns a copy with the counts populated — used by `SocialService` to
     /// stitch the identity payload together with the `/api/follow/[id]/counts`
     /// response without making the model mutable.

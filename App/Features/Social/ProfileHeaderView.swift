@@ -88,8 +88,17 @@ struct ProfileHeaderView: View {
                         .textSelection(.enabled)
                 }
                 Spacer()
-                if let followButton {
-                    FollowButton(viewModel: followButton)
+                HStack(spacing: 8) {
+                    // Direct Messages (the-gaps.md G1) — additive "Message"
+                    // affordance. Self-gating: it reads `AppEnvironment`
+                    // itself and renders nothing unless the profiled user
+                    // is an eligible recipient (mutual follower), so it
+                    // never disrupts the follow button or the moderation
+                    // menu. Pure presentation from the header's view.
+                    ProfileMessageButton(username: profile.username)
+                    if let followButton {
+                        FollowButton(viewModel: followButton)
+                    }
                 }
             }
 
@@ -132,6 +141,12 @@ struct ProfileHeaderView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Profile for \(profile.displayName), @\(profile.username)")
+        // Web-parity (the-gaps.md G2) — Block / Mute / Report on the
+        // profile via a right-click context menu. Additive: the header's
+        // own affordances (follow button, counts) are untouched. The
+        // modifier reads `AppEnvironment` itself, so this stays pure
+        // presentation from the header's perspective.
+        .moderationMenu(username: profile.username)
     }
 
     // MARK: - Subviews

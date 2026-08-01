@@ -53,6 +53,15 @@ struct InterlinedListApp: App {
     /// keep the same instance across view rebuilds.
     @State private var dockBadge: NotificationsUnreadBadgeCoordinator?
 
+    /// Coordinator that turns DM-bus events into the DM contribution of
+    /// the dock badge (the-gaps.md G1). Held alongside `dockBadge`.
+    @State private var dmDockBadge: DirectMessagesUnreadBadgeCoordinator?
+
+    /// Sums the notifications + DM unread contributions and performs the
+    /// single dock-badge write. Both coordinators report into this rather
+    /// than writing the badge directly, so neither clobbers the other.
+    @State private var badgeAggregator: UnreadBadgeAggregator?
+
     var body: some Scene {
         WindowGroup {
             AppRootView(store: environment.currentUserStore)
@@ -85,16 +94,41 @@ struct InterlinedListApp: App {
                     // `NotificationsEventBus`; the tray view model
                     // posts `trayRefreshed(...)` after every successful
                     // load so the badge stays in sync without polling.
-                    if dockBadge == nil {
+                    if badgeAggregator == nil {
                         let delegate = appDelegate
-                        let coordinator = NotificationsUnreadBadgeCoordinator(
-                            bus: environment.notificationsEventBus,
+                        // Single writer of the dock badge. Both unread
+                        // sources (notifications + DMs) report into it so
+                        // the badge reflects their sum (the-gaps.md G1);
+                        // neither coordinator writes the badge directly
+                        // anymore, so they can't clobber each other.
+                        let aggregator = UnreadBadgeAggregator(
                             writeBadge: { @MainActor count in
                                 delegate.updateDockBadge(unreadCount: count)
                             }
                         )
-                        dockBadge = coordinator
-                        coordinator.start()
+                        badgeAggregator = aggregator
+
+                        // Notifications → `.notifications` slot. The
+                        // coordinator's fold logic is unchanged; only its
+                        // sink is now the aggregator instead of the badge.
+                        let notificationsCoordinator = NotificationsUnreadBadgeCoordinator(
+                            bus: environment.notificationsEventBus,
+                            writeBadge: { @MainActor count in
+                                aggregator.update(source: .notifications, count: count)
+                            }
+                        )
+                        dockBadge = notificationsCoordinator
+                        notificationsCoordinator.start()
+
+                        // Direct Messages → `.directMessages` slot.
+                        let dmCoordinator = DirectMessagesUnreadBadgeCoordinator(
+                            bus: environment.directMessagesEventBus,
+                            reportCount: { @MainActor count in
+                                aggregator.update(source: .directMessages, count: count)
+                            }
+                        )
+                        dmDockBadge = dmCoordinator
+                        dmCoordinator.start()
                     }
                 }
         }
@@ -103,10 +137,12 @@ struct InterlinedListApp: App {
             // Wave 8.6 — Sparkle "Check for Updates..." in the app menu.
             UpdatesMenuCommands(sparkleController: sparkleController)
             AccountMenuCommands()
+            SearchMenuCommands()
             ComposeCommands()
             ListMenuCommands()
             DocumentsMenuCommands()
             NotificationsMenuCommands()
+            DirectMessagesMenuCommands()
             SocialMenuCommands()
             // M7 — CSV exports via File > Export submenu (PLAN.md §6 M7).
             ExportMenuCommands()
@@ -163,6 +199,13 @@ private struct AppRootView: View {
             Task { try? await environment.session.signOut() }
         }
         .onOpenURL { url in
+            // Share Links (the-gaps.md G3) — a `…/lists/shared/{token}` or
+            // `…/documents/shared/{token}` URL (pasted, or delivered via the
+            // `interlinedlist://` scheme) routes to the resolve/claim landing.
+            // Handled first so it does not disturb the OAuth fallback below;
+            // `handle` returns `false` for any non-share URL.
+            if ShareLinkDeepLink.handle(url) { return }
+
             // `interlinedlist://oauth/callback` is the native OAuth redirect URI
             // registered in Info.plist (NW-5). ASWebAuthenticationSession intercepts
             // the URL automatically; this handler is a fallback in case the system

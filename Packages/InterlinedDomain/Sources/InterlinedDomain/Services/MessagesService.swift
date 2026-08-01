@@ -86,7 +86,8 @@ public protocol MessagesServicing: Sendable {
     // Wraps the Wave 1 `InterlinedKit.Messages` builders. The write surface is
     // deliberately small: only the fields the M2 composer / reply / repost /
     // edit / delete UIs consume. Cross-post fan-out (`mastodonProviderIds`,
-    // `crossPostToBluesky`, `crossPostToLinkedIn`), scheduling (`scheduledAt`),
+    // `crossPostToBluesky`, `crossPostToLinkedIn`, `crossPostToTwitter`),
+    // scheduling (`scheduledAt`),
     // and media attachments (`imageUrls`, `videoUrls`) are accepted by the
     // kit's `CreateMessageRequest` but **not** exposed at the domain seam
     // until M6, when the composer grows the platform pickers, the date
@@ -172,8 +173,8 @@ public protocol MessagesServicing: Sendable {
     /// - non-empty `imageURLs` / `videoURLs` requires `.mediaAttachments`;
     /// - a non-nil `scheduledAt` requires `.scheduledPosts`;
     /// - any cross-post target (`mastodonProviderIds` non-empty,
-    ///   `crossPostToBluesky`, or `crossPostToLinkedIn`) requires
-    ///   `.crossPosting`.
+    ///   `crossPostToBluesky`, `crossPostToLinkedIn`, or `crossPostToTwitter`)
+    ///   requires `.crossPosting`.
     ///
     /// All applicable gates are checked before the HTTP call; the first
     /// failing gate throws `MessagesError.subscriberRequired(feature)` and no
@@ -188,7 +189,8 @@ public protocol MessagesServicing: Sendable {
         scheduledAt: Date?,
         mastodonProviderIds: [String],
         crossPostToBluesky: Bool,
-        crossPostToLinkedIn: Bool
+        crossPostToLinkedIn: Bool,
+        crossPostToTwitter: Bool
     ) async throws -> Message
 
     /// Loads the caller's pending scheduled posts (`GET /api/messages/scheduled`).
@@ -549,7 +551,8 @@ public final class MessagesService: MessagesServicing {
         scheduledAt: Date?,
         mastodonProviderIds: [String],
         crossPostToBluesky: Bool,
-        crossPostToLinkedIn: Bool
+        crossPostToLinkedIn: Bool,
+        crossPostToTwitter: Bool
     ) async throws -> Message {
         // Gate every applicable subscriber feature *before* any HTTP call, so
         // the composer surfaces an upsell instead of a mid-flow 403 (PLAN.md
@@ -561,7 +564,10 @@ public final class MessagesService: MessagesServicing {
         if scheduledAt != nil {
             try requireEntitlement(.scheduledPosts)
         }
-        let hasCrossPost = !mastodonProviderIds.isEmpty || crossPostToBluesky || crossPostToLinkedIn
+        let hasCrossPost = !mastodonProviderIds.isEmpty
+            || crossPostToBluesky
+            || crossPostToLinkedIn
+            || crossPostToTwitter
         if hasCrossPost {
             try requireEntitlement(.crossPosting)
         }
@@ -578,7 +584,8 @@ public final class MessagesService: MessagesServicing {
             scheduledAt: scheduledAt,
             mastodonProviderIds: mastodonProviderIds.isEmpty ? nil : mastodonProviderIds,
             crossPostToBluesky: crossPostToBluesky ? true : nil,
-            crossPostToLinkedIn: crossPostToLinkedIn ? true : nil
+            crossPostToLinkedIn: crossPostToLinkedIn ? true : nil,
+            crossPostToTwitter: crossPostToTwitter ? true : nil
         )
         let dto = try await api.send(Messages.create(request))
         let message = Message(from: dto)

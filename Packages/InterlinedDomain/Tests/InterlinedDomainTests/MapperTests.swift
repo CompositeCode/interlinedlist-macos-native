@@ -183,13 +183,15 @@ final class MapperTests: XCTestCase {
         tags: [String]? = ["swift"],
         digCount: Int = 3,
         dugByMe: Bool = false,
-        pushedMessage: PushedMessageBox? = nil
+        pushedMessage: PushedMessageBox? = nil,
+        linkMetadata: LinkMetadataDTO? = nil
     ) -> MessageDTO {
         MessageDTO(
             id: id,
             content: "hello",
             publiclyVisible: publiclyVisible,
             userId: "u1",
+            linkMetadata: linkMetadata,
             tags: tags,
             createdAt: date,
             updatedAt: date,
@@ -284,5 +286,148 @@ final class MapperTests: XCTestCase {
         } else {
             XCTFail("Expected .unknown, got \(result.status)")
         }
+    }
+
+    // MARK: - LinkPreview mapper (feature-gaps §1.5)
+
+    // Happy path: a fully-resolved preview with every field populated maps to a
+    // single renderable `LinkPreview` on the message.
+    func test_givenMessageWithFullLinkMetadata_whenMapped_thenCarriesRenderablePreview() throws {
+        // Given
+        let link = LinkPreviewDTO(
+            url: "https://example.com/article",
+            platform: "web",
+            fetchStatus: "ready",
+            title: "A Great Article",
+            description: "All about widgets.",
+            imageUrl: "https://cdn.example.com/thumb.png"
+        )
+        let dto = makeMessageDTO(linkMetadata: LinkMetadataDTO(links: [link]))
+
+        // When
+        let message = Message(from: dto)
+
+        // Then
+        XCTAssertEqual(message.linkPreviews.count, 1)
+        let preview = try XCTUnwrap(message.linkPreviews.first)
+        XCTAssertEqual(preview.url, URL(string: "https://example.com/article"))
+        XCTAssertEqual(preview.platform, "web")
+        XCTAssertEqual(preview.fetchStatus, "ready")
+        XCTAssertEqual(preview.title, "A Great Article")
+        XCTAssertEqual(preview.description, "All about widgets.")
+        XCTAssertEqual(preview.imageURL, URL(string: "https://cdn.example.com/thumb.png"))
+        XCTAssertEqual(preview.displayHost, "example.com")
+        XCTAssertTrue(preview.isRenderable)
+    }
+
+    // Boundary: a bare URL with no title / image / ready status still maps
+    // (the URL parses) but is reported as not worth rendering, so the UI shows
+    // no card for it.
+    func test_givenMessageWithBareURLOnlyLink_whenMapped_thenPreviewMapsButIsNotRenderable() throws {
+        // Given — nothing but a URL; fetch not (yet) resolved.
+        let link = LinkPreviewDTO(url: "https://example.com/pending", fetchStatus: "pending")
+        let dto = makeMessageDTO(linkMetadata: LinkMetadataDTO(links: [link]))
+
+        // When
+        let message = Message(from: dto)
+
+        // Then
+        XCTAssertEqual(message.linkPreviews.count, 1)
+        let preview = try XCTUnwrap(message.linkPreviews.first)
+        XCTAssertNil(preview.title)
+        XCTAssertNil(preview.imageURL)
+        XCTAssertFalse(preview.isFetchStatusReady)
+        XCTAssertFalse(preview.isRenderable)
+    }
+
+    // Invalid input: an entry whose `url` will not parse is dropped by the
+    // mapper's `compactMap`, while a sibling valid entry survives.
+    func test_givenMessageWithUnparseableLinkURL_whenMapped_thenThatEntryIsDropped() throws {
+        // Given — an empty-string URL cannot form a `URL`; a valid sibling can.
+        let bad = LinkPreviewDTO(url: "", title: "Broken")
+        let good = LinkPreviewDTO(url: "https://example.com/ok", title: "Good", imageUrl: nil)
+        let dto = makeMessageDTO(linkMetadata: LinkMetadataDTO(links: [bad, good]))
+
+        // When
+        let message = Message(from: dto)
+
+        // Then — only the parseable entry survives.
+        XCTAssertEqual(message.linkPreviews.count, 1)
+        XCTAssertEqual(message.linkPreviews.first?.url, URL(string: "https://example.com/ok"))
+    }
+
+    // Empty / boundary: no `linkMetadata` at all collapses to an empty array
+    // (never `nil`), matching the `crossPostResults` default.
+    func test_givenMessageWithNoLinkMetadata_whenMapped_thenLinkPreviewsAreEmpty() {
+        // Given / When
+        let message = Message(from: makeMessageDTO(linkMetadata: nil))
+
+        // Then
+        XCTAssertEqual(message.linkPreviews, [])
+    }
+
+    // Unparseable image only: the entry is kept (its `url` parses) with a nil
+    // image, so the card degrades to a thumbnail-less preview rather than being
+    // dropped. An empty-string `imageUrl` will not form a `URL`.
+    func test_givenLinkWithUnparseableImageURL_whenMapped_thenPreviewKeptWithoutImage() throws {
+        // Given
+        let link = LinkPreviewDTO(
+            url: "https://example.com/story",
+            fetchStatus: "ready",
+            title: "Story",
+            imageUrl: ""   // empty — not a valid URL
+        )
+        let dto = makeMessageDTO(linkMetadata: LinkMetadataDTO(links: [link]))
+
+        // When
+        let preview = try XCTUnwrap(Message(from: dto).linkPreviews.first)
+
+        // Then
+        XCTAssertNil(preview.imageURL)
+        XCTAssertTrue(preview.isRenderable)   // title alone is enough
+    }
+
+    // MARK: - LinkPreview display rules (feature-gaps §1.5)
+
+    // A recognised success status renders even when title/image are absent —
+    // the client is forward-compatible about which token means "ready".
+    func test_givenReadyFetchStatusWithoutTitleOrImage_whenEvaluated_thenIsRenderable() {
+        // Given
+        let preview = LinkPreview(url: URL(string: "https://example.com")!, fetchStatus: "SUCCESS")
+
+        // Then — case-insensitive match on a known success token.
+        XCTAssertTrue(preview.isFetchStatusReady)
+        XCTAssertTrue(preview.isRenderable)
+    }
+
+    // An image with no title still renders (image is a human-meaningful field).
+    func test_givenImageOnlyPreview_whenEvaluated_thenIsRenderable() {
+        // Given
+        let preview = LinkPreview(
+            url: URL(string: "https://example.com")!,
+            imageURL: URL(string: "https://cdn.example.com/i.png")!
+        )
+
+        // Then
+        XCTAssertTrue(preview.isRenderable)
+    }
+
+    // Whitespace-only title is treated as absent for rendering purposes.
+    func test_givenWhitespaceOnlyTitleAndNoImage_whenEvaluated_thenIsNotRenderable() {
+        // Given
+        let preview = LinkPreview(url: URL(string: "https://example.com")!, title: "   ")
+
+        // Then
+        XCTAssertFalse(preview.isRenderable)
+    }
+
+    // `www.` is stripped from the display host; a URL without a host falls back
+    // to the full string.
+    func test_givenHostWithWWWPrefix_whenReadingDisplayHost_thenPrefixStripped() {
+        // Given
+        let preview = LinkPreview(url: URL(string: "https://www.example.com/x")!)
+
+        // Then
+        XCTAssertEqual(preview.displayHost, "example.com")
     }
 }

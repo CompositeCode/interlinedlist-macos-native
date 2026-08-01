@@ -12,6 +12,7 @@
 
 import SwiftUI
 import InterlinedDomain
+import Textual
 
 struct RowInspectorView: View {
 
@@ -41,6 +42,7 @@ struct RowInspectorView: View {
                         cellEditor(
                             key: key,
                             type: .text,
+                            options: [],
                             current: row.fields[key] ?? .null,
                             row: row,
                             viewModel: viewModel
@@ -51,6 +53,7 @@ struct RowInspectorView: View {
                         cellEditor(
                             key: field.name,
                             type: field.type,
+                            options: field.enumValues ?? [],
                             current: row.fields[field.name] ?? .null,
                             row: row,
                             viewModel: viewModel
@@ -66,6 +69,7 @@ struct RowInspectorView: View {
     private func cellEditor(
         key: String,
         type: SchemaFieldType,
+        options: [String],
         current: ListCellValue,
         row: ListRow,
         viewModel: ListRowsViewModel
@@ -99,6 +103,91 @@ struct RowInspectorView: View {
                     }
                 ))
                 .accessibilityLabel(key)
+            case .select:
+                selectEditor(
+                    key: key,
+                    options: options,
+                    current: current,
+                    row: row,
+                    viewModel: viewModel
+                )
+            case .markdown:
+                markdownEditor(
+                    key: key,
+                    current: current,
+                    row: row,
+                    viewModel: viewModel
+                )
+            }
+        }
+    }
+
+    /// A `Picker` constrained to the column's option set. The stored value is
+    /// the chosen option's raw text; committing routes through the same
+    /// `updateRow` path as every other cell. A leading empty tag models "no
+    /// selection" so a nullable select can be cleared.
+    @ViewBuilder
+    private func selectEditor(
+        key: String,
+        options: [String],
+        current: ListCellValue,
+        row: ListRow,
+        viewModel: ListRowsViewModel
+    ) -> some View {
+        Picker("", selection: Binding(
+            get: { editingValues[key] ?? current.displayText },
+            set: { newValue in
+                editingValues[key] = newValue
+                commitChange(row: row, key: key, type: .select, viewModel: viewModel)
+            }
+        )) {
+            Text("—").tag("")
+            ForEach(options, id: \.self) { option in
+                Text(option).tag(option)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .accessibilityLabel(key)
+    }
+
+    /// An editable multiline field previewed with the same `Textual` renderer
+    /// Documents uses (`StructuredText(markdown:)`). Edits are buffered in
+    /// `editingValues` and committed on the explicit "Save" control — a
+    /// `TextEditor` has no `onSubmit`, and auto-committing every keystroke
+    /// would fire a write per character.
+    @ViewBuilder
+    private func markdownEditor(
+        key: String,
+        current: ListCellValue,
+        row: ListRow,
+        viewModel: ListRowsViewModel
+    ) -> some View {
+        let source = editingValues[key] ?? current.displayText
+        VStack(alignment: .leading, spacing: 6) {
+            TextEditor(text: Binding(
+                get: { editingValues[key] ?? current.displayText },
+                set: { editingValues[key] = $0 }
+            ))
+            .font(.ilMono(12))
+            .frame(minHeight: 100)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(Color.secondary.opacity(0.3))
+            )
+            .accessibilityLabel(key)
+            if !source.isEmpty {
+                StructuredText(markdown: source)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("\(key) preview")
+            }
+            HStack {
+                Spacer()
+                Button("Save") {
+                    commitChange(row: row, key: key, type: .markdown, viewModel: viewModel)
+                }
+                .controlSize(.small)
+                .disabled(editingValues[key] == nil)
             }
         }
     }
@@ -138,6 +227,8 @@ struct RowInspectorView: View {
         case .date: return "ISO-8601 date"
         case .url: return "URL"
         case .email: return "Email"
+        case .select: return "Select"
+        case .markdown: return "Markdown"
         }
     }
 

@@ -34,6 +34,12 @@ struct TimelineRootView: View {
     @State private var editTarget: Message?
     @State private var deleteTarget: Message?
 
+    // Web-parity (the-gaps.md G2) — moderation. The report sheet is
+    // driven by a `ModerationActionViewModel` built for the tapped
+    // message's author; block / mute fire directly against the
+    // moderation service.
+    @State private var reportActionVM: ModerationActionViewModel?
+
     // M5.x — deep-link routing. When a system notification banner for a
     // message is tapped, `MainWindowView` sets this binding to the target
     // message ID before switching the sidebar to `.timeline`. The view
@@ -91,6 +97,19 @@ struct TimelineRootView: View {
         .sheet(item: $editTarget) { target in
             ComposerWindowView(mode: .edit(messageID: target.id, original: target))
         }
+        // Report sheet (the-gaps.md G2). Presented when the row's
+        // "Report…" item fires. The action VM carries the message id so
+        // it submits a message report; dismissing clears it.
+        .sheet(
+            isPresented: Binding(
+                get: { reportActionVM != nil },
+                set: { if !$0 { reportActionVM = nil } }
+            )
+        ) {
+            if let reportActionVM {
+                ReportReasonSheet(viewModel: reportActionVM)
+            }
+        }
         .confirmationDialog(
             "Delete this post?",
             isPresented: Binding(
@@ -133,6 +152,28 @@ struct TimelineRootView: View {
     /// `task(id:)` re-subscribes if the environment is swapped.
     private var environmentEventBusToken: ObjectIdentifier? {
         environment.map { ObjectIdentifier($0) }
+    }
+
+    // MARK: - Moderation
+
+    /// Blocks the message author, then refreshes the timeline so their
+    /// posts drop out of the feed. Errors are swallowed at the view
+    /// boundary — the timeline refresh reflects the authoritative state.
+    private func moderateBlock(author username: String) {
+        guard let environment else { return }
+        Task {
+            try? await environment.moderation.block(username: username)
+            await viewModel?.refresh()
+        }
+    }
+
+    /// Mutes the message author, then refreshes the timeline.
+    private func moderateMute(author username: String) {
+        guard let environment else { return }
+        Task {
+            try? await environment.moderation.mute(username: username)
+            await viewModel?.refresh()
+        }
     }
 
     // MARK: - Body sections
@@ -236,6 +277,19 @@ struct TimelineRootView: View {
                         },
                         onDelete: { tapped in
                             deleteTarget = tapped
+                        },
+                        onBlock: { tapped in
+                            moderateBlock(author: tapped.author.username)
+                        },
+                        onMute: { tapped in
+                            moderateMute(author: tapped.author.username)
+                        },
+                        onReport: { tapped in
+                            reportActionVM = ModerationActionViewModel(
+                                username: tapped.author.username,
+                                messageID: tapped.id,
+                                service: environment?.moderation ?? NoopModerationService()
+                            )
                         }
                     )
                 }

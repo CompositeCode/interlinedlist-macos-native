@@ -25,6 +25,13 @@ struct SettingsRootView: View {
                 .tabItem {
                     Label("Account", systemImage: "person.crop.circle")
                 }
+
+            // Web-parity (the-gaps.md G2) — blocked / muted account
+            // management with inline unblock / unmute.
+            BlockedAndMutedView()
+                .tabItem {
+                    Label("Blocked & Muted", systemImage: "hand.raised")
+                }
         }
         .frame(width: 560, height: 500)
     }

@@ -337,6 +337,15 @@ struct ComposerWindowView: View {
                 set: { viewModel.crossPostToLinkedIn = $0 }
             )) { Text("LinkedIn") }
                 .disabled(!viewModel.canUseSubscriberFeatures)
+
+            // G7: X / Twitter cross-post toggle. Mirrors LinkedIn exactly — a
+            // plain boolean binding (no async readiness check; only Bluesky and
+            // Mastodon have the NW-4 configured-check).
+            Toggle(isOn: Binding(
+                get: { viewModel.crossPostToTwitter },
+                set: { viewModel.crossPostToTwitter = $0 }
+            )) { Text("X") }
+                .disabled(!viewModel.canUseSubscriberFeatures)
         }
         .help(viewModel.canUseSubscriberFeatures
               ? "Also publish to your linked social accounts."

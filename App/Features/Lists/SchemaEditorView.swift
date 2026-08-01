@@ -159,12 +159,61 @@ struct SchemaEditorView: View {
                     .accessibilityLabel("Remove field")
                 }
             }
+            if field.type == .select {
+                selectOptionsEditor(viewModel: viewModel, field: field)
+            }
             if let error = viewModel.validationError(for: field) {
                 Text(error)
                     .font(.ilMono(10))
                     .foregroundStyle(.red)
             }
         }
+    }
+
+    /// Inline, per-option editor shown only for `select` columns. Each option
+    /// is an editable text field with a remove button; a trailing "Add option"
+    /// button appends a blank option. All mutations route through the view
+    /// model so the option array stays owned there.
+    @ViewBuilder
+    private func selectOptionsEditor(
+        viewModel: SchemaEditorViewModel,
+        field: SchemaEditorViewModel.EditableField
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Options")
+                .font(.ilMono(9))
+                .foregroundStyle(.secondary)
+            ForEach(Array(field.options.enumerated()), id: \.offset) { index, option in
+                HStack(spacing: 6) {
+                    TextField("Option", text: Binding(
+                        get: { option },
+                        set: { viewModel.setOption($0, forFieldID: field.id, at: index) }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(!viewModel.isEditable)
+                    if viewModel.isEditable {
+                        Button {
+                            viewModel.removeOption(fromFieldID: field.id, at: index)
+                        } label: {
+                            Image(systemName: "minus.circle")
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove option")
+                    }
+                }
+            }
+            if viewModel.isEditable {
+                Button {
+                    viewModel.addOption(toFieldID: field.id)
+                } label: {
+                    Label("Add option", systemImage: "plus")
+                        .font(.ilMono(10))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.leading, 8)
     }
 
     @ViewBuilder
@@ -240,6 +289,8 @@ struct SchemaEditorView: View {
         case .date: return "Date"
         case .url: return "URL"
         case .email: return "Email"
+        case .select: return "Select"
+        case .markdown: return "Markdown"
         }
     }
 }

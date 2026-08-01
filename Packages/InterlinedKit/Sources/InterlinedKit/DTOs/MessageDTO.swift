@@ -240,6 +240,16 @@ public struct CreateMessageRequest: Encodable, Sendable, Equatable {
     public let mastodonProviderIds: [String]?
     public let crossPostToBluesky: Bool?
     public let crossPostToLinkedIn: Bool?
+    /// Cross-post fan-out to X/Twitter (G7).
+    ///
+    /// UNVERIFIED — the exact request field name could NOT be confirmed against
+    /// the live `POST /api/messages` (the test account has no linked X identity
+    /// and OpenAPI doesn't model the request body). `crossPostToTwitter` is
+    /// pattern-matched to the confirmed `crossPostToBluesky` /
+    /// `crossPostToLinkedIn` naming (high confidence). Confirm once an account
+    /// with a linked X identity is available; the OAuth provider slug is
+    /// `twitter`, verified live 2026-07-31 via `GET /api/auth/twitter/status`.
+    public let crossPostToTwitter: Bool?
 
     public init(
         content: String,
@@ -252,7 +262,8 @@ public struct CreateMessageRequest: Encodable, Sendable, Equatable {
         scheduledAt: Date? = nil,
         mastodonProviderIds: [String]? = nil,
         crossPostToBluesky: Bool? = nil,
-        crossPostToLinkedIn: Bool? = nil
+        crossPostToLinkedIn: Bool? = nil,
+        crossPostToTwitter: Bool? = nil
     ) {
         self.content = content
         self.publiclyVisible = publiclyVisible
@@ -265,12 +276,14 @@ public struct CreateMessageRequest: Encodable, Sendable, Equatable {
         self.mastodonProviderIds = mastodonProviderIds
         self.crossPostToBluesky = crossPostToBluesky
         self.crossPostToLinkedIn = crossPostToLinkedIn
+        self.crossPostToTwitter = crossPostToTwitter
     }
 
     private enum CodingKeys: String, CodingKey {
         case content, publiclyVisible, tags, parentId, pushedMessageId
         case imageUrls, videoUrls, scheduledAt
         case mastodonProviderIds, crossPostToBluesky, crossPostToLinkedIn
+        case crossPostToTwitter
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -288,6 +301,7 @@ public struct CreateMessageRequest: Encodable, Sendable, Equatable {
         try container.encodeIfPresent(mastodonProviderIds, forKey: .mastodonProviderIds)
         try container.encodeIfPresent(crossPostToBluesky, forKey: .crossPostToBluesky)
         try container.encodeIfPresent(crossPostToLinkedIn, forKey: .crossPostToLinkedIn)
+        try container.encodeIfPresent(crossPostToTwitter, forKey: .crossPostToTwitter)
     }
 }
 

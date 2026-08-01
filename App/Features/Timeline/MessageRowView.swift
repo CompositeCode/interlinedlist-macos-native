@@ -45,6 +45,19 @@ struct MessageRowView: View {
     /// The host is responsible for the confirmation dialog.
     var onDelete: ((Message) -> Void)? = nil
 
+    /// Optional block handler (the-gaps.md G2). When non-nil, a "Block
+    /// author" item is added to the overflow menu. The host performs the
+    /// moderation call and refreshes the timeline.
+    var onBlock: ((Message) -> Void)? = nil
+
+    /// Optional mute handler. When non-nil, a "Mute author" item is added.
+    var onMute: ((Message) -> Void)? = nil
+
+    /// Optional report handler. When non-nil, a "Report…" item opens the
+    /// host's report sheet for this message. Replaces the old
+    /// support-URL fallback so reporting is a real backend action.
+    var onReport: ((Message) -> Void)? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
@@ -52,6 +65,9 @@ struct MessageRowView: View {
                 repostBanner(original: repost.original)
             }
             bodyText
+            if !renderablePreviews.isEmpty {
+                linkPreviews
+            }
             if !message.tags.isEmpty {
                 tagChips
             }
@@ -119,6 +135,21 @@ struct MessageRowView: View {
             .foregroundStyle(.primary)
             .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The subset of `message.linkPreviews` the domain deems worth showing
+    /// (feature-gaps §1.5). A bare URL with no resolved metadata is filtered
+    /// out here — the row degrades to no card rather than an empty one.
+    private var renderablePreviews: [LinkPreview] {
+        message.linkPreviews.filter(\.isRenderable)
+    }
+
+    private var linkPreviews: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(renderablePreviews) { preview in
+                LinkPreviewCardView(preview: preview)
+            }
+        }
     }
 
     private var tagChips: some View {
@@ -231,17 +262,35 @@ struct MessageRowView: View {
             }
         }
 
-        // Report — visible for every message regardless of ownership
-        // (App Store Review Guideline 1.2: User-Generated Content requires
-        // a mechanism to report objectionable content). No backend report
-        // endpoint exists yet — open the support URL so users can contact
-        // the team directly.
-        Button {
-            if let url = URL(string: "https://interlinedlist.com/support") {
-                NSWorkspace.shared.open(url)
+        // Moderation (the-gaps.md G2). Block / Mute target the author;
+        // Report opens the host's report sheet for this message. All are
+        // ownership-independent (Report satisfies App Store Review
+        // Guideline 1.2: User-Generated Content requires a report
+        // mechanism). Each item renders only when its handler is wired so
+        // static / preview contexts stay clean; no AppKit involvement.
+        if onBlock != nil || onMute != nil || onReport != nil {
+            Divider()
+        }
+        if let onBlock {
+            Button {
+                onBlock(message)
+            } label: {
+                Label("Block @\(message.author.username)", systemImage: "hand.raised")
             }
-        } label: {
-            Label("Report\u{2026}", systemImage: "flag")
+        }
+        if let onMute {
+            Button {
+                onMute(message)
+            } label: {
+                Label("Mute @\(message.author.username)", systemImage: "speaker.slash")
+            }
+        }
+        if let onReport {
+            Button(role: .destructive) {
+                onReport(message)
+            } label: {
+                Label("Report\u{2026}", systemImage: "flag")
+            }
         }
     }
 

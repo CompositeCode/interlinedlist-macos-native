@@ -153,11 +153,26 @@ public final class SocialService: SocialServicing {
     // MARK: Profile
 
     public func profile(username: String) async throws -> UserProfile {
-        // Decision 0002: no `GET /api/users/[username]` endpoint exists. The
-        // public-messages endpoint embeds the author user object on every
-        // `MessageDTO`, which is the only cross-user identity source today.
-        // Pull a single message (limit 1, offset 0) and project from the
-        // embedded user — we deliberately do not fan out into a full feed.
+        // D2: prefer the dedicated public-profile endpoint (`GET
+        // /api/users/{username}`), which is rich (bio, join date, private
+        // flag, follower/following counts) — verified live 2026-07-31.
+        do {
+            let dto = try await api.send(User.publicProfile(username: username))
+            return UserProfile(from: dto)
+        } catch let error as APIError {
+            // Decision-0002 fallback, retained only for pre-migration servers
+            // that 404 the endpoint: derive identity from the embedded author
+            // on the user's public messages. Any other error propagates.
+            guard case .notFound = error else { throw error }
+            return try await profileFromEmbeddedAuthor(username: username)
+        }
+    }
+
+    /// Reduced-scope profile projection from the embedded author on a user's
+    /// public messages (decision 0002). Used only when the public-profile
+    /// endpoint is unavailable (404). Bio / counts / joinedAt are `nil` and
+    /// `isPrivate` is `false` — the embedded author carries identity only.
+    private func profileFromEmbeddedAuthor(username: String) async throws -> UserProfile {
         let request = Messages.userMessages(username: username, limit: 1, offset: 0)
         let (data, _) = try await api.sendRaw(request)
         let key = request.paginationKey ?? "messages"
@@ -168,8 +183,6 @@ public final class SocialService: SocialServicing {
             decoder: decoder
         )
         guard let first = paginated.items.first else {
-            // Empty path: no message means no embedded author to derive from.
-            // Documented M1 limitation — see `SocialError.profileUnavailable`.
             throw SocialError.profileUnavailable(username: username)
         }
         return UserProfile(fromEmbeddedAuthorOf: first)
