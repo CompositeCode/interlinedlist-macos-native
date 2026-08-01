@@ -66,7 +66,8 @@ Build has started, backend-first (each gap's layers: Kit → Domain → Persiste
 | **G1 Direct Messages** | ✅ | ✅ 20 tests | ⏭ deferred | ✅ agent | Wire shape captured via one authorized recon DM (trashed). Full UI: folder/conversation/thread panes, `threadUpdates` polling, composer + recipient picker, profile "Message" action, `UnreadBadgeAggregator` (DM + notifications sum). Persistence needs a domain-side store seam (follow-up). |
 | **G3 Share Links** | ✅ | ✅ 18 tests | n/a | ✅ agent | Share Links panel (create/list/revoke + role picker + subscriber upsell) on Lists + Documents toolbars; `ResolveShareView` landing via `ShareURLParser` (`interlinedlist://` + pasted URLs) with claim. Collaborator per-person grants = follow-up. |
 | **D2 Public profile** | ✅ | ✅ | ✅ (auto) | `User.publicProfile` (`GET /api/users/{username}`) + `UserProfile.init(from:)`; `SocialService.profile` now prefers the real endpoint (rich bio/counts/joinedAt/isPrivate), decision-0002 message-fallback retained only on 404. Existing profile UI shows the richer data with no view changes. +8 tests. |
-| G4, G7–G14 | — | — | — | — | not started |
+| **G7 X/Twitter cross-post** | ✅ | ✅ | ✅ | Additive mirror of Bluesky/LinkedIn: `.twitter` provider + `twitterStatus()` + `crossPostToTwitter` on `CreateMessageRequest` (threaded through `MessagesService.createPost` + composer X toggle). +12 tests. **⚠️ field name `crossPostToTwitter` is pattern-matched, UNVERIFIED** (test account has no linked X identity) — one-file fix if it's `crossPostToX`. |
+| G4, G8–G14 | — | — | — | — | not started |
 
 **Test delta (all green):** InterlinedKit 224 → **250** (+26); InterlinedDomain 475 → **522** (+47); App target 379 → **452** (+73: Search/Moderation/ListFolders/DirectMessages UI). **+146 new passing tests, 0 regressions.** (`swift test` for the packages; `xcodebuild test` with `CODE_SIGNING_ALLOWED=NO` for the App target.)
 

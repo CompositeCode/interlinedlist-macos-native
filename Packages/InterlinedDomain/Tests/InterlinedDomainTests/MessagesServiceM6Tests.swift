@@ -35,7 +35,7 @@ final class MessagesServiceM6Tests: XCTestCase {
         let message = try await service.createPost(
             body: "hello", tags: [], visibility: .public,
             imageURLs: [], videoURLs: [], scheduledAt: nil,
-            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false
+            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: false
         )
 
         // Then — the post is created; no gate fires for a plain post.
@@ -57,7 +57,7 @@ final class MessagesServiceM6Tests: XCTestCase {
         let message = try await service.createPost(
             body: "look", tags: [], visibility: .public,
             imageURLs: ["https://cdn/a.png"], videoURLs: [], scheduledAt: nil,
-            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false
+            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: false
         )
 
         // Then
@@ -76,7 +76,7 @@ final class MessagesServiceM6Tests: XCTestCase {
             _ = try await service.createPost(
                 body: "look", tags: [], visibility: .public,
                 imageURLs: ["https://cdn/a.png"], videoURLs: [], scheduledAt: nil,
-                mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false
+                mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: false
             )
             XCTFail("Expected MessagesError.subscriberRequired")
         } catch let error as MessagesError {
@@ -103,7 +103,7 @@ final class MessagesServiceM6Tests: XCTestCase {
         let message = try await service.createPost(
             body: "later", tags: [], visibility: .public,
             imageURLs: [], videoURLs: [], scheduledAt: when,
-            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false
+            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: false
         )
 
         // Then — created, but not written to the by-id cache (not yet published).
@@ -122,7 +122,7 @@ final class MessagesServiceM6Tests: XCTestCase {
             _ = try await service.createPost(
                 body: "later", tags: [], visibility: .public,
                 imageURLs: [], videoURLs: [], scheduledAt: Date(),
-                mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false
+                mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: false
             )
             XCTFail("Expected MessagesError.subscriberRequired")
         } catch let error as MessagesError {
@@ -144,7 +144,7 @@ final class MessagesServiceM6Tests: XCTestCase {
             _ = try await service.createPost(
                 body: "fan out", tags: [], visibility: .public,
                 imageURLs: [], videoURLs: [], scheduledAt: nil,
-                mastodonProviderIds: [], crossPostToBluesky: true, crossPostToLinkedIn: false
+                mastodonProviderIds: [], crossPostToBluesky: true, crossPostToLinkedIn: false, crossPostToTwitter: false
             )
             XCTFail("Expected MessagesError.subscriberRequired")
         } catch let error as MessagesError {
@@ -164,11 +164,54 @@ final class MessagesServiceM6Tests: XCTestCase {
         let message = try await service.createPost(
             body: "fan out", tags: [], visibility: .public,
             imageURLs: [], videoURLs: [], scheduledAt: nil,
-            mastodonProviderIds: ["p-1", "p-2"], crossPostToBluesky: false, crossPostToLinkedIn: true
+            mastodonProviderIds: ["p-1", "p-2"], crossPostToBluesky: false, crossPostToLinkedIn: true, crossPostToTwitter: false
         )
 
         // Then
         XCTAssertEqual(message.id, "m-4")
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.count, 1)
+    }
+
+    // MARK: - createPost cross-post gate (G7 — X / Twitter)
+
+    func test_givenFreeAccountCrossPostingToTwitter_whenCreating_thenThrowsSubscriberRequiredBeforeCall() async throws {
+        // Given — invalid input for a free account: an X-only cross-post must
+        // be gated by the same `.crossPosting` entitlement as Bluesky /
+        // LinkedIn, before any HTTP call is made.
+        let api = StubAPIClient()
+        let service = freeService(api)
+
+        // When / Then
+        do {
+            _ = try await service.createPost(
+                body: "hello X", tags: [], visibility: .public,
+                imageURLs: [], videoURLs: [], scheduledAt: nil,
+                mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: true
+            )
+            XCTFail("Expected MessagesError.subscriberRequired")
+        } catch let error as MessagesError {
+            XCTAssertEqual(error, .subscriberRequired(.crossPosting))
+        }
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty)
+    }
+
+    func test_givenSubscriberCrossPostingToTwitter_whenCreating_thenPosts() async throws {
+        // Given — happy path (G7): a subscriber fans out to X only.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageObject(id: "m-x"))
+        let service = subscriberService(api)
+
+        // When
+        let message = try await service.createPost(
+            body: "hello X", tags: [], visibility: .public,
+            imageURLs: [], videoURLs: [], scheduledAt: nil,
+            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: true
+        )
+
+        // Then
+        XCTAssertEqual(message.id, "m-x")
         let recorded = await api.recorded
         XCTAssertEqual(recorded.count, 1)
     }
@@ -186,7 +229,7 @@ final class MessagesServiceM6Tests: XCTestCase {
             _ = try await service.createPost(
                 body: "look", tags: [], visibility: .public,
                 imageURLs: ["https://cdn/a.png"], videoURLs: [], scheduledAt: nil,
-                mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false
+                mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: false
             )
             XCTFail("Expected an APIError")
         } catch let error as APIError {
@@ -204,7 +247,7 @@ final class MessagesServiceM6Tests: XCTestCase {
         let message = try await service.createPost(
             body: "", tags: [], visibility: .public,
             imageURLs: [], videoURLs: [], scheduledAt: nil,
-            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false
+            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: false
         )
 
         // Then
@@ -427,7 +470,7 @@ final class MessagesServiceM6Tests: XCTestCase {
         let message = try await service.createPost(
             body: "look", tags: [], visibility: .public,
             imageURLs: ["https://cdn/a.png"], videoURLs: [], scheduledAt: nil,
-            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false
+            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: false
         )
 
         // Then — the live provider grants media, so the post is created.
@@ -449,7 +492,7 @@ final class MessagesServiceM6Tests: XCTestCase {
             _ = try await service.createPost(
                 body: "look", tags: [], visibility: .public,
                 imageURLs: ["https://cdn/a.png"], videoURLs: [], scheduledAt: nil,
-                mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false
+                mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: false
             )
             XCTFail("Expected MessagesError.subscriberRequired")
         } catch let error as MessagesError {
@@ -476,7 +519,7 @@ final class MessagesServiceM6Tests: XCTestCase {
             _ = try await service.createPost(
                 body: "later", tags: [], visibility: .public,
                 imageURLs: [], videoURLs: [], scheduledAt: Date(),
-                mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false
+                mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: false
             )
             XCTFail("Expected MessagesError.subscriberRequired while free")
         } catch let error as MessagesError {
@@ -492,7 +535,7 @@ final class MessagesServiceM6Tests: XCTestCase {
         let message = try await service.createPost(
             body: "later", tags: [], visibility: .public,
             imageURLs: [], videoURLs: [], scheduledAt: Date(),
-            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false
+            mastodonProviderIds: [], crossPostToBluesky: false, crossPostToLinkedIn: false, crossPostToTwitter: false
         )
         XCTAssertEqual(message.id, "m-flip")
         recorded = await api.recorded

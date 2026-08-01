@@ -30,7 +30,7 @@ struct RecordedMessagesCall: Sendable, Equatable {
         case dig(messageId: String)
         case undig(messageId: String)
         // M6 write surface (additive — see the M6 conformance block below).
-        case createPost(body: String, tags: [String], visibility: Visibility, imageURLs: [String], videoURLs: [String], scheduledAt: Date?, mastodonProviderIds: [String], crossPostToBluesky: Bool, crossPostToLinkedIn: Bool)
+        case createPost(body: String, tags: [String], visibility: Visibility, imageURLs: [String], videoURLs: [String], scheduledAt: Date?, mastodonProviderIds: [String], crossPostToBluesky: Bool, crossPostToLinkedIn: Bool, crossPostToTwitter: Bool)
         case scheduledPosts
         case uploadImage(byteCount: Int)
         case uploadVideo(byteCount: Int, contentType: String)
@@ -219,7 +219,8 @@ actor StubMessagesService: MessagesServicing {
         scheduledAt: Date?,
         mastodonProviderIds: [String],
         crossPostToBluesky: Bool,
-        crossPostToLinkedIn: Bool
+        crossPostToLinkedIn: Bool,
+        crossPostToTwitter: Bool
     ) async throws -> Message {
         recorded.append(.init(kind: .createPost(
             body: body,
@@ -230,7 +231,8 @@ actor StubMessagesService: MessagesServicing {
             scheduledAt: scheduledAt,
             mastodonProviderIds: mastodonProviderIds,
             crossPostToBluesky: crossPostToBluesky,
-            crossPostToLinkedIn: crossPostToLinkedIn
+            crossPostToLinkedIn: crossPostToLinkedIn,
+            crossPostToTwitter: crossPostToTwitter
         )))
         return try take(&createPostOutcomes, label: "createPost")
     }

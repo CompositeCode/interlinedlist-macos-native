@@ -285,7 +285,25 @@ final class MessagesEndpointTests: XCTestCase {
         XCTAssertEqual(body["content"] as? String, "hi")
         XCTAssertNil(body["scheduledAt"])
         XCTAssertNil(body["crossPostToBluesky"])
+        XCTAssertNil(body["crossPostToTwitter"]) // G7 — omitted when unset
         XCTAssertNil(body["tags"])
+    }
+
+    func test_givenTwitterCrossPost_whenCreateBuilt_thenEncodesTwitterFlag() throws {
+        // Happy path (G7): `crossPostToTwitter: true` serializes on the wire
+        // exactly like `crossPostToBluesky` / `crossPostToLinkedIn`. The field
+        // name is UNVERIFIED (pattern-matched); this pins the encoding contract.
+        let request = Messages.create(CreateMessageRequest(
+            content: "hello X",
+            crossPostToTwitter: true
+        ))
+
+        let body = try encodedBody(request)
+        XCTAssertEqual(body["content"] as? String, "hello X")
+        XCTAssertEqual(body["crossPostToTwitter"] as? Bool, true)
+        // Boundary: the other cross-post flags stay omitted when unset.
+        XCTAssertNil(body["crossPostToBluesky"])
+        XCTAssertNil(body["crossPostToLinkedIn"])
     }
 
     func test_givenCrossPostAndScheduled_whenCreateBuilt_thenEncodesAllSetFields() throws {
@@ -300,7 +318,8 @@ final class MessagesEndpointTests: XCTestCase {
             scheduledAt: when,
             mastodonProviderIds: ["prov1", "prov2"],
             crossPostToBluesky: true,
-            crossPostToLinkedIn: false
+            crossPostToLinkedIn: false,
+            crossPostToTwitter: true
         ))
 
         let body = try encodedBody(request)
@@ -310,6 +329,7 @@ final class MessagesEndpointTests: XCTestCase {
         XCTAssertEqual(body["mastodonProviderIds"] as? [String], ["prov1", "prov2"])
         XCTAssertEqual(body["crossPostToBluesky"] as? Bool, true)
         XCTAssertEqual(body["crossPostToLinkedIn"] as? Bool, false)
+        XCTAssertEqual(body["crossPostToTwitter"] as? Bool, true) // G7
         XCTAssertNotNil(body["scheduledAt"]) // ISO-8601 string emitted
         XCTAssertNil(body["parentId"])       // nil omitted
     }

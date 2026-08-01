@@ -91,6 +91,11 @@ final class ComposerViewModel {
     var mastodonProviderIdsInput: String = ""
     var crossPostToBluesky: Bool = false
     var crossPostToLinkedIn: Bool = false
+    /// X / Twitter cross-post target (G7). A plain boolean the API takes
+    /// directly, mirroring `crossPostToLinkedIn` exactly (no async readiness
+    /// gate — LinkedIn has none either; the NW-4 readiness check is only wired
+    /// for Bluesky and Mastodon).
+    var crossPostToTwitter: Bool = false
 
     // MARK: - Read-only state
 
@@ -293,7 +298,8 @@ final class ComposerViewModel {
             scheduledAt: scheduled,
             mastodonProviderIds: mastodonProviderIds,
             crossPostToBluesky: crossPostToBluesky,
-            crossPostToLinkedIn: crossPostToLinkedIn
+            crossPostToLinkedIn: crossPostToLinkedIn,
+            crossPostToTwitter: crossPostToTwitter
         )
         eventBus.post(.messageCreated(created))
         if !created.crossPostResults.isEmpty {

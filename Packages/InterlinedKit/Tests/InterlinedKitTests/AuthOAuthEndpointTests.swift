@@ -127,4 +127,52 @@ final class AuthOAuthEndpointTests: XCTestCase {
             try JSONCoders.makeDecoder().decode(LinkedInStatusResponse.self, from: Data(json.utf8))
         )
     }
+
+    // MARK: - twitterStatus builder (G7)
+
+    func test_givenTwitterProvider_whenAuthorizeBuilt_thenTargetsProviderPath() {
+        // The X/Twitter OAuth provider slug is `twitter` (verified live
+        // 2026-07-31); the authorize route mirrors the other providers.
+        let request = Auth.authorize(provider: .twitter)
+        XCTAssertEqual(request.path, "/api/auth/twitter/authorize")
+        XCTAssertEqual(request.auth, .none)
+    }
+
+    func test_givenTwitterStatus_whenBuilt_thenTargetsStatusPathNoAuth() {
+        // Mirrors `linkedinStatus()` — public 200 for anonymous callers.
+        let request = Auth.twitterStatus()
+        XCTAssertEqual(request.method, .get)
+        XCTAssertEqual(request.path, "/api/auth/twitter/status")
+        XCTAssertEqual(request.auth, .none)
+        XCTAssertNil(request.body)
+        XCTAssertTrue(request.query.isEmpty)
+    }
+
+    // MARK: - TwitterStatusResponse decode (G7)
+
+    func test_givenConfiguredTwitterStatusJSON_whenDecoded_thenMapsConfiguredAndRedirect() throws {
+        // Live fixture shape from the unauthenticated probe (2026-07-31):
+        // { configured: true, redirectUri: ".../api/auth/twitter/callback" }.
+        let json = #"{"configured":true,"redirectUri":"https://interlinedlist.com/api/auth/twitter/callback"}"#
+        let decoded = try JSONCoders.makeDecoder().decode(TwitterStatusResponse.self, from: Data(json.utf8))
+        XCTAssertTrue(decoded.configured)
+        XCTAssertEqual(decoded.redirectUri, "https://interlinedlist.com/api/auth/twitter/callback")
+    }
+
+    func test_givenUnconfiguredTwitterStatusJSON_whenDecoded_thenConfiguredIsFalse() throws {
+        // Boundary: a deployment where X/Twitter OAuth is not configured.
+        let json = #"{"configured":false,"redirectUri":""}"#
+        let decoded = try JSONCoders.makeDecoder().decode(TwitterStatusResponse.self, from: Data(json.utf8))
+        XCTAssertFalse(decoded.configured)
+        XCTAssertEqual(decoded.redirectUri, "")
+    }
+
+    func test_givenMissingConfiguredFieldTwitter_whenDecoded_thenThrows() throws {
+        // Invalid input: a partial body must fail to decode rather than
+        // silently defaulting (mirrors the LinkedInStatusResponse test).
+        let json = #"{"redirectUri":"https://interlinedlist.com/api/auth/twitter/callback"}"#
+        XCTAssertThrowsError(
+            try JSONCoders.makeDecoder().decode(TwitterStatusResponse.self, from: Data(json.utf8))
+        )
+    }
 }
