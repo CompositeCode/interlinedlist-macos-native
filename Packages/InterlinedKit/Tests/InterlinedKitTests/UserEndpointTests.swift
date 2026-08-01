@@ -331,6 +331,30 @@ final class UserEndpointTests: XCTestCase {
         let request = User.lookup(handle: "")
         XCTAssertTrue(request.query.contains { $0.name == "handle" && $0.value == "" })
     }
+
+    // MARK: - publicProfile (GET /api/users/{username}) — D2
+
+    func test_givenPublicProfileBuilder_whenBuilt_thenGetsUsersPathWithBearer() {
+        let request = User.publicProfile(username: "ada")
+        XCTAssertEqual(request.method, .get)
+        XCTAssertEqual(request.path, "/api/users/ada")
+        XCTAssertEqual(request.auth, .bearer)
+    }
+
+    func test_givenProfileBody_whenPublicProfileSent_thenDecodesRichFields() async throws {
+        let (client, transport, _) = makeClient()
+        await transport.enqueue(.json(#"""
+        {"id":"u1","username":"ada","displayName":"Ada","avatar":null,"headerImage":null,
+         "bio":"hi","joinedAt":"2026-03-23T23:23:59.755Z","isPrivate":false,
+         "followerCount":3,"followingCount":1,"publicMessageCount":10,"publicListCount":0}
+        """#))
+
+        let profile = try await client.send(User.publicProfile(username: "ada"))
+
+        XCTAssertEqual(profile.id, "u1")
+        XCTAssertEqual(profile.followerCount, 3)
+        XCTAssertEqual(profile.bio, "hi")
+    }
 }
 
 private struct AnyEncodableUserProbe: Encodable {
