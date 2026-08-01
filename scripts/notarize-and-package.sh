@@ -156,9 +156,36 @@ xcodebuild -exportArchive \
 
 [[ -d "$APP_PATH" ]] || { echo "!! Export did not produce $APP_PATH"; exit 1; }
 
+# ─── Step 2.5: Build + embed the document-sync agent ─────────────────────────
+# Bundles InterlinedListSync.app (the menu-bar sync agent) inside the main app
+# as a login item, plus the LaunchAgent plist that SMAppService registers, then
+# re-signs inside-out so the code seal covers the added content.
+echo "==> Step 2.5: Building + embedding document-sync agent"
+CODESIGN_IDENTITY="$CODESIGN_IDENTITY" bash "$SCRIPT_DIR/build-sync-agent.sh"
+AGENT_APP="$ROOT_DIR/SyncAgent/build/InterlinedListSync.app"
+[[ -d "$AGENT_APP" ]] || { echo "!! Sync agent build did not produce $AGENT_APP"; exit 1; }
+
+LOGIN_ITEMS_DIR="$APP_PATH/Contents/Library/LoginItems"
+LAUNCH_AGENTS_DIR="$APP_PATH/Contents/Library/LaunchAgents"
+mkdir -p "$LOGIN_ITEMS_DIR" "$LAUNCH_AGENTS_DIR"
+rm -rf "$LOGIN_ITEMS_DIR/InterlinedListSync.app"
+cp -R "$AGENT_APP" "$LOGIN_ITEMS_DIR/InterlinedListSync.app"
+cp "$ROOT_DIR/SyncAgent/LaunchAgent/com.interlinedlist.macos.sync.plist" "$LAUNCH_AGENTS_DIR/"
+
+# Re-sign the embedded agent, then the outer app (inside-out).
+codesign --force --options runtime --timestamp \
+    --entitlements "$ROOT_DIR/SyncAgent/InterlinedListSync.entitlements" \
+    --sign "$CODESIGN_IDENTITY" \
+    "$LOGIN_ITEMS_DIR/InterlinedListSync.app"
+codesign --force --options runtime --timestamp \
+    --entitlements "$ROOT_DIR/App/Resources/InterlinedList.entitlements" \
+    --sign "$CODESIGN_IDENTITY" \
+    "$APP_PATH"
+
 # ─── Step 3: Verify .app signature ───────────────────────────────────────────
 echo "==> Step 3: Verifying .app code signature"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+codesign --verify --deep --strict --verbose=2 "$LOGIN_ITEMS_DIR/InterlinedListSync.app"
 
 # ─── Step 4: Notarize the .app ───────────────────────────────────────────────
 echo "==> Step 4: Zipping .app for notarization"

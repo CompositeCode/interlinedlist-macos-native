@@ -305,7 +305,10 @@ final class AppEnvironment: ObservableObject {
     /// a single session, and document sync (M4) is what actually
     /// needs persistence.
     static func live() -> AppEnvironment {
-        let tokenStore = KeychainTokenStore()
+        // Store the bearer token in the shared Keychain access group so the
+        // bundled document-sync agent can read it (silent, single sign-in).
+        // On first read after upgrade the store migrates any legacy token.
+        let tokenStore = KeychainTokenStore(accessGroup: SyncServiceController.sharedKeychainAccessGroup)
         let credentialStore = KeychainCredentialStore()
         // Dedicated URLSession with ephemeral (in-memory) cookie storage so the
         // session-login cookie is isolated from URLSession.shared and never

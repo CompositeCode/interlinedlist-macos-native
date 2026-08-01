@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.interlinedlist.macos.sync</string>
+    <!-- Path to the embedded agent's executable, relative to the containing
+         app bundle. Resolved by SMAppService.agent at register time. -->
+    <key>BundleProgram</key>
+    <string>Contents/Library/LoginItems/InterlinedListSync.app/Contents/MacOS/InterlinedListSync</string>
+    <!-- Start immediately on register and at every login. -->
+    <key>RunAtLoad</key>
+    <true/>
+    <!-- Let the user Quit it from the menu bar without launchd relaunching. -->
+    <key>KeepAlive</key>
+    <false/>
+    <!-- GUI session so the menu-bar status item can appear. -->
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>ProcessType</key>
+    <string>Interactive</string>
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>com.interlinedlist.macos.sync</string>
+    </array>
+</dict>
+</plist>
