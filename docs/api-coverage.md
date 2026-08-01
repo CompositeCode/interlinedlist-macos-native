@@ -214,8 +214,8 @@ The 2026-07-31 authenticated live probe ([`the-gaps.md`](../the-gaps.md) §2 + a
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `POST /api/stripe/checkout-session` | Stripe / Billing | per OpenAPI, unverified | G8 | Create a Stripe checkout session (writes not probed) | ☐ | ☐ |
-| `GET /api/stripe/customer-portal-session` | Stripe / Billing | per OpenAPI, unverified | G8 | Create a Stripe customer-portal session | ☐ | ☐ |
+| `POST /api/stripe/checkout-session` | Stripe / Billing | **404 not deployed** | ~~G8~~ **OUT OF SCOPE** | Billing managed in the online app (owner decision 2026-07-31); route also 404s live | — | — |
+| `GET /api/stripe/customer-portal-session` | Stripe / Billing | **404 not deployed** | ~~G8~~ **OUT OF SCOPE** | Billing managed in the online app; route also 404s live | — | — |
 
 ### LinkedIn targets (G11a) — 4
 

@@ -37,14 +37,14 @@ Legend — **Status:** ❌ absent · ◑ partial · **Tier:** free / **Sub** (su
 | **G5** | **Search** — messages, lists, documents (server-side) | ❌ | free | **P1** | M | ✅ | `GET /api/{lists,documents}/search` 200; **messages search is `GET /api/messages/search?q=` (POST → 405).** |
 | **G6** | **List Folders** — hierarchical folders for lists (distinct from doc folders), attach/detach, cycle-safe move | ❌ | **Sub** (create) | **P1** | M | ✅ | `/api/folders` 200 `{folders:[]}`; **lists already carry a `folderId` field** → clean hook. |
 | **G7** | **X / Twitter cross-posting** — OAuth link + per-message target + readiness, extending the existing Mastodon/Bluesky/LinkedIn composer | ❌ | Sub | **P2** | S | ✅ | `/api/auth/twitter/status` → `{configured:true, redirectUri:…/twitter/callback}`. |
-| **G8** | **In-app billing** — subscribe/manage via Stripe checkout + customer portal; show plan & quotas | ◑ | — | **P2** | M | ❔ | `stripeCustomerId` + `EntitlementsService` exist; **no purchase UI.** `/api/limits` live (see §2 for exact quota shape). Stripe endpoints not probed (avoided live writes). |
+| ~~G8~~ | ~~In-app billing~~ — **OUT OF SCOPE (2026-07-31): billing is managed in the online app.** Not a native gap. (The app still *reads* `customerStatus` to gate subscriber features; it never sells or manages subscriptions.) | — | — | — | — | — | Dropped from the plan. Stripe routes were also 404/not-deployed. |
 | **G9** | **Push notifications (APNs)** — register/unregister device token for native pushes (replaces tray polling) | ❌ | free | **P2** | M | ✅ | `POST /api/push/register` → 400 "token is required" (route live). `unregister` is not POST (405) — likely DELETE, confirm. |
 | **G10** | **Multi-account switching** — list accounts, switch active, add/remove | ❌ | free | **P3** | M | ⚠️ | **`/api/auth/accounts` → 401 with Bearer — session-cookie-only.** Native bearer clients can't switch server-side without a session or a bearer variant. Spike first. |
 | **G11a** | **LinkedIn personal posting targets** — choose target(s) in composer | ❌ | Sub | **P3** | S | ✅ | `/api/linkedin/{targets,posting-targets}` 200 with a real personal target. |
 | **G11b** | **LinkedIn org pages** — org-scoped posting / `orgs/{id}/linkedin-page` | ❌ | Sub | **P4** | M | ⚠️ | `orgScopesEnabled:false`; `…/linkedin-page` → 404. Not deployed for this tenant — treat as upstream-blocked. |
 | **G12** | **Server-side document templates** — `templates`, `from-template`, `tree` (app has *client-side* templates only) | ◑ | Sub | **P3** | S | ✅ | `/api/documents/templates` returns real seeded templates; `/api/documents/tree` returns one-call sidebar payload. |
 | **G13** | **Document presence / live cursors** — real-time co-editing heartbeat | ❌ | Sub | **P4** | M | ❔ | Not probed. Highest complexity, lowest parity urgency — confirm demand before building. |
-| **G14** | **Utility surfaces** — `/api/limits` quota card, weather/geolocation/image-proxy helpers | ❌ | free | **P4** | S | ✅ | Quota card folds into G8. |
+| **G14** | **Utility surfaces** — optional `/api/limits`-driven composer validation (message length / media limits); weather/geolocation/image-proxy helpers | ❌ | free | **P4** | S | ✅ | Optional polish, not billing. `/api/limits` shape verified (§2). |
 
 ### Still-open items carried forward from the old `feature-gaps.md`
 - **Following feed** (old NB-1) — `TimelineScope.following` is UI-wired but returned empty; a `scope=following` feed endpoint was pending. **Re-verify against live** (`GET /api/messages` scope params) — may now be closable. **P1.**
@@ -68,7 +68,7 @@ Build has started, backend-first (each gap's layers: Kit → Domain → Persiste
 | **D2 Public profile** | ✅ | ✅ | ✅ (auto) | `User.publicProfile` (`GET /api/users/{username}`) + `UserProfile.init(from:)`; `SocialService.profile` now prefers the real endpoint (rich bio/counts/joinedAt/isPrivate), decision-0002 message-fallback retained only on 404. Existing profile UI shows the richer data with no view changes. +8 tests. |
 | **G7 X/Twitter cross-post** | ✅ | ✅ | ✅ | Additive mirror of Bluesky/LinkedIn: `.twitter` provider + `twitterStatus()` + `crossPostToTwitter` on `CreateMessageRequest` (threaded through `MessagesService.createPost` + composer X toggle). +12 tests. **⚠️ field name `crossPostToTwitter` is pattern-matched, UNVERIFIED** (test account has no linked X identity) — one-file fix if it's `crossPostToX`. |
 | **G4 GitHub** | ⏸ | — | — | — | Endpoints live but 400 "GitHub account not linked" — shapes can't be verified without linking the test account's GitHub identity (browser OAuth). Buildable from GitHub's stable public shapes + flag, but deferred to keep the verify-first bar. |
-| **G8 Billing** | ⏸ partial | — | — | — | **Stripe endpoints 404 (not deployed live)** — `POST /api/stripe/checkout-session` and `GET /api/stripe/customer-portal-session` both return the HTML shell. Only `/api/limits` is live (shape verified). In-app purchase can't be built until the backend ships those routes; a limits/quota card is the only buildable slice. |
+| ~~G8 Billing~~ | ❌ OUT OF SCOPE | — | — | — | Billing is managed in the online app (owner decision 2026-07-31). Dropped from the parity plan. (Stripe routes were also 404/not-deployed.) |
 | **G9 Push** | ⏸ | — | — | — | `POST /api/push/register` live (400 "token is required"), but needs an APNs entitlement + provisioning under the notarized `.pkg` model (spike S2) before it's useful. |
 | **G12 Templates** | ✅ | ✅ 11 tests | n/a | ✅ agent | Server templates end-to-end: `Documents.templates()`/`createFromTemplate()`/`seedDefaultTemplates()` + `DocumentTemplatesService`; two-section "New from Template" picker (Built-in + "Your templates") with create+reload + seed-defaults. `from-template` body `{templateDocumentId}` verified via create+delete. `/api/documents/tree` deferred (sidebar-hydration optimization). |
 | G10, G11b, G13, G14 | — | — | — | — | not started (lower priority / deferred) |
@@ -191,9 +191,7 @@ Each wave is independently shippable, ordered by value ÷ effort and dependency.
 - **Kit** add `.twitter` to `OAuthProvider` (authorize/status generalize already); add the X cross-post flag to `CreateMessageRequest` (**confirm field name — spike S1**).
 - **App** X toggle + readiness alongside the existing three; include X in the cross-post result sheet. **S.**
 
-**G8 · In-app billing** *(non-App-Store `.pkg` → Stripe web checkout is compliant)*
-- **Kit** `createCheckoutSession()` `POST /api/stripe/checkout-session`, `customerPortalSession()` `GET /api/stripe/customer-portal-session`, `limits()` `GET /api/limits`.
-- **App** **Upgrade / Manage subscription** pane opening the returned Stripe URL via `openURL` (same handoff as OAuth), refreshing `customerStatus` on return; render a plan/quota card from `/api/limits` (shape in §2). Wire `maxContentLength`/media limits into composer validation. **M.**
+**~~G8 · In-app billing~~ — OUT OF SCOPE.** Billing is managed in the online app (owner decision 2026-07-31); the native app never sells or manages subscriptions. (Stripe routes were also 404/not-deployed.) The app continues to *read* `customerStatus` for feature-gating only.
 
 **G9 · Push notifications (APNs)** *(route live; needs entitlement — spike S2 first)*
 - **Kit** `registerPush(token:platform:)` `POST /api/push/register`; `unregisterPush(...)` (confirm verb — POST → 405, likely DELETE).
@@ -206,7 +204,7 @@ Each wave is independently shippable, ordered by value ÷ effort and dependency.
 
 - **G11a · LinkedIn personal targets** — target picker in the composer from `/api/linkedin/{posting-targets}`; `POST /api/linkedin/sync-pages` to refresh. **S.**
 - **G12 · Server-side document templates** — migrate the client template catalog onto `/api/documents/templates` + `/api/documents/from-template`; adopt `/api/documents/tree` for one-call sidebar hydration. **S.**
-- **G14 · `/api/limits` quota card** — folds into G8. **S.**
+- **G14 · `/api/limits` composer validation** — optional; wire message-length / media limits into the composer. Not billing. **S.**
 - **Follow-ups from §1:** per-doc/per-thread Markdown-export buttons (engine ready) · ERD list view (scope first) · public `ListDetailView` grid.
 - **Deferred pending demand:** **G11b** LinkedIn org pages (upstream `orgScopesEnabled:false`), **G13** document presence / live cursors.
 
@@ -229,7 +227,7 @@ Carried from `feature-gaps.md` §4 — can proceed in parallel with any wave:
 - **Sparkle** — `SparkleController` + SPM dep in place; verify the update-check call, `SUFeedURL`, `SUPublicEDKey`, key generation.
 - **Appcast hosting** — needs distribution infra on interlinedlist.com.
 - **Notarization** — `scripts/notarize.sh` / `package-pkg.sh` need the Developer ID certs (`CODESIGN_IDENTITY` / `INSTALLER_IDENTITY` in `.env` are placeholders).
-- **Target:** notarized **`.pkg`** (closed-source private repo; no `LICENSE`). Not App Store (yet) — which is *why* Stripe web checkout (G8) is the correct billing path.
+- **Target:** notarized **`.pkg`** (closed-source private repo; no `LICENSE`). Not App Store (yet). Billing is handled in the online app — the native app has no in-app purchase surface.
 - App Store extras (if pursued later): Privacy/Support pages, and now-satisfiable `/api/limits`.
 
 ---
@@ -250,7 +248,7 @@ Carried from `feature-gaps.md` §4 — can proceed in parallel with any wave:
 1. **Re-baseline `api-coverage.md`** (§8) — half-day; makes all tracking honest.
 2. **Wave 1 — G1 DMs + G2 Moderation** — highest daily value, both free-tier, and they interlock (block/mute gate DM eligibility). Ship together.
 3. **Wave 2 — G3 Sharing + G5 Search + G4 GitHub** — the collaboration story; G3 is the biggest single feature, G5 a fast win, G4 cashes in the already-built OAuth linking.
-4. **Wave 3 — G6/G7/G8/G9/(G10)** — organization, reach, and the purchase path that makes the subscriber gates actually convertible.
+4. **Wave 3 — G6/G7/G9/(G10)** — organization and reach. (G8 billing removed — managed online.)
 5. **Wave 4 — G11a/G12/G14 + follow-ups** — long-tail; re-confirm demand before G11b/G13.
 6. **Migration pass (§6)** rides alongside Wave 1. **Ship gating (§7)** runs in parallel throughout.
 
@@ -266,7 +264,7 @@ Carried from `feature-gaps.md` §4 — can proceed in parallel with any wave:
 - **S3 (G3):** does the list "watchers" model unify cleanly with the new `watcher`/`collaborator`/`manager` roles, or are they two systems?
 - **S4 (G10):** how do native Bearer clients use `/api/auth/accounts` + `/api/auth/switch` given the 401-under-Bearer? Session bridge or upstream bearer variant.
 - **S5 (Following feed):** re-verify whether `GET /api/messages` now serves a `scope=following` feed (old NB-1) — may already be closable.
-- **S6 (G8):** confirm Stripe checkout can round-trip through `interlinedlist://` or must land on a web success page (not probed to avoid live writes).
+- ~~S6 (G8 Stripe)~~ — removed; billing is out of scope (managed online).
 
 ---
 
