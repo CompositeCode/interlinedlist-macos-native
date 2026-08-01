@@ -69,8 +69,14 @@ struct DocumentsRootView: View {
             Task { await syncStatus?.syncNow() }
         }
         .sheet(isPresented: $isTemplatePickerPresented) {
-            if let documentsList {
-                DocumentTemplatePickerView(viewModel: documentsList) { created in
+            if let documentsList, let environment {
+                DocumentTemplatePickerView(
+                    viewModel: documentsList,
+                    serverTemplates: ServerTemplatesViewModel(
+                        service: environment.documentTemplatesService,
+                        documentsList: documentsList
+                    )
+                ) { created in
                     editor?.bind(to: created)
                 }
             }

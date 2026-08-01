@@ -94,6 +94,15 @@ final class AppEnvironment: ObservableObject {
     /// doubles substitute in.
     let documentsService: DocumentsServicing
 
+    /// The server-side document-templates surface (the-gaps.md G12) — the
+    /// user's own saved template documents. Distinct from the client-side
+    /// `DocumentTemplate.builtIn` catalog: this lists / creates-from / seeds
+    /// server templates so the "New from Template" picker can show a
+    /// "Your templates" section. Exposed as the protocol so test doubles
+    /// substitute in. Ungated, so it is a plain stored service (no live
+    /// entitlements rebuild).
+    let documentTemplatesService: DocumentTemplatesServicing
+
     /// The owner of `/api/documents/sync` — the M4 offline backbone
     /// (PLAN.md §3, §6 M4). The App layer reaches in directly for the
     /// `syncNow()` button on the toolbar; the rest of the App talks to
@@ -228,6 +237,7 @@ final class AppEnvironment: ObservableObject {
         listsEventBus: ListsEventBus,
         listsStore: ListsStore,
         documentsService: DocumentsServicing,
+        documentTemplatesService: DocumentTemplatesServicing,
         documentSyncEngine: DocumentSyncEngine,
         documentSyncEvents: AsyncStream<DocumentSyncEvent>,
         notificationsService: NotificationsServicing,
@@ -254,6 +264,7 @@ final class AppEnvironment: ObservableObject {
         self.listsEventBus = listsEventBus
         self.listsStore = listsStore
         self.documentsService = documentsService
+        self.documentTemplatesService = documentTemplatesService
         self.documentSyncEngine = documentSyncEngine
         self.documentSyncEvents = documentSyncEvents
         self.notificationsService = notificationsService
@@ -363,6 +374,11 @@ final class AppEnvironment: ObservableObject {
             api: api,
             sync: documentSyncEngine
         )
+        // Server document templates (the-gaps.md G12). Reuses the same
+        // kit-layer `APIClient` like the other services do — the
+        // `/api/documents/templates` endpoints are already routed by the
+        // shared `authTransport`. Ungated, so a plain stored service.
+        let documentTemplatesService = DocumentTemplatesService(api: api)
         let documentSyncEvents = documentSyncEngine.events
         // M5 — Notifications + Social write surface (PLAN.md §6 M5).
         // `NotificationsService` already exists with the read + mark
@@ -414,6 +430,7 @@ final class AppEnvironment: ObservableObject {
             listsEventBus: listsEventBus,
             listsStore: listsStore,
             documentsService: documentsService,
+            documentTemplatesService: documentTemplatesService,
             documentSyncEngine: documentSyncEngine,
             documentSyncEvents: documentSyncEvents,
             notificationsService: notificationsService,
