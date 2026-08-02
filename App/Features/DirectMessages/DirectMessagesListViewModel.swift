@@ -129,6 +129,9 @@ final class DirectMessagesListViewModel {
             regroup()
             error = nil
             hasLoadedOnce = true
+        } catch is CancellationError {
+            // Cancelled (view teardown / folder switch superseded), not
+            // failed. Leave state untouched so no spurious error banner shows.
         } catch {
             self.error = error
             hasLoadedOnce = true
@@ -150,6 +153,8 @@ final class DirectMessagesListViewModel {
             nextCursor = page.nextCursor
             regroup()
             error = nil
+        } catch is CancellationError {
+            // Cancelled pagination — not a failure; leave the list as-is.
         } catch {
             self.error = error
         }

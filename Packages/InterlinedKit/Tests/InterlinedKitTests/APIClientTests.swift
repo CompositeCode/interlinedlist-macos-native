@@ -175,6 +175,24 @@ final class APIClientTests: XCTestCase {
         }
     }
 
+    func test_givenCancelledRequest_whenSent_thenThrowsCancellationErrorNotTransport() async throws {
+        // Given — URLSession's async API reports task cancellation (a SwiftUI
+        // `.task` torn down on navigation) as `URLError(.cancelled)`.
+        let (client, transport, _) = makeClient()
+        await transport.enqueueError(URLError(.cancelled))
+
+        // When / Then — it must surface as `CancellationError`, never as a
+        // user-facing `APIError.transport` ("Network error: cancelled").
+        do {
+            _ = try await client.send(Request<Greeting>(method: .get, path: "/x", auth: .none))
+            XCTFail("Expected cancellation")
+        } catch is CancellationError {
+            // Expected.
+        } catch let error as APIError {
+            XCTFail("Cancellation must not be mapped to APIError, got \(error)")
+        }
+    }
+
     // MARK: - Query parameters
 
     func test_givenOptionalQueryItems_whenSent_thenSkipsNilParameters() async throws {
