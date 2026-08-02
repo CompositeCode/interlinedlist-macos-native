@@ -71,16 +71,31 @@ struct OwnedListsRootView: View {
 
     @ViewBuilder
     private func content(viewModel: OwnedListsViewModel) -> some View {
-        NavigationSplitView {
-            sidebar(viewModel: viewModel)
-        } content: {
-            if let selected = viewModel.selectedList, let rowsVM = rowsViewModel {
-                ListRowsView(list: selected, viewModel: rowsVM)
-            } else {
-                placeholderSelectListState
+        // A single `NavigationStack` hosting an `HSplitView`, not a nested
+        // `NavigationSplitView`: this view lives inside `MainWindowView`'s
+        // outer split view, and nesting a second `NavigationSplitView` there
+        // leaves a dead gap and a non-resizable, non-filling rows column.
+        // `HSplitView` packs the three panes edge-to-edge with draggable
+        // dividers; the rows column carries `maxWidth: .infinity` so it
+        // absorbs the free space in the center. (Mirrors the DirectMessages
+        // root, which uses the same pattern for the same reason.)
+        NavigationStack {
+            HSplitView {
+                sidebar(viewModel: viewModel)
+                    .frame(minWidth: 220, idealWidth: 260)
+
+                Group {
+                    if let selected = viewModel.selectedList, let rowsVM = rowsViewModel {
+                        ListRowsView(list: selected, viewModel: rowsVM)
+                    } else {
+                        placeholderSelectListState
+                    }
+                }
+                .frame(minWidth: 420, maxWidth: .infinity)
+
+                RowInspectorView(viewModel: rowsViewModel)
+                    .frame(minWidth: 280, idealWidth: 340)
             }
-        } detail: {
-            RowInspectorView(viewModel: rowsViewModel)
         }
         .navigationTitle("My Lists")
         .toolbar {
@@ -238,7 +253,6 @@ struct OwnedListsRootView: View {
             } // Section("Lists")
         }
         .listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: 220, ideal: 260)
         .refreshable {
             await viewModel.refresh()
         }

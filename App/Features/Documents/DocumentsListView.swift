@@ -63,7 +63,6 @@ struct DocumentsListView: View {
         .listStyle(.inset)
         .scrollContentBackground(.hidden)
         .background(Color(.controlBackgroundColor))
-        .navigationSplitViewColumnWidth(min: 220, ideal: 280)
         .refreshable {
             await viewModel.refresh()
         }

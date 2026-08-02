@@ -19,10 +19,10 @@ import InterlinedDomain
 /// dedicated Requests management UI alongside the inline tray rows).
 enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
     case search = "Search"
-    case timeline = "Timeline"
+    case timeline = "Messages Timeline"
     case scheduled = "Scheduled"
     case notifications = "Notifications"
-    case messages = "Messages"
+    case messages = "Direct Messages"
     case lists = "Lists"
     case documents = "Documents"
     case organizations = "Organizations"

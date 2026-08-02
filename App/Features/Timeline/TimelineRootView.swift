@@ -61,7 +61,7 @@ struct TimelineRootView: View {
                     unconfiguredState
                 }
             }
-            .navigationTitle("Timeline")
+            .navigationTitle("Messages Timeline")
             .navigationDestination(for: Message.ID.self) { id in
                 MessageDetailView(messageID: id)
             }
