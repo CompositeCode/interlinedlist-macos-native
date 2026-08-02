@@ -1,5 +1,4 @@
 import Foundation
-import os
 
 // MARK: - APIClientProtocol
 
@@ -83,7 +82,7 @@ public final class APIClient: APIClientProtocol {
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
     private let retryPolicy: RetryPolicy
-    private let logger: Logger
+    private let appLog: AppLog
 
     public init(
         baseURL: URL = URL(string: "https://interlinedlist.com")!,
@@ -99,10 +98,7 @@ public final class APIClient: APIClientProtocol {
         self.decoder = decoder
         self.encoder = encoder
         self.retryPolicy = retryPolicy
-        self.logger = Logger(
-            subsystem: Bundle.main.bundleIdentifier ?? "com.interlinedlist.kit",
-            category: "APIClient"
-        )
+        self.appLog = AppLog(category: "APIClient")
     }
 
     // MARK: APIClientProtocol
@@ -114,9 +110,13 @@ public final class APIClient: APIClientProtocol {
         do {
             return try decoder.decode(Response.self, from: data)
         } catch {
+            // Log the full decoder detail (coding path / key) with the request
+            // path — the user only ever sees `APIError.userFacingMessage`.
+            let detail = String(reflecting: error)
+            appLog.error("Decode failed [\(request.path)] type=\(String(describing: Response.self)): \(detail)")
             throw APIError.decoding(
                 type: String(describing: Response.self),
-                message: error.localizedDescription
+                message: detail
             )
         }
     }
@@ -141,9 +141,13 @@ public final class APIClient: APIClientProtocol {
             // that is the correct "no limit on this route" signal.
             return (decoded, RateLimitInfo.parse(from: response))
         } catch {
+            // Log the full decoder detail (coding path / key) with the request
+            // path — the user only ever sees `APIError.userFacingMessage`.
+            let detail = String(reflecting: error)
+            appLog.error("Decode failed [\(request.path)] type=\(String(describing: Response.self)): \(detail)")
             throw APIError.decoding(
                 type: String(describing: Response.self),
-                message: error.localizedDescription
+                message: detail
             )
         }
     }
@@ -166,7 +170,7 @@ public final class APIClient: APIClientProtocol {
             // transparently try once via the session transport before we
             // give up. This catches future API drift in either direction.
             if case .unauthorized = error, request.auth == .bearer {
-                logger.warning("Bearer request returned 401 — retrying via session transport")
+                appLog.warning("Bearer request returned 401 [\(request.path)] — retrying via session transport")
                 return try await performWithRetry(request, forceSession: true)
             }
             throw error
@@ -220,13 +224,16 @@ public final class APIClient: APIClientProtocol {
             // and be indistinguishable from a genuine transport failure).
             throw CancellationError()
         } catch {
+            appLog.error("Transport failed [\(request.path)]: \(String(reflecting: error))")
             throw APIError.transport(message: error.localizedDescription)
         }
 
         guard (200..<300).contains(response.statusCode) else {
+            let serverMessage = decodeServerMessage(from: data)
+            appLog.notice("HTTP \(response.statusCode) [\(request.path)]: \(serverMessage ?? "no server message")")
             throw APIError.from(
                 statusCode: response.statusCode,
-                serverMessage: decodeServerMessage(from: data),
+                serverMessage: serverMessage,
                 retryAfter: parseRetryAfter(response.value(forHTTPHeaderField: "Retry-After"))
             )
         }
