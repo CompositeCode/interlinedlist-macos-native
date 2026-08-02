@@ -119,6 +119,10 @@ final class NewMessageViewModel {
             if let username = recipients.first(where: { $0.id == recipientId })?.username {
                 bus?.post(.messageSent(recipientUsername: username, message: sent))
             }
+        } catch is CancellationError {
+            // Cancelled mid-send — not a failure. Leave `error` nil so the
+            // sheet shows no spurious "Network error" banner; the user can
+            // retry (a persisted message reconciles via the list poll).
         } catch {
             self.error = error
         }

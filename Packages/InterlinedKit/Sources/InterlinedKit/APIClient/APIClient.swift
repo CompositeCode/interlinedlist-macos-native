@@ -206,6 +206,19 @@ public final class APIClient: APIClientProtocol {
             )
         } catch let error as APIError {
             throw error
+        } catch is CancellationError {
+            // Cooperative task cancellation (a SwiftUI `.task` torn down on
+            // view teardown / navigation) is not a network failure. Propagate
+            // it as-is so callers can ignore it instead of surfacing a
+            // spurious "Network error: cancelled" banner.
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            // URLSession's async API reports task cancellation as
+            // `URLError(.cancelled)`. Normalise it to `CancellationError` so
+            // the `.cancelled` signal survives the boundary (it would
+            // otherwise be flattened into `.transport(message: "cancelled")`
+            // and be indistinguishable from a genuine transport failure).
+            throw CancellationError()
         } catch {
             throw APIError.transport(message: error.localizedDescription)
         }
