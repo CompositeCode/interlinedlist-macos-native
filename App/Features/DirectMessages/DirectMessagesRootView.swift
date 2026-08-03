@@ -38,7 +38,7 @@ struct DirectMessagesRootView: View {
                     unconfiguredState
                 }
             }
-            .navigationTitle("Messages")
+            .navigationTitle("Direct Messages")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {

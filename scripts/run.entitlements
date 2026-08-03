@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements used ONLY for local `scripts/run.sh` builds (ad-hoc signed).
+
+  Deliberately omits `keychain-access-groups`: that entitlement is App-ID-bound
+  and requires a provisioning profile, which blocks ad-hoc signing on a machine
+  without the team's signing set up. Without it the app simply stores its token
+  in the non-shared Keychain item (KeychainTokenStore degrades gracefully), so
+  the app runs — only cross-process token sharing with the sync agent is
+  unavailable in a local ad-hoc run. Release builds use App/Resources/
+  InterlinedList.entitlements (with the shared group) via the signed .pkg.
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+</dict>
+</plist>

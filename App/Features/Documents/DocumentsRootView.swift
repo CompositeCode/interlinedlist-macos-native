@@ -91,29 +91,43 @@ struct DocumentsRootView: View {
         editor: DocumentEditorViewModel,
         syncStatus: SyncStatusViewModel
     ) -> some View {
-        NavigationSplitView {
-            DocumentsSidebarView(viewModel: folderTree) { folderID in
-                Task {
-                    await documentsList.reload(in: folderID)
-                    editor.bind(to: documentsList.selectedDocument)
+        // A single `NavigationStack` hosting an `HSplitView`, not a nested
+        // `NavigationSplitView`: this view lives inside `MainWindowView`'s
+        // outer split view, and nesting a second `NavigationSplitView` there
+        // leaves a dead gap and a non-resizable, non-filling documents column.
+        // `HSplitView` packs the three panes edge-to-edge with draggable
+        // dividers; the editor column carries `maxWidth: .infinity` so it
+        // absorbs the free space. (Mirrors the DirectMessages root.)
+        NavigationStack {
+            HSplitView {
+                DocumentsSidebarView(viewModel: folderTree) { folderID in
+                    Task {
+                        await documentsList.reload(in: folderID)
+                        editor.bind(to: documentsList.selectedDocument)
+                    }
                 }
-            }
-        } content: {
-            DocumentsListView(viewModel: documentsList) { docID in
-                let document = documentsList.documentsLoaded.first { $0.id == docID }
-                editor.bind(to: document)
-            }
-        } detail: {
-            if editor.document != nil {
-                DocumentEditorView(viewModel: editor) { localCopyID in
-                    handleOpenLocalCopy(
-                        localCopyID,
-                        documentsList: documentsList,
-                        editor: editor
-                    )
+                .frame(minWidth: 200, idealWidth: 240)
+
+                DocumentsListView(viewModel: documentsList) { docID in
+                    let document = documentsList.documentsLoaded.first { $0.id == docID }
+                    editor.bind(to: document)
                 }
-            } else {
-                placeholderEditor
+                .frame(minWidth: 220, idealWidth: 280)
+
+                Group {
+                    if editor.document != nil {
+                        DocumentEditorView(viewModel: editor) { localCopyID in
+                            handleOpenLocalCopy(
+                                localCopyID,
+                                documentsList: documentsList,
+                                editor: editor
+                            )
+                        }
+                    } else {
+                        placeholderEditor
+                    }
+                }
+                .frame(minWidth: 480, maxWidth: .infinity)
             }
         }
         .navigationTitle("Documents")

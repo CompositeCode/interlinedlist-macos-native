@@ -10,7 +10,7 @@ import SwiftUI
 
 struct TimelinePlaceholderView: View {
     var body: some View {
-        Text("Timeline")
+        Text("Messages Timeline")
             .font(.title)
             .foregroundStyle(.secondary)
     }

@@ -81,11 +81,43 @@ extension APIError: Equatable {
 }
 
 extension APIError: LocalizedError, CustomStringConvertible {
-    /// The server-supplied human message if one is available, otherwise a
-    /// concise developer-facing description of the case. Suitable for both
-    /// `NSAlert` body text and `os.Logger` output.
-    public var errorDescription: String? { description }
+    /// The message shown to the user. Points at `userFacingMessage` so that
+    /// anything rendering `error.localizedDescription` (the whole app does)
+    /// gets friendly, non-technical copy. The technical form lives in
+    /// `description` and is what goes to the debug log.
+    public var errorDescription: String? { userFacingMessage }
 
+    /// A friendly, non-technical message safe to show in a loading/error UI.
+    ///
+    /// Server-supplied messages (400/403/404/429) are already human-written on
+    /// InterlinedList and are preserved verbatim. The client-only cases
+    /// (`decoding`, `transport`) and bare status codes — whose `description`
+    /// is developer jargon like "Decoding ListRowDTO failed: …" — get a
+    /// generic, reassuring message instead. The real cause is captured in the
+    /// debug log via `description`.
+    public var userFacingMessage: String {
+        switch self {
+        case .transport:
+            return "Can’t reach InterlinedList. Check your internet connection and try again."
+        case .decoding:
+            return "InterlinedList sent back something we couldn’t read. Please try again in a moment."
+        case .unauthorized(let message):
+            return message ?? "Your session has expired. Please sign in again."
+        case .forbidden(let message):
+            return message ?? "You don’t have permission to do that."
+        case .notFound(let message):
+            return message ?? "We couldn’t find what you were looking for."
+        case .badRequest(let message):
+            return message ?? "That request couldn’t be completed. Please check your input and try again."
+        case .rateLimited(let message, _):
+            return message ?? "You’re doing that a little too quickly. Please wait a moment and try again."
+        case .httpStatus(_, let message):
+            return message ?? "Something went wrong. Please try again."
+        }
+    }
+
+    /// The technical description — developer jargon, request/decoder detail —
+    /// used for `os.Logger` and the debug-log file. Never shown to the user.
     public var description: String {
         switch self {
         case .transport(let message):

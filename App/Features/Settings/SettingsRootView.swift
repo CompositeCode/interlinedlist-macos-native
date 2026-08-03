@@ -32,6 +32,13 @@ struct SettingsRootView: View {
                 .tabItem {
                     Label("Blocked & Muted", systemImage: "hand.raised")
                 }
+
+            // Document sync agent (synch-plan.md) — enable the background helper
+            // that mirrors documents to a local folder for Obsidian.
+            DocumentSyncSettingsView()
+                .tabItem {
+                    Label("Document Sync", systemImage: "arrow.triangle.2.circlepath")
+                }
         }
         .frame(width: 560, height: 500)
     }

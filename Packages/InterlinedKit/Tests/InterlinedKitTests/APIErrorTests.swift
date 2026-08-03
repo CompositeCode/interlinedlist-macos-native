@@ -90,6 +90,49 @@ final class APIErrorTests: XCTestCase {
         XCTAssertEqual(error.description, "Unauthorized")
     }
 
+    // MARK: - User-facing vs. technical messages
+
+    func test_givenDecodingError_whenUserFacing_thenHidesTechnicalDetail() {
+        let error = APIError.decoding(type: "ListRowDTO", message: "keyNotFound(CodingKeys(stringValue: \"id\"))")
+
+        // The UI (localizedDescription → errorDescription → userFacingMessage)
+        // must not leak the decoder jargon…
+        XCTAssertFalse(error.userFacingMessage.contains("ListRowDTO"))
+        XCTAssertFalse(error.userFacingMessage.lowercased().contains("decoding"))
+        XCTAssertFalse(error.userFacingMessage.lowercased().contains("keynotfound"))
+        XCTAssertEqual(error.errorDescription, error.userFacingMessage)
+
+        // …but the technical form (for the debug log) still carries it.
+        XCTAssertTrue(error.description.contains("ListRowDTO"))
+        XCTAssertTrue(error.description.contains("keyNotFound"))
+    }
+
+    func test_givenTransportError_whenUserFacing_thenIsFriendlyConnectionMessage() {
+        let error = APIError.transport(message: "The request timed out.")
+        XCTAssertFalse(error.userFacingMessage.lowercased().contains("network error"))
+        XCTAssertTrue(error.userFacingMessage.contains("connection"))
+        // Technical detail preserved for the log.
+        XCTAssertEqual(error.description, "Network error: The request timed out.")
+    }
+
+    func test_givenServerMessage_whenUserFacing_thenPreservesItVerbatim() {
+        // 4xx server messages are already human-written — keep them.
+        XCTAssertEqual(
+            APIError.forbidden(serverMessage: "Email not verified").userFacingMessage,
+            "Email not verified"
+        )
+        XCTAssertEqual(
+            APIError.badRequest(serverMessage: "Name is required").userFacingMessage,
+            "Name is required"
+        )
+    }
+
+    func test_givenStatusWithoutServerMessage_whenUserFacing_thenFriendlyFallback() {
+        let error = APIError.httpStatus(code: 500, serverMessage: nil)
+        XCTAssertFalse(error.userFacingMessage.contains("500"))
+        XCTAssertEqual(error.description, "HTTP 500")
+    }
+
     // MARK: - APIErrorBody decoding
 
     func test_givenErrorBodyJSON_whenDecoded_thenExtractsMessage() throws {

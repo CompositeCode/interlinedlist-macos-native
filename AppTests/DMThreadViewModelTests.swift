@@ -181,6 +181,52 @@ final class DMThreadViewModelTests: XCTestCase {
         XCTAssertTrue(recorded.isEmpty, "An all-outbound thread marks nothing")
     }
 
+    // MARK: - Cancellation is not an error
+
+    func test_givenLoadCancelled_whenLoading_thenLeavesErrorNilAndNotLoaded() async {
+        // A cancelled thread load (view teardown / navigation) surfaces as
+        // CancellationError from the client. It must not pin an error banner
+        // nor flip `hasLoadedOnce`, which would flash a premature "Not mutual".
+        let (vm, service, _) = makeViewModel()
+        await service.enqueueThread(failure: CancellationError())
+
+        await vm.load()
+
+        XCTAssertNil(vm.error, "A cancelled load must not surface an error")
+        XCTAssertFalse(vm.hasLoadedOnce, "A cancelled load did not complete")
+    }
+
+    func test_givenSendCancelled_whenSending_thenRestoresDraftWithoutError() async {
+        // A cancelled send drops the optimistic bubble and restores the draft
+        // (so the user can retry) but shows no error banner.
+        let (vm, service, _) = makeViewModel()
+        vm.seedForTest(messages: [inbound("m1", read: true, at: 100)], otherUser: ada, isMutual: true)
+        await service.enqueueSend(failure: CancellationError())
+
+        vm.draft = "hello"
+        await vm.send()
+
+        XCTAssertEqual(vm.messages.map(\.id), ["m1"], "Optimistic placeholder removed on cancel")
+        XCTAssertEqual(vm.draft, "hello", "Draft restored for retry")
+        XCTAssertNil(vm.error, "A cancelled send must not surface an error")
+    }
+
+    func test_givenStaleError_whenPollSucceeds_thenErrorIsCleared() async {
+        // A genuine earlier failure pins the banner; once a poll round-trips
+        // successfully the thread is proven live and the banner self-heals.
+        let (vm, service, _) = makeViewModel()
+        vm.seedForTest(messages: [inbound("m1", read: true, at: 100)], otherUser: ada, isMutual: true)
+        await service.enqueueSend(failure: TestError.upstream("offline"))
+        vm.draft = "hi"
+        await vm.send()
+        XCTAssertEqual(vm.error as? TestError, .upstream("offline"), "Precondition: banner is showing")
+
+        await service.enqueueThreadUpdates(success: DMThread(messages: [], otherUser: ada, isMutual: true))
+        await vm.pollOnce()
+
+        XCTAssertNil(vm.error, "A successful poll clears the stale error banner")
+    }
+
     // MARK: - Poll cycle + cancellation
 
     func test_givenPollCycle_whenNewMessageArrives_thenMergesIntoThread() async {

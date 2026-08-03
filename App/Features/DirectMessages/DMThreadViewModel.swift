@@ -162,6 +162,11 @@ final class DMThreadViewModel {
             apply(thread, replacing: true)
             error = nil
             hasLoadedOnce = true
+        } catch is CancellationError {
+            // The load was cancelled (view teardown / navigation), not
+            // failed. Leave `error` and `hasLoadedOnce` untouched so no
+            // banner shows and no "loaded" flags flip prematurely — the
+            // surviving poll (or a fresh load) repopulates the thread.
         } catch {
             self.error = error
             hasLoadedOnce = true
@@ -218,6 +223,12 @@ final class DMThreadViewModel {
             }
             error = nil
             bus?.post(.messageSent(recipientUsername: username, message: sent))
+        } catch is CancellationError {
+            // Cancelled mid-send — not a failure. Drop the optimistic bubble
+            // and restore the draft so the user can retry; a live poll
+            // reconciles any message that did reach the server. No banner.
+            messages.removeAll { $0.id == tempId }
+            draft = priorDraft
         } catch {
             messages.removeAll { $0.id == tempId }
             draft = priorDraft
@@ -274,6 +285,10 @@ final class DMThreadViewModel {
     func pollOnce() async {
         do {
             let update = try await service.threadUpdates(username: username, since: newestId)
+            // A successful round-trip proves the thread is live — clear any
+            // stale error (e.g. a cancelled initial load) so a one-off
+            // cancellation banner self-heals instead of pinning forever.
+            error = nil
             guard !update.messages.isEmpty || update.otherUser != nil else { return }
             mergeUpdates(update)
             await markInboundRead()

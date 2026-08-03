@@ -18,7 +18,7 @@ import SwiftUI
 struct DirectMessagesMenuCommands: Commands {
     var body: some Commands {
         CommandGroup(after: .toolbar) {
-            Button("Messages") {
+            Button("Direct Messages") {
                 NotificationCenter.default.post(name: .directMessagesShow, object: nil)
             }
             .keyboardShortcut("m", modifiers: [.command, .option])

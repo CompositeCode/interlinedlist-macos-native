@@ -75,7 +75,6 @@ struct DocumentsSidebarView: View {
             }
         }
         .listStyle(.sidebar)
-        .navigationSplitViewColumnWidth(min: 200, ideal: 240)
         .toolbar {
             ToolbarItem {
                 Button {

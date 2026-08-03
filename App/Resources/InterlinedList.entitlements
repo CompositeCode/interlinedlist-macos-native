@@ -10,5 +10,12 @@
 	<true/>
 	<key>com.apple.security.files.user-selected.read-write</key>
 	<true/>
+	<!-- Shared group so the bundled document-sync agent
+	     (com.interlinedlist.macos.sync) can read the bearer token this app
+	     stores. Both apps must list the same group. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)com.interlinedlist.shared</string>
+	</array>
 </dict>
 </plist>
