@@ -33,6 +33,32 @@ final class OrganizationsListViewModel {
     private(set) var isLoading: Bool = false
     private(set) var loadError: Error?
 
+    /// True while a background revalidation runs *after* the cache has
+    /// already painted the memberships (stale-while-revalidate, PLAN.md §5).
+    private(set) var isRefreshing: Bool = false
+
+    /// True once the first load (cache or network) has painted memberships.
+    /// Lets the view suppress the blocking spinner once cache is on screen.
+    private(set) var hasLoadedOnce: Bool = false
+
+    /// True when a background revalidation failed while cached memberships
+    /// were on screen. The list keeps its cached rows; the view surfaces this
+    /// as an unobtrusive hint rather than blanking the list.
+    private(set) var refreshFailed: Bool = false
+
+    /// Timestamp of the last successful network refresh — drives the TTL.
+    private(set) var lastRefreshedAt: Date?
+
+    /// Freshness window: a re-appearing view whose memberships refreshed
+    /// within this many seconds skips revalidation and trusts cache.
+    static let refreshTTL: TimeInterval = 45
+
+    /// Whether a `.task`-driven re-appearance should revalidate.
+    var shouldRefresh: Bool {
+        guard let lastRefreshedAt else { return true }
+        return Date().timeIntervalSince(lastRefreshedAt) >= Self.refreshTTL
+    }
+
     /// Surfaces a failed create back to the view without clobbering the
     /// list-load error.
     private(set) var createError: Error?
@@ -50,17 +76,53 @@ final class OrganizationsListViewModel {
 
     // MARK: - Intents
 
-    /// Loads the signed-in user's organizations. Bound to the view's
-    /// `.task`; also the retry / refresh entry point.
+    /// Loads the signed-in user's organizations, stale-while-revalidate
+    /// (PLAN.md §5): on a cold start it paints the cached memberships
+    /// immediately (suppressing the blocking spinner) and then revalidates
+    /// over the network. A retry / refresh revalidates in place. On a network
+    /// failure the prior list is left intact — `loadError` is set only on a
+    /// cold-cache failure; `refreshFailed` is set (non-blocking) when cached
+    /// rows are on screen. Bound to the view's `.task` and the retry button.
     func load() async {
-        guard !isLoading else { return }
-        isLoading = true
-        defer { isLoading = false }
+        guard !isLoading, !isRefreshing else { return }
+        // Paint from cache only on the very first load; a manual refresh keeps
+        // whatever is already rendered.
+        let cachePainted: Bool
+        if !hasLoadedOnce {
+            let cached = await user.cachedOrganizations()
+            if !cached.isEmpty {
+                memberships = cached
+                hasLoadedOnce = true
+                cachePainted = true
+            } else {
+                cachePainted = false
+            }
+        } else {
+            cachePainted = !memberships.isEmpty
+        }
+
+        if cachePainted {
+            isRefreshing = true
+        } else {
+            isLoading = true
+        }
+        refreshFailed = false
+        defer {
+            isLoading = false
+            isRefreshing = false
+        }
         do {
             memberships = try await user.organizations()
             loadError = nil
+            hasLoadedOnce = true
+            lastRefreshedAt = Date()
         } catch {
-            loadError = error
+            if cachePainted {
+                refreshFailed = true
+            } else {
+                loadError = error
+            }
+            hasLoadedOnce = true
         }
     }
 

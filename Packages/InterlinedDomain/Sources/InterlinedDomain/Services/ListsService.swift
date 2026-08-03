@@ -73,7 +73,18 @@ public protocol ListsServicing: Sendable {
     // MARK: - M3 owned list CRUD
 
     /// Loads one page of the signed-in user's lists.
+    ///
+    /// When a `ListsStore` is injected the **first** page (`offset == 0`) is
+    /// written through to the cache; if the live fetch fails and the cache
+    /// holds a prior non-empty owned-list slice, that cached slice is returned
+    /// as a single page instead of throwing (stale-while-revalidate / offline
+    /// fallback — mirrors `MessagesService.timeline`).
     func myLists(limit: Int, offset: Int) async throws -> OwnedListsPage
+
+    /// Surfaces the cached owned-list slice (when a store is injected and holds
+    /// one), so the sidebar can paint before `myLists` returns. Empty when no
+    /// store is injected or the cache is cold.
+    func cachedMyLists() async -> [OwnedList]
 
     /// Loads a single owned list by id.
     func detail(listId: String) async throws -> OwnedList
@@ -185,6 +196,7 @@ public final class ListsService: ListsServicing {
 
     private let api: APIClientProtocol
     private let entitlements: EntitlementsService
+    private let store: ListsStore?
     private let decoder: JSONDecoder
 
     /// - Parameters:
@@ -193,15 +205,20 @@ public final class ListsService: ListsServicing {
     ///     wires the real source. Defaults to a permissive (`free`-status)
     ///     instance because `canManageLists` is currently permissive by
     ///     decision (see `EntitlementsService.canManageLists`).
+    ///   - store: optional lists cache port. When `nil`, the service fetches
+    ///     live with no caching (the default keeps existing `ListsService(api:)`
+    ///     call sites source-compatible).
     ///   - decoder: shared kit JSON configuration. Defaults to the kit's
     ///     `JSONCoders` decoder so dates parse identically to the client.
     public init(
         api: APIClientProtocol,
         entitlements: EntitlementsService = EntitlementsService(customerStatus: .free),
+        store: ListsStore? = nil,
         decoder: JSONDecoder = JSONCoders.makeDecoder()
     ) {
         self.api = api
         self.entitlements = entitlements
+        self.store = store
         self.decoder = decoder
     }
 
@@ -263,16 +280,40 @@ public final class ListsService: ListsServicing {
 
     public func myLists(limit: Int, offset: Int) async throws -> OwnedListsPage {
         try requireListManagement()
-        let request = Lists.list(limit: limit, offset: offset)
-        let (data, _) = try await api.sendRaw(request)
-        let key = request.paginationKey ?? "data"
-        let paginated = try PaginatedDecoder.decode(
-            ListDTO.self,
-            collectionKey: key,
-            from: data,
-            decoder: decoder
-        )
-        return OwnedListsPage(from: paginated)
+        do {
+            let request = Lists.list(limit: limit, offset: offset)
+            let (data, _) = try await api.sendRaw(request)
+            let key = request.paginationKey ?? "data"
+            let paginated = try PaginatedDecoder.decode(
+                ListDTO.self,
+                collectionKey: key,
+                from: data,
+                decoder: decoder
+            )
+            let page = OwnedListsPage(from: paginated)
+            // Write through only the FIRST page — the cached owned-list slice
+            // is a single page keyed under one domain (see `ListsStore` docs),
+            // so a subsequent-page fetch must not overwrite it.
+            if offset == 0 {
+                await store?.cacheLists(page.lists)
+            }
+            return page
+        } catch let error as APIError {
+            // Offline / upstream failure: fall back to the cached first page
+            // when one exists. A cold cache still surfaces the error so the UI
+            // shows a real failure rather than a silent empty sidebar.
+            if let store, offset == 0 {
+                let cached = await store.cachedLists()
+                if !cached.isEmpty {
+                    return OwnedListsPage(lists: cached, hasMore: false, nextOffset: nil)
+                }
+            }
+            throw error
+        }
+    }
+
+    public func cachedMyLists() async -> [OwnedList] {
+        await store?.cachedLists() ?? []
     }
 
     public func detail(listId: String) async throws -> OwnedList {

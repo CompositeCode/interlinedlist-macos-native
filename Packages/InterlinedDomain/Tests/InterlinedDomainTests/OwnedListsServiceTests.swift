@@ -157,6 +157,118 @@ final class OwnedListsServiceTests: XCTestCase {
         XCTAssertNil(page.nextOffset)
     }
 
+    // MARK: - myLists SWR cache
+
+    func test_givenStore_whenLoadingFirstPageOfMyLists_thenWritesThroughToCache() async throws {
+        // Given — happy path: a store injected, first page fetched.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.paginatedLists(ids: ["list-1", "list-2"]))
+        let store = FakeListsStore()
+        let service = ListsService(api: api, store: store)
+
+        // When
+        _ = try await service.myLists(limit: 20, offset: 0)
+
+        // Then — the first page was written through to the cache.
+        let cached = await store.cachedLists()
+        XCTAssertEqual(cached.map(\.id), ["list-1", "list-2"])
+    }
+
+    func test_givenStore_whenLoadingSubsequentPage_thenDoesNotOverwriteCachedFirstPage() async throws {
+        // Given — a cache primed with the first page.
+        let store = FakeListsStore()
+        await store.cacheLists([sampleOwnedList(id: "first-1"), sampleOwnedList(id: "first-2")])
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.paginatedLists(ids: ["page2-1"], offset: 20))
+        let service = ListsService(api: api, store: store)
+
+        // When — an offset>0 page must not clobber the cached first page.
+        _ = try await service.myLists(limit: 20, offset: 20)
+
+        // Then — cache still holds the first page.
+        let cached = await store.cachedLists()
+        XCTAssertEqual(cached.map(\.id), ["first-1", "first-2"])
+    }
+
+    func test_givenPrimedCacheAndAPIFailure_whenLoadingFirstPage_thenReturnsCachedPage() async throws {
+        // Given — upstream API failure with a primed cache.
+        let store = FakeListsStore()
+        await store.cacheLists([sampleOwnedList(id: "cached-1")])
+        let api = StubAPIClient()
+        await api.enqueue(failure: .transport(message: "offline"))
+        let service = ListsService(api: api, store: store)
+
+        // When
+        let page = try await service.myLists(limit: 20, offset: 0)
+
+        // Then — the stale cache is surfaced instead of throwing.
+        XCTAssertEqual(page.lists.map(\.id), ["cached-1"])
+        XCTAssertFalse(page.hasMore)
+        XCTAssertNil(page.nextOffset)
+    }
+
+    func test_givenEmptyCacheAndAPIFailure_whenLoadingFirstPage_thenThrows() async throws {
+        // Given — cold cache and a failing API (nothing to fall back to).
+        let store = FakeListsStore()
+        let api = StubAPIClient()
+        await api.enqueue(failure: .unauthorized(serverMessage: nil))
+        let service = ListsService(api: api, store: store)
+
+        // When / Then
+        do {
+            _ = try await service.myLists(limit: 20, offset: 0)
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .unauthorized(serverMessage: nil))
+        }
+    }
+
+    func test_givenPrimedCacheAndSubsequentPageFailure_whenLoading_thenThrowsRatherThanServingFirstPage() async throws {
+        // Given — boundary: a primed first page, but the failing fetch is for
+        // offset>0. The fallback is first-page-only, so it must still throw.
+        let store = FakeListsStore()
+        await store.cacheLists([sampleOwnedList(id: "cached-1")])
+        let api = StubAPIClient()
+        await api.enqueue(failure: .transport(message: "offline"))
+        let service = ListsService(api: api, store: store)
+
+        // When / Then
+        do {
+            _ = try await service.myLists(limit: 20, offset: 20)
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .transport(message: "offline"))
+        }
+    }
+
+    func test_givenPrimedCache_whenReadingCachedMyLists_thenReturnsCacheWithNoNetworkCall() async throws {
+        // Given — a primed cache and an API that would fail if called.
+        let store = FakeListsStore()
+        await store.cacheLists([sampleOwnedList(id: "cached-1")])
+        let api = StubAPIClient()
+        let service = ListsService(api: api, store: store)
+
+        // When — the cache read must not touch the network.
+        let cached = await service.cachedMyLists()
+
+        // Then
+        XCTAssertEqual(cached.map(\.id), ["cached-1"])
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty)
+    }
+
+    func test_givenNoStore_whenReadingCachedMyLists_thenReturnsEmpty() async throws {
+        // Given — boundary: no store injected.
+        let api = StubAPIClient()
+        let service = ListsService(api: api)
+
+        // When
+        let cached = await service.cachedMyLists()
+
+        // Then
+        XCTAssertTrue(cached.isEmpty)
+    }
+
     // MARK: - detail
 
     func test_givenOwnedListExists_whenLoadingDetail_thenMapsAllFields() async throws {
@@ -1031,4 +1143,28 @@ final class OwnedListsServiceTests: XCTestCase {
 enum BlockingEntitlements {
     /// A blocking entitlements value — `canManageLists == false`.
     static let shared = EntitlementsService(customerStatus: .free, canManageLists: false)
+}
+
+extension OwnedListsServiceTests {
+    /// A minimal `OwnedList` for the SWR-cache tests (only `id` matters to the
+    /// assertions, which check membership/order by id).
+    func sampleOwnedList(id: String) -> OwnedList {
+        OwnedList(id: id, title: "List \(id)", visibility: .private)
+    }
+}
+
+/// In-memory `ListsStore` double for the `ListsService` SWR cache tests. Only
+/// the owned-lists-page surface is exercised here; the row / by-id / remove
+/// paths are no-ops sufficient for these tests. An `actor` for Swift 6 safety.
+private actor FakeListsStore: ListsStore {
+    private var lists: [OwnedList] = []
+
+    func cachedLists() async -> [OwnedList] { lists }
+    func cacheLists(_ lists: [OwnedList]) async { self.lists = lists }
+    func cachedList(id: String) async -> OwnedList? { lists.first { $0.id == id } }
+    func cacheList(_ list: OwnedList) async {}
+    func removeList(id: String) async { lists.removeAll { $0.id == id } }
+    func cachedRows(of listId: String) async -> [ListRow] { [] }
+    func cacheRows(_ rows: [ListRow], of listId: String) async {}
+    func clear() async { lists.removeAll() }
 }

@@ -37,6 +37,21 @@ public protocol MessageStore: Sendable {
     /// on-disk cache stays consistent on delete.
     func remove(id: String) async
 
+    /// The cached scheduled posts (`GET /api/messages/scheduled`), sorted by
+    /// `scheduledAt` ascending, or `[]` when nothing is cached. A separate
+    /// read surface from the timeline: scheduled posts are future, not-yet-
+    /// published messages the timeline cache must never serve as live.
+    ///
+    /// A default no-op (`[]`) is provided below so existing conformances
+    /// compile without immediate change (the same forward-compatibility
+    /// approach as `remove(id:)`). Concrete stores override it.
+    func cachedScheduled() async -> [Message]
+
+    /// Replaces the cached scheduled slice with a fresh page. Implementations
+    /// must touch **only** scheduled rows and leave timeline-cached records
+    /// intact. A default no-op is provided below.
+    func replaceScheduled(_ messages: [Message]) async
+
     /// Clears all cached state. Called on sign-out.
     func clear() async
 }
@@ -47,4 +62,14 @@ public extension MessageStore {
     /// should override to keep the cache consistent with deletes; see the
     /// protocol's `remove(id:)` doc.
     func remove(id: String) async { }
+
+    /// Default no-op so the scheduled read surface does not break existing
+    /// out-of-package conformances written before it landed. Concrete stores
+    /// override to serve the persisted scheduled slice; see the protocol doc.
+    func cachedScheduled() async -> [Message] { [] }
+
+    /// Default no-op so the scheduled write surface does not break existing
+    /// out-of-package conformances written before it landed. Concrete stores
+    /// override; see the protocol doc.
+    func replaceScheduled(_ messages: [Message]) async { }
 }

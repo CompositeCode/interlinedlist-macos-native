@@ -316,6 +316,122 @@ final class MessagesServiceM6Tests: XCTestCase {
         XCTAssertTrue(posts.isEmpty)
     }
 
+    // MARK: - scheduledPosts SWR cache
+
+    func test_givenStore_whenLoadingScheduledPosts_thenWritesThroughToScheduledCache() async throws {
+        // Given — happy path: a store injected, API returns two scheduled posts.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.scheduledMessagesEnvelope(ids: ["s-1", "s-2"]))
+        let store = InMemoryMessageStore()
+        let service = MessagesService(
+            api: api,
+            store: store,
+            entitlements: EntitlementsService(customerStatus: .free)
+        )
+
+        // When
+        _ = try await service.scheduledPosts()
+
+        // Then — the scheduled slice was written through to the cache.
+        let cached = await store.cachedScheduled()
+        XCTAssertEqual(Set(cached.map(\.id)), ["s-1", "s-2"])
+    }
+
+    func test_givenStore_whenLoadingScheduledPosts_thenTimelineCacheUntouched() async throws {
+        // Given — a primed timeline cache and a scheduled fetch.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.scheduledMessagesEnvelope(ids: ["s-1"]))
+        let store = InMemoryMessageStore()
+        await store.replaceTimeline([plainMessage(id: "t-1")], scope: .all, tag: nil)
+        let service = MessagesService(
+            api: api,
+            store: store,
+            entitlements: EntitlementsService(customerStatus: .free)
+        )
+
+        // When
+        _ = try await service.scheduledPosts()
+
+        // Then — the scheduled write-through never touches the timeline slice.
+        let timeline = await store.cachedTimeline(scope: .all, tag: nil)
+        XCTAssertEqual(timeline.map(\.id), ["t-1"])
+    }
+
+    func test_givenPrimedScheduledCacheAndAPIFailure_whenLoading_thenReturnsCached() async throws {
+        // Given — upstream API failure with a primed scheduled cache.
+        let store = InMemoryMessageStore()
+        await store.replaceScheduled([
+            scheduledMessage(id: "cached-s")
+        ])
+        let api = StubAPIClient()
+        await api.enqueue(failure: .transport(message: "offline"))
+        let service = MessagesService(
+            api: api,
+            store: store,
+            entitlements: EntitlementsService(customerStatus: .free)
+        )
+
+        // When
+        let posts = try await service.scheduledPosts()
+
+        // Then — the stale scheduled cache is surfaced instead of throwing.
+        XCTAssertEqual(posts.map(\.id), ["cached-s"])
+    }
+
+    func test_givenEmptyScheduledCacheAndAPIFailure_whenLoading_thenThrows() async throws {
+        // Given — cold scheduled cache and a failing API.
+        let store = InMemoryMessageStore()
+        let api = StubAPIClient()
+        await api.enqueue(failure: .forbidden(serverMessage: "subscriber only"))
+        let service = MessagesService(
+            api: api,
+            store: store,
+            entitlements: EntitlementsService(customerStatus: .free)
+        )
+
+        // When / Then
+        do {
+            _ = try await service.scheduledPosts()
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .forbidden(serverMessage: "subscriber only"))
+        }
+    }
+
+    func test_givenPrimedScheduledCache_whenReadingCachedScheduledPosts_thenReturnsCacheWithNoNetworkCall() async throws {
+        // Given — a primed scheduled cache and an API that would fail if called.
+        let store = InMemoryMessageStore()
+        await store.replaceScheduled([
+            scheduledMessage(id: "cached-s")
+        ])
+        let api = StubAPIClient()
+        let service = MessagesService(
+            api: api,
+            store: store,
+            entitlements: EntitlementsService(customerStatus: .free)
+        )
+
+        // When — the cache read must not touch the network.
+        let cached = await service.cachedScheduledPosts()
+
+        // Then
+        XCTAssertEqual(cached.map(\.id), ["cached-s"])
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty)
+    }
+
+    func test_givenNoStore_whenReadingCachedScheduledPosts_thenReturnsEmpty() async throws {
+        // Given — boundary: no store injected.
+        let api = StubAPIClient()
+        let service = freeService(api)
+
+        // When
+        let cached = await service.cachedScheduledPosts()
+
+        // Then
+        XCTAssertTrue(cached.isEmpty)
+    }
+
     // MARK: - uploadImage
 
     func test_givenSubscriberAndValidImage_whenUploading_thenPreparesAndReturnsURL() async throws {
@@ -540,6 +656,48 @@ final class MessagesServiceM6Tests: XCTestCase {
         XCTAssertEqual(message.id, "m-flip")
         recorded = await api.recorded
         XCTAssertEqual(recorded.count, 1)
+    }
+
+    // MARK: - SWR-cache helpers
+
+    /// A published (non-scheduled) `Message` for priming the timeline cache.
+    private func plainMessage(id: String) -> Message {
+        Message(
+            id: id,
+            author: UserSummary(id: "u1", username: "ada", displayName: "Ada", avatarURL: nil),
+            text: "hi",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            tags: [],
+            visibility: .public,
+            digCount: 0,
+            didDig: false,
+            repostCount: 0,
+            replyCount: nil,
+            parentID: nil,
+            repost: nil,
+            scheduledAt: nil
+        )
+    }
+
+    /// A scheduled (future) `Message` for priming the scheduled cache.
+    private func scheduledMessage(id: String) -> Message {
+        Message(
+            id: id,
+            author: UserSummary(id: "u1", username: "ada", displayName: "Ada", avatarURL: nil),
+            text: "later",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            tags: [],
+            visibility: .public,
+            digCount: 0,
+            didDig: false,
+            repostCount: 0,
+            replyCount: nil,
+            parentID: nil,
+            repost: nil,
+            scheduledAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )
     }
 }
 

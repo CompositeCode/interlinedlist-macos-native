@@ -51,6 +51,11 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     private var mastodonConfiguredOutcomes: [Result<Bool, Error>] = []
     private var linkIdentityNativeOutcomes: [Result<LinkedIdentity, Error>] = []
 
+    /// Cache-first read surface (PLAN.md §5 SWR). Default `[]` so unprepared
+    /// paths behave like a cold cache; set a value to prime a paint-first test
+    /// for the later view-model wiring pass.
+    private var cachedOrganizationsValue: [UserOrganization] = []
+
     /// When set, `identityLinkURL` throws this error instead of returning a
     /// URL — set once in test setup for a deterministic failure-path test.
     private var linkURLError: Error?
@@ -151,6 +156,11 @@ final class StubUserService: UserServicing, @unchecked Sendable {
         linkIdentityNativeOutcomes.append(.failure(error))
     }
 
+    func setCachedOrganizations(_ orgs: [UserOrganization]) {
+        lock.lock(); defer { lock.unlock() }
+        cachedOrganizationsValue = orgs
+    }
+
     func setLinkURLError(_ error: Error?) {
         lock.lock(); defer { lock.unlock() }
         linkURLError = error
@@ -166,6 +176,18 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func organizations() async throws -> [UserOrganization] {
         try perform(label: "organizations", record: .organizations) { $0.organizationsOutcomes }
             set: { $0.organizationsOutcomes = $1 }
+    }
+
+    func cachedOrganizations() async -> [UserOrganization] {
+        readCachedOrganizations()
+    }
+
+    /// Synchronous lock-guarded read — factored out so the `async` protocol
+    /// requirement never touches `NSLock` from an async context (Swift 6
+    /// forbids `lock()`/`unlock()` there).
+    private func readCachedOrganizations() -> [UserOrganization] {
+        lock.lock(); defer { lock.unlock() }
+        return cachedOrganizationsValue
     }
 
     func identityLinkURL(provider: IdentityProvider, instance: String?) throws -> URL {

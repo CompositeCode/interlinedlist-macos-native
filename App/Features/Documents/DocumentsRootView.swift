@@ -165,6 +165,15 @@ struct DocumentsRootView: View {
                 .disabled(syncStatus.isSyncing)
                 .help("Pull remote changes and push local edits")
 
+                // Stale-while-revalidate: a subtle spinner while a background
+                // refresh of the folder tree or documents list runs over
+                // cached content already on screen.
+                if folderTree.isRefreshing || documentsList.isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .help("Refreshing documents…")
+                }
+
                 SyncStatusView(viewModel: syncStatus)
             }
         }
@@ -178,7 +187,15 @@ struct DocumentsRootView: View {
     // MARK: - Setup
 
     private func initializeIfNeeded() async {
-        guard folderTree == nil, let environment else { return }
+        guard let environment else { return }
+        // Re-appearance: the VMs already exist. Honor the freshness TTL —
+        // revalidate only when the cache is past the window; otherwise trust
+        // what is on screen (stale-while-revalidate).
+        if let tree = folderTree, let list = documentsList {
+            if tree.shouldRefresh { await tree.refresh() }
+            if list.shouldRefresh { await list.refresh() }
+            return
+        }
         let tree = preloadedFolderTree ?? FolderTreeViewModel(documents: environment.documentsService)
         let list = preloadedDocumentsList ?? DocumentsListViewModel(documents: environment.documentsService)
         let edit = DocumentEditorViewModel(documents: environment.documentsService)
@@ -187,8 +204,8 @@ struct DocumentsRootView: View {
         self.documentsList = list
         self.editor = edit
         self.syncStatus = status
-        // Skip initial loads for pre-warmed VMs — their loads were already
-        // kicked off by MainWindowView on launch.
+        // Skip initial loads for pre-warmed VMs — their cache-first loads were
+        // already kicked off by the launch coordinator.
         if preloadedFolderTree == nil { await tree.initialLoad() }
         if preloadedDocumentsList == nil { await list.reload(in: nil) }
         await subscribeToSyncEvents(

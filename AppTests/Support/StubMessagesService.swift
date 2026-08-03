@@ -65,6 +65,11 @@ actor StubMessagesService: MessagesServicing {
     private var cancelScheduledOutcomes: [Result<Void, Error>] = []
     private var rescheduleOutcomes: [Result<Message, Error>] = []
 
+    /// Cache-first read surface (PLAN.md §5 SWR). Default `[]` so unprepared
+    /// paths behave like a cold cache; set a value to prime a paint-first test
+    /// for the later view-model wiring pass.
+    private var cachedScheduledValue: [Message] = []
+
     private(set) var recorded: [RecordedMessagesCall] = []
 
     // MARK: Test programming
@@ -104,6 +109,8 @@ actor StubMessagesService: MessagesServicing {
 
     func enqueueScheduledPosts(success posts: [Message]) { scheduledPostsOutcomes.append(.success(posts)) }
     func enqueueScheduledPosts(failure error: Error) { scheduledPostsOutcomes.append(.failure(error)) }
+
+    func setCachedScheduledPosts(_ posts: [Message]) { cachedScheduledValue = posts }
 
     func enqueueUploadImage(success url: String) { uploadImageOutcomes.append(.success(url)) }
     func enqueueUploadImage(failure error: Error) { uploadImageOutcomes.append(.failure(error)) }
@@ -241,6 +248,8 @@ actor StubMessagesService: MessagesServicing {
         recorded.append(.init(kind: .scheduledPosts))
         return try take(&scheduledPostsOutcomes, label: "scheduledPosts")
     }
+
+    func cachedScheduledPosts() async -> [Message] { cachedScheduledValue }
 
     func uploadImage(_ data: Data) async throws -> String {
         recorded.append(.init(kind: .uploadImage(byteCount: data.count)))

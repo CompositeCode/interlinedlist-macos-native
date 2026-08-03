@@ -79,7 +79,21 @@ public protocol DocumentsServicing: Sendable {
     /// Lists documents in `folder` (or root when `nil`). Routes through
     /// `/api/documents/folders/[id]/documents` for non-nil folders so the
     /// server-side filter is authoritative.
+    ///
+    /// When a `DocumentStore` is injected the fetched documents are written
+    /// through (upserted) to the cache so a later `cachedDocuments(in:)` read
+    /// serves them; the network read is authoritative and does not fall back
+    /// to cache on failure (the sync engine owns offline reconciliation).
     func documents(in folder: FolderNode.ID?, limit: Int, offset: Int) async throws -> [Document]
+
+    /// The cached documents in `folderID` (or root when `nil`), so a view can
+    /// paint before the network / sync returns. Filters `store.allDocuments()`
+    /// by `folderId`; empty when no store is injected or the cache is cold.
+    func cachedDocuments(in folderID: FolderNode.ID?) async -> [Document]
+
+    /// The cached folders, so the source list can paint before the network /
+    /// sync returns. Empty when no store is injected or the cache is cold.
+    func cachedFolders() async -> [FolderNode]
 
     /// Loads one document by id.
     func document(id: String) async throws -> Document
@@ -126,6 +140,7 @@ public final class DocumentsService: DocumentsServicing {
 
     private let api: APIClientProtocol
     private let sync: DocumentSyncCoordinating?
+    private let store: DocumentStore?
     private let decoder: JSONDecoder
 
     /// - Parameters:
@@ -133,14 +148,22 @@ public final class DocumentsService: DocumentsServicing {
     ///   - sync: optional coordinator. When `nil`, sync methods throw and
     ///     `syncEvents` returns `nil` — the service still serves single-shot
     ///     CRUD just fine.
+    ///   - store: optional cache port for the cache-first read surface. When
+    ///     `nil`, `cachedDocuments`/`cachedFolders` return `[]` and the network
+    ///     reads do not write through (the default keeps existing
+    ///     `DocumentsService(api:sync:)` call sites source-compatible). Note
+    ///     the sync engine owns the *same* store in production, so writes made
+    ///     here and by the engine stay consistent.
     ///   - decoder: shared kit JSON configuration.
     public init(
         api: APIClientProtocol,
         sync: DocumentSyncCoordinating? = nil,
+        store: DocumentStore? = nil,
         decoder: JSONDecoder = JSONCoders.makeDecoder()
     ) {
         self.api = api
         self.sync = sync
+        self.store = store
         self.decoder = decoder
     }
 
@@ -165,7 +188,29 @@ public final class DocumentsService: DocumentsServicing {
             from: data,
             decoder: decoder
         )
-        return items.map(Document.init(from:))
+        let documents = items.map(Document.init(from:))
+        // Write through so a later `cachedDocuments(in:)` serves these. These
+        // are server-authoritative rows, so no local-edit flag (`nil`) — the
+        // same "folding in a server delta" path the sync engine uses.
+        if let store {
+            for document in documents {
+                await store.upsert(document, localEditedAt: nil)
+            }
+        }
+        return documents
+    }
+
+    public func cachedDocuments(in folderID: FolderNode.ID?) async -> [Document] {
+        guard let store else { return [] }
+        let all = await store.allDocuments()
+        // Filter to the requested folder (root == nil). Drop tombstoned rows so
+        // a view never paints a document deleted upstream from the cache.
+        return all.filter { $0.folderId == folderID && !$0.deleted }
+    }
+
+    public func cachedFolders() async -> [FolderNode] {
+        guard let store else { return [] }
+        return await store.allFolders().filter { !$0.deleted }
     }
 
     public func document(id: String) async throws -> Document {
@@ -285,7 +330,14 @@ public final class DocumentsService: DocumentsServicing {
             from: data,
             decoder: decoder
         )
-        return items.map(FolderNode.init(from:))
+        let folders = items.map(FolderNode.init(from:))
+        // Write through so a later `cachedFolders()` serves these.
+        if let store {
+            for folder in folders {
+                await store.upsertFolder(folder)
+            }
+        }
+        return folders
     }
 
     public func folder(id: String) async throws -> FolderNode {

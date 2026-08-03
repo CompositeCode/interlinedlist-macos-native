@@ -51,12 +51,11 @@ enum SidebarSection: String, CaseIterable, Identifiable, Hashable {
 struct MainWindowView: View {
     @EnvironmentObject private var environment: AppEnvironment
 
-    // Pre-warm Lists and Documents data as soon as the main window
-    // appears so those sections render instantly when the user navigates
-    // to them, rather than waiting for their own .task to fire.
-    @State private var preloadedListsVM: OwnedListsViewModel?
-    @State private var preloadedFolderTreeVM: FolderTreeViewModel?
-    @State private var preloadedDocumentsListVM: DocumentsListViewModel?
+    // Launch prefetch (PLAN.md §5, SWR Layer 3). The coordinator pre-warms
+    // all four sections' view models (Lists, Documents, Scheduled,
+    // Organizations) so each renders instantly from cache when the user
+    // navigates to it, rather than waiting for its own .task to fire.
+    @State private var prefetch: LaunchPrefetchCoordinator?
 
     @State private var selection: SidebarSection? = .timeline
 
@@ -126,9 +125,11 @@ struct MainWindowView: View {
                 SidebarDetailDispatcher(
                     section: selection,
                     pendingMessageDeepLinkID: $pendingMessageDeepLinkID,
-                    preloadedListsVM: preloadedListsVM,
-                    preloadedFolderTreeVM: preloadedFolderTreeVM,
-                    preloadedDocumentsListVM: preloadedDocumentsListVM
+                    preloadedListsVM: prefetch?.listsVM,
+                    preloadedFolderTreeVM: prefetch?.folderTreeVM,
+                    preloadedDocumentsListVM: prefetch?.documentsListVM,
+                    preloadedScheduledVM: prefetch?.scheduledVM,
+                    preloadedOrganizationsVM: prefetch?.organizationsVM
                 )
             } else {
                 Text("Select a section")
@@ -136,16 +137,10 @@ struct MainWindowView: View {
             }
         }
         .task {
-            guard preloadedListsVM == nil else { return }
-            let listsVM = OwnedListsViewModel(lists: environment.lists)
-            let folderTreeVM = FolderTreeViewModel(documents: environment.documentsService)
-            let docsListVM = DocumentsListViewModel(documents: environment.documentsService)
-            preloadedListsVM = listsVM
-            preloadedFolderTreeVM = folderTreeVM
-            preloadedDocumentsListVM = docsListVM
-            Task { await listsVM.initialLoad() }
-            Task { await folderTreeVM.initialLoad() }
-            Task { await docsListVM.reload(in: nil) }
+            guard prefetch == nil else { return }
+            let coordinator = LaunchPrefetchCoordinator(environment: environment)
+            prefetch = coordinator
+            coordinator.warm()
         }
         // M5 menu deep-links — `NotificationsMenuCommands` and
         // `SocialMenuCommands` post these so the sidebar can swap
@@ -275,12 +270,15 @@ private struct SidebarDetailDispatcher: View {
     /// handling so re-appearing timelines don't re-navigate.
     @Binding var pendingMessageDeepLinkID: String?
 
-    /// Pre-warmed view models created by `MainWindowView` on launch.
-    /// Non-nil only for Lists and Documents; all other sections create
-    /// their own view models inside their root views as before.
+    /// Pre-warmed view models created by the `LaunchPrefetchCoordinator` on
+    /// launch. Non-nil for all four warmed sections (Lists, Documents,
+    /// Scheduled, Organizations); the remaining sections create their own
+    /// view models inside their root views as before.
     var preloadedListsVM: OwnedListsViewModel? = nil
     var preloadedFolderTreeVM: FolderTreeViewModel? = nil
     var preloadedDocumentsListVM: DocumentsListViewModel? = nil
+    var preloadedScheduledVM: ScheduledPostsViewModel? = nil
+    var preloadedOrganizationsVM: OrganizationsListViewModel? = nil
 
     var body: some View {
         switch section {
@@ -294,8 +292,9 @@ private struct SidebarDetailDispatcher: View {
         case .scheduled:
             // M6 (Wave 7.2) — the read-only Scheduled posts list lands
             // (PLAN.md §5 "Scheduled sidebar section", §6 M6). Replaces the
-            // inline placeholder.
-            ScheduledPostsRootView()
+            // inline placeholder. Pre-warmed by the launch coordinator for
+            // instant cache paint (SWR).
+            ScheduledPostsRootView(preloadedViewModel: preloadedScheduledVM)
         case .notifications:
             NotificationsRootView()
         case .messages:
@@ -322,8 +321,9 @@ private struct SidebarDetailDispatcher: View {
         case .organizations:
             // M6 (Wave 7.3) — Organizations feature lands. The orgs list +
             // detail + member roster with role editing replace the M0
-            // placeholder.
-            OrganizationsRootView()
+            // placeholder. Pre-warmed by the launch coordinator for instant
+            // cache paint (SWR).
+            OrganizationsRootView(preloadedViewModel: preloadedOrganizationsVM)
         case .profile:
             ProfileRootView()
         case .connections:

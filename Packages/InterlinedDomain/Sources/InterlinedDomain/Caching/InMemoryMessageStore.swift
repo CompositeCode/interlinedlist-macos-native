@@ -17,6 +17,10 @@ public actor InMemoryMessageStore: MessageStore {
 
     private var timelines: [TimelineKey: [Message]] = [:]
     private var messagesByID: [String: Message] = [:]
+    /// The scheduled slice, kept separate from timelines / by-id so a
+    /// `replaceScheduled` never clobbers timeline-cached messages (mirrors the
+    /// SwiftData store's scheduled-only replacement).
+    private var scheduled: [Message] = []
 
     public init() {}
 
@@ -49,10 +53,25 @@ public actor InMemoryMessageStore: MessageStore {
                 timelines[key] = filtered
             }
         }
+        scheduled.removeAll { $0.id == id }
+    }
+
+    public func cachedScheduled() async -> [Message] {
+        // Sorted by `scheduledAt` ascending to match the SwiftData store; a
+        // `nil` scheduledAt sorts last (should not occur for scheduled posts).
+        scheduled.sorted {
+            ($0.scheduledAt ?? .distantFuture) < ($1.scheduledAt ?? .distantFuture)
+        }
+    }
+
+    public func replaceScheduled(_ messages: [Message]) async {
+        // Replace only the scheduled slice; timelines / by-id are untouched.
+        scheduled = messages
     }
 
     public func clear() async {
         timelines.removeAll()
         messagesByID.removeAll()
+        scheduled.removeAll()
     }
 }

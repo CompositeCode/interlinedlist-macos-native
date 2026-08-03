@@ -40,9 +40,12 @@ struct OwnedListsRootView: View {
             }
         }
         .task {
-            if viewModel == nil, let environment {
+            guard let environment else { return }
+            if viewModel == nil {
                 let model: OwnedListsViewModel
                 if let preloaded = preloadedViewModel {
+                    // Pre-warmed by the launch coordinator — its cache-first
+                    // load is already in flight / done; don't refetch here.
                     model = preloaded
                 } else {
                     model = OwnedListsViewModel(lists: environment.lists)
@@ -50,6 +53,10 @@ struct OwnedListsRootView: View {
                 }
                 viewModel = model
                 await subscribeToEventBus(viewModel: model, bus: environment.listsEventBus)
+            } else if let model = viewModel, model.shouldRefresh {
+                // Re-appearance past the freshness TTL — revalidate; within
+                // the TTL we trust the cache and skip the network.
+                await model.refresh()
             }
         }
         .task(id: viewModel?.selectedListID) {
@@ -100,6 +107,15 @@ struct OwnedListsRootView: View {
         .navigationTitle("My Lists")
         .toolbar {
             ToolbarItemGroup {
+                // Stale-while-revalidate: a subtle spinner while a background
+                // refresh runs over cached rows already on screen. The
+                // full-screen sidebar spinner only shows on a cold start.
+                if viewModel.isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .help("Refreshing lists…")
+                }
+
                 Button {
                     showsNewListSheet = true
                 } label: {

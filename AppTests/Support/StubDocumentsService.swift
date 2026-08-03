@@ -46,6 +46,13 @@ actor StubDocumentsService: DocumentsServicing {
     private var deleteFolderOutcomes: [Result<Void, Error>] = []
     private var syncOutcomes: [Result<DocumentSyncReport, Error>] = []
 
+    /// Cache-first read surface (PLAN.md §5 SWR). Default `[]` so unprepared
+    /// paths behave like a cold cache; enqueue a value to prime a paint-first
+    /// test for the later view-model wiring pass.
+    private var cachedDocumentsByFolder: [String: [Document]] = [:]
+    private var cachedRootDocuments: [Document] = []
+    private var cachedFoldersValue: [FolderNode] = []
+
     private(set) var recorded: [RecordedDocumentsCall] = []
 
     // MARK: Programmable enqueue helpers
@@ -85,12 +92,26 @@ actor StubDocumentsService: DocumentsServicing {
     func enqueueSync(success report: DocumentSyncReport) { syncOutcomes.append(.success(report)) }
     func enqueueSync(failure error: Error) { syncOutcomes.append(.failure(error)) }
 
+    /// Primes the cache-first read surface for a paint-first test.
+    func setCachedDocuments(_ documents: [Document], in folderID: FolderNode.ID?) {
+        if let folderID { cachedDocumentsByFolder[folderID] = documents }
+        else { cachedRootDocuments = documents }
+    }
+    func setCachedFolders(_ folders: [FolderNode]) { cachedFoldersValue = folders }
+
     // MARK: DocumentsServicing
 
     func documents(in folder: FolderNode.ID?, limit: Int, offset: Int) async throws -> [Document] {
         recorded.append(.init(kind: .documents(folderId: folder, limit: limit, offset: offset)))
         return try take(&documentsOutcomes, label: "documents")
     }
+
+    func cachedDocuments(in folderID: FolderNode.ID?) async -> [Document] {
+        if let folderID { return cachedDocumentsByFolder[folderID] ?? [] }
+        return cachedRootDocuments
+    }
+
+    func cachedFolders() async -> [FolderNode] { cachedFoldersValue }
 
     func document(id: String) async throws -> Document {
         recorded.append(.init(kind: .document(id: id)))

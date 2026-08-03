@@ -19,9 +19,15 @@ import InterlinedDomain
 /// isolation is a single predicate fetch and there is no modelled-relationship
 /// cascade to maintain.
 ///
-/// Only `Sendable` value types (`Organization`, `OrgMember`) cross the actor
-/// boundary; the `@Model` records never escape.
-public actor SwiftDataOrgStore {
+/// Only `Sendable` value types (`Organization`, `OrgMember`,
+/// `UserOrganization`) cross the actor boundary; the `@Model` records never
+/// escape.
+///
+/// Conforms to the domain `OrgStore` port for the caller's-own-memberships
+/// slice (`OrgMembershipRecord`), which powers the Organizations switcher's
+/// initial-view cache. The org-management surface (`OrgRecord` /
+/// `OrgMemberRecord`) is a separate concern kept on the same actor.
+public actor SwiftDataOrgStore: OrgStore {
 
     private let container: ModelContainer
     private var _context: ModelContext?
@@ -40,6 +46,7 @@ public actor SwiftDataOrgStore {
         let container = try ModelContainer(
             for: OrgRecord.self,
             OrgMemberRecord.self,
+            OrgMembershipRecord.self,
             configurations: configuration
         )
         return SwiftDataOrgStore(container: container)
@@ -51,6 +58,7 @@ public actor SwiftDataOrgStore {
         let container = try ModelContainer(
             for: OrgRecord.self,
             OrgMemberRecord.self,
+            OrgMembershipRecord.self,
             configurations: configuration
         )
         return SwiftDataOrgStore(container: container)
@@ -177,6 +185,39 @@ public actor SwiftDataOrgStore {
         }
     }
 
+    // MARK: - OrgStore (caller memberships)
+
+    /// The cached membership list, in the API-returned order preserved by
+    /// `position`, or `[]` when nothing is cached.
+    public func cachedMemberships() async -> [UserOrganization] {
+        let context = self.context
+        do {
+            let descriptor = FetchDescriptor<OrgMembershipRecord>(
+                sortBy: [SortDescriptor(\.position, order: .forward)]
+            )
+            return try context.fetch(descriptor).map { $0.toUserOrganization() }
+        } catch {
+            logger.error("cachedMemberships fetch failed: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
+    /// Replaces the cached membership set with a fresh slice. Page semantics:
+    /// a new call fully supersedes the previous one (an org the caller left
+    /// disappears). Stored order matches the passed order via `position`.
+    public func cacheMemberships(_ memberships: [UserOrganization]) async {
+        let context = self.context
+        do {
+            try context.delete(model: OrgMembershipRecord.self)
+            for (index, membership) in memberships.enumerated() {
+                context.insert(OrgMembershipRecord(from: membership, position: index))
+            }
+            try context.save()
+        } catch {
+            logger.error("cacheMemberships save failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     // MARK: - remove / clear
 
     /// Removes one org and all its cached members (clear-cascade for a single
@@ -200,12 +241,13 @@ public actor SwiftDataOrgStore {
         }
     }
 
-    /// Drops every cached org and member row. Called on sign-out.
+    /// Drops every cached org, member, and membership row. Called on sign-out.
     public func clear() async {
         let context = self.context
         do {
             try context.delete(model: OrgMemberRecord.self)
             try context.delete(model: OrgRecord.self)
+            try context.delete(model: OrgMembershipRecord.self)
             try context.save()
         } catch {
             logger.error("clear failed: \(error.localizedDescription, privacy: .public)")

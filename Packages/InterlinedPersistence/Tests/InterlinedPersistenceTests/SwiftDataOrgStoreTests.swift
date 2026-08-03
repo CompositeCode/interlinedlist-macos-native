@@ -327,7 +327,178 @@ final class SwiftDataOrgStoreTests: XCTestCase {
         XCTAssertTrue(cached.isEmpty)
     }
 
+    // MARK: - OrgStore memberships (caller's own orgs)
+
+    func test_givenCachedMemberships_whenReading_thenRoundTripsEveryFieldInOrder() async throws {
+        // Given
+        let store = try SwiftDataOrgStore.inMemory()
+        let memberships = [
+            sampleMembership(id: "o-1", name: "Acme", role: .owner),
+            sampleMembership(id: "o-2", name: "Globex", role: .member),
+            sampleMembership(id: "o-3", name: "Initech", role: .admin)
+        ]
+
+        // When
+        await store.cacheMemberships(memberships)
+
+        // Then — returned in stored (API) order, all fields intact.
+        let cached = await store.cachedMemberships()
+        XCTAssertEqual(cached, memberships)
+    }
+
+    func test_givenMembershipsReplaced_whenReading_thenOnlyLatestSliceRemains() async throws {
+        // Given
+        let store = try SwiftDataOrgStore.inMemory()
+        await store.cacheMemberships([
+            sampleMembership(id: "old-1", name: "Old One", role: .member),
+            sampleMembership(id: "old-2", name: "Old Two", role: .member)
+        ])
+
+        // When — page replace: an org the caller left disappears.
+        await store.cacheMemberships([
+            sampleMembership(id: "new-1", name: "New One", role: .owner)
+        ])
+
+        // Then
+        let cached = await store.cachedMemberships()
+        XCTAssertEqual(cached.map(\.id), ["new-1"])
+    }
+
+    func test_givenOtherRoleMembership_whenRoundTripping_thenWireTokenPreserved() async throws {
+        // Given — boundary: a role token the client does not yet type.
+        let store = try SwiftDataOrgStore.inMemory()
+        await store.cacheMemberships([
+            sampleMembership(id: "o-1", name: "Acme", role: .other("billing_admin"))
+        ])
+
+        // When
+        let cached = await store.cachedMemberships()
+
+        // Then
+        XCTAssertEqual(cached.first?.role, .other("billing_admin"))
+    }
+
+    func test_givenEmptyStore_whenReadingMemberships_thenReturnsEmpty() async throws {
+        // Given — boundary: cold cache.
+        let store = try SwiftDataOrgStore.inMemory()
+
+        // When
+        let cached = await store.cachedMemberships()
+
+        // Then
+        XCTAssertTrue(cached.isEmpty)
+    }
+
+    func test_givenEmptyMembershipSlice_whenCaching_thenClearsPriorSlice() async throws {
+        // Given — boundary: caching an empty page (caller left every org).
+        let store = try SwiftDataOrgStore.inMemory()
+        await store.cacheMemberships([sampleMembership(id: "o-1", name: "Acme", role: .owner)])
+
+        // When
+        await store.cacheMemberships([])
+
+        // Then
+        let cached = await store.cachedMemberships()
+        XCTAssertTrue(cached.isEmpty)
+    }
+
+    func test_givenCachedMemberships_whenCleared_thenMembershipsGone() async throws {
+        // Given
+        let store = try SwiftDataOrgStore.inMemory()
+        await store.cacheMemberships([
+            sampleMembership(id: "o-1", name: "Acme", role: .owner)
+        ])
+
+        // When
+        await store.clear()
+
+        // Then
+        let cached = await store.cachedMemberships()
+        XCTAssertTrue(cached.isEmpty)
+    }
+
+    func test_givenMembershipsAndMemberRoster_whenCachingMemberships_thenRosterUntouched() async throws {
+        // Given — the two caches share the actor but are distinct concerns;
+        // writing the memberships slice must not disturb the org-member roster.
+        let store = try SwiftDataOrgStore.inMemory()
+        await store.cacheMembers([OrgMember(userId: "user-1", role: .admin)], of: "org-1")
+
+        // When
+        await store.cacheMemberships([sampleMembership(id: "org-1", name: "Acme", role: .owner)])
+
+        // Then
+        let roster = await store.cachedMembers(of: "org-1")
+        XCTAssertEqual(roster.map(\.userId), ["user-1"])
+        let memberships = await store.cachedMemberships()
+        XCTAssertEqual(memberships.map(\.id), ["org-1"])
+    }
+
+    // MARK: - OrgStore memberships — on-disk round-trip
+
+    func test_givenMembershipsCachedOnDisk_whenReopeningStore_thenSurvivesRelaunch() async throws {
+        // Given — write memberships through an on-disk store, then drop the
+        // actor and reopen the same file (simulates an app relaunch).
+        let url = Self.makeTempStoreURL()
+        defer { Self.removeStoreFiles(at: url) }
+        let joinedAt = Date(timeIntervalSince1970: 1_600_000_000)
+        do {
+            let store = try SwiftDataOrgStore.onDisk(at: url)
+            await store.cacheMemberships([
+                sampleMembership(
+                    id: "o-1",
+                    name: "Acme",
+                    role: .owner,
+                    joinedAt: joinedAt
+                ),
+                sampleMembership(id: "o-2", name: "Globex", role: .member)
+            ])
+        }
+
+        // When — a fresh store instance opens the same file.
+        let reopened = try SwiftDataOrgStore.onDisk(at: url)
+        let cached = await reopened.cachedMemberships()
+
+        // Then — memberships survived the relaunch, in order, with fields intact.
+        XCTAssertEqual(cached.map(\.id), ["o-1", "o-2"])
+        XCTAssertEqual(cached.first?.organization.name, "Acme")
+        XCTAssertEqual(cached.first?.role, .owner)
+        XCTAssertEqual(cached.first?.joinedAt, joinedAt)
+    }
+
     // MARK: - Helpers
+
+    /// A unique temp URL for an on-disk SwiftData store file.
+    private static func makeTempStoreURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("OrgStoreTest-\(UUID().uuidString).store")
+    }
+
+    /// Removes a SQLite store file and its `-shm` / `-wal` siblings.
+    private static func removeStoreFiles(at url: URL) {
+        for suffix in ["", "-shm", "-wal"] {
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix))
+        }
+    }
+
+    private func sampleMembership(
+        id: String,
+        name: String,
+        role: OrgRole,
+        joinedAt: Date? = nil
+    ) -> UserOrganization {
+        UserOrganization(
+            organization: Organization(
+                id: id,
+                name: name,
+                description: "\(name) org",
+                isPublic: true,
+                createdAt: Date(timeIntervalSince1970: 1_000_000),
+                updatedAt: Date(timeIntervalSince1970: 2_000_000)
+            ),
+            role: role,
+            joinedAt: joinedAt
+        )
+    }
 
     private func sampleOrg(
         id: String,

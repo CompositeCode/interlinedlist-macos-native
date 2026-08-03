@@ -21,6 +21,11 @@ import InterlinedDomain
 
 struct OrganizationsRootView: View {
 
+    /// Pre-warmed view model supplied by `MainWindowView` via the launch
+    /// coordinator. When non-nil the view skips creation and its cache-first
+    /// initial load; a re-appearance still honors the freshness TTL.
+    var preloadedViewModel: OrganizationsListViewModel? = nil
+
     @Environment(\.appEnvironment) private var environment
 
     @State private var viewModel: OrganizationsListViewModel?
@@ -38,8 +43,16 @@ struct OrganizationsRootView: View {
             }
             .navigationTitle("Organizations")
             .toolbar {
-                if viewModel != nil {
-                    ToolbarItem(placement: .primaryAction) {
+                if let viewModel {
+                    ToolbarItemGroup(placement: .primaryAction) {
+                        // Stale-while-revalidate: a subtle spinner while a
+                        // background refresh runs over cached memberships
+                        // already on screen.
+                        if viewModel.isRefreshing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .help("Refreshing organizations…")
+                        }
                         Button {
                             showCreateSheet = true
                         } label: {
@@ -50,15 +63,27 @@ struct OrganizationsRootView: View {
             }
         }
         .task {
-            guard viewModel == nil, let environment else { return }
-            // Ownership-gate: no session → no "my orgs".
-            guard environment.currentUserStore.currentUserID != nil else { return }
-            let vm = OrganizationsListViewModel(
-                orgService: environment.orgService,
-                userService: environment.userService
-            )
-            viewModel = vm
-            await vm.load()
+            guard let environment else { return }
+            if viewModel == nil {
+                if let preloaded = preloadedViewModel {
+                    // Pre-warmed by the launch coordinator — its cache-first
+                    // load is already in flight / done; don't refetch here.
+                    viewModel = preloaded
+                    return
+                }
+                // Ownership-gate: no session → no "my orgs".
+                guard environment.currentUserStore.currentUserID != nil else { return }
+                let vm = OrganizationsListViewModel(
+                    orgService: environment.orgService,
+                    userService: environment.userService
+                )
+                viewModel = vm
+                await vm.load()
+            } else if let vm = viewModel, vm.shouldRefresh {
+                // Re-appearance past the freshness TTL — revalidate; within
+                // the TTL we trust the cache and skip the network.
+                await vm.load()
+            }
         }
         .sheet(isPresented: $showCreateSheet) {
             if let viewModel, let environment {

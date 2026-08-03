@@ -211,6 +211,130 @@ final class SwiftDataMessageStoreTests: XCTestCase {
         XCTAssertNil(fetched?.repost)
     }
 
+    // MARK: - Scheduled slice
+
+    func test_givenReplacedScheduled_whenReadingScheduled_thenReturnsMessagesInScheduleOrder() async throws {
+        // Given — three scheduled posts enqueued out of schedule order.
+        let store = try SwiftDataMessageStore.inMemory()
+        let later = sampleMessage(id: "later", scheduledAt: Date(timeIntervalSince1970: 3_000))
+        let soon = sampleMessage(id: "soon", scheduledAt: Date(timeIntervalSince1970: 1_000))
+        let mid = sampleMessage(id: "mid", scheduledAt: Date(timeIntervalSince1970: 2_000))
+
+        // When
+        await store.replaceScheduled([later, soon, mid])
+
+        // Then — sorted by scheduledAt ascending.
+        let cached = await store.cachedScheduled()
+        XCTAssertEqual(cached.map(\.id), ["soon", "mid", "later"])
+    }
+
+    func test_givenEmptyStore_whenReadingScheduled_thenReturnsEmpty() async throws {
+        // Given — boundary: nothing scheduled.
+        let store = try SwiftDataMessageStore.inMemory()
+
+        // When
+        let cached = await store.cachedScheduled()
+
+        // Then
+        XCTAssertTrue(cached.isEmpty)
+    }
+
+    func test_givenScheduledReplacedTwice_whenReadingScheduled_thenReturnsLatestSliceOnly() async throws {
+        // Given
+        let store = try SwiftDataMessageStore.inMemory()
+        await store.replaceScheduled([
+            sampleMessage(id: "old-1", scheduledAt: Date(timeIntervalSince1970: 1_000)),
+            sampleMessage(id: "old-2", scheduledAt: Date(timeIntervalSince1970: 2_000))
+        ])
+
+        // When — page replace: removed scheduled posts disappear.
+        await store.replaceScheduled([
+            sampleMessage(id: "new-1", scheduledAt: Date(timeIntervalSince1970: 5_000))
+        ])
+
+        // Then
+        let cached = await store.cachedScheduled()
+        XCTAssertEqual(cached.map(\.id), ["new-1"])
+    }
+
+    func test_givenReplaceScheduled_whenReadingTimeline_thenTimelineSliceUntouched() async throws {
+        // Given — a timeline cache is primed, then a scheduled slice is written.
+        let store = try SwiftDataMessageStore.inMemory()
+        await store.replaceTimeline(
+            [sampleMessage(id: "t-1"), sampleMessage(id: "t-2")],
+            scope: .all,
+            tag: nil
+        )
+
+        // When — the scheduled slice replacement must NOT clobber the timeline.
+        await store.replaceScheduled([
+            sampleMessage(id: "s-1", scheduledAt: Date(timeIntervalSince1970: 9_000))
+        ])
+
+        // Then — the timeline slice still reads back intact.
+        let timeline = await store.cachedTimeline(scope: .all, tag: nil)
+        XCTAssertEqual(timeline.map(\.id), ["t-1", "t-2"])
+        let scheduled = await store.cachedScheduled()
+        XCTAssertEqual(scheduled.map(\.id), ["s-1"])
+    }
+
+    func test_givenEmptyScheduledSlice_whenReplacing_thenClearsPriorScheduledButKeepsTimeline() async throws {
+        // Given — boundary: a prior scheduled slice plus a timeline cache.
+        let store = try SwiftDataMessageStore.inMemory()
+        await store.replaceTimeline([sampleMessage(id: "t-1")], scope: .all, tag: nil)
+        await store.replaceScheduled([
+            sampleMessage(id: "s-1", scheduledAt: Date(timeIntervalSince1970: 1_000))
+        ])
+
+        // When — replacing with an empty slice clears the scheduled cache only.
+        await store.replaceScheduled([])
+
+        // Then
+        let scheduled = await store.cachedScheduled()
+        let timeline = await store.cachedTimeline(scope: .all, tag: nil)
+        XCTAssertTrue(scheduled.isEmpty)
+        XCTAssertEqual(timeline.map(\.id), ["t-1"])
+    }
+
+    func test_givenScheduledSlice_whenReadingTimeline_thenScheduledNotSurfacedAsTimeline() async throws {
+        // Given — only a scheduled slice, no timeline page written.
+        let store = try SwiftDataMessageStore.inMemory()
+        await store.replaceScheduled([
+            sampleMessage(id: "s-1", scheduledAt: Date(timeIntervalSince1970: 1_000))
+        ])
+
+        // When
+        let timeline = await store.cachedTimeline(scope: .all, tag: nil)
+
+        // Then — a scheduled post is never served as a published timeline entry.
+        XCTAssertTrue(timeline.isEmpty)
+    }
+
+    // MARK: - Scheduled slice — on-disk round-trip
+
+    func test_givenScheduledCachedOnDisk_whenReopeningStore_thenSurvivesRelaunch() async throws {
+        // Given — write a scheduled slice through an on-disk store, then drop
+        // the actor and reopen the same file (simulates an app relaunch).
+        let url = Self.makeTempStoreURL()
+        defer { Self.removeStoreFiles(at: url) }
+        let scheduledAt = Date(timeIntervalSince1970: 1_800_000_000)
+        do {
+            let store = try SwiftDataMessageStore.onDisk(at: url)
+            await store.replaceScheduled([
+                sampleMessage(id: "s-1", text: "future post", scheduledAt: scheduledAt)
+            ])
+        }
+
+        // When — a fresh store instance opens the same file.
+        let reopened = try SwiftDataMessageStore.onDisk(at: url)
+        let cached = await reopened.cachedScheduled()
+
+        // Then — the scheduled slice survived the relaunch.
+        XCTAssertEqual(cached.map(\.id), ["s-1"])
+        XCTAssertEqual(cached.first?.text, "future post")
+        XCTAssertEqual(cached.first?.scheduledAt, scheduledAt)
+    }
+
     // MARK: - Concurrency sanity
 
     func test_givenConcurrentUpsertsOfDifferentIDs_whenAllComplete_thenAllReadable() async throws {
@@ -235,6 +359,19 @@ final class SwiftDataMessageStoreTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// A unique temp URL for an on-disk SwiftData store file.
+    private static func makeTempStoreURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("MessageStoreTest-\(UUID().uuidString).store")
+    }
+
+    /// Removes a SQLite store file and its `-shm` / `-wal` siblings.
+    private static func removeStoreFiles(at url: URL) {
+        for suffix in ["", "-shm", "-wal"] {
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix))
+        }
+    }
 
     private func sampleMessage(
         id: String,

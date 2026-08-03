@@ -44,9 +44,35 @@ final class OwnedListsViewModel {
     /// True while a network round-trip is in flight (initial, refresh,
     /// load-more, or refresh-of-list).
     private(set) var isLoading: Bool = false
+    /// True while a background revalidation runs *after* the cache has
+    /// already painted the list (stale-while-revalidate, PLAN.md §5).
+    /// Non-blocking: the view shows a subtle indicator instead of the
+    /// full-screen `isLoading` spinner.
+    private(set) var isRefreshing: Bool = false
     /// Surfaced error from the most recent failed load / delete /
     /// refresh. Cleared on the next successful round-trip.
     private(set) var error: Error?
+    /// True when a background revalidation failed *while cached content
+    /// was on screen*. The list keeps its cached rows; the view surfaces
+    /// this as an unobtrusive "couldn't refresh" hint rather than blanking
+    /// the list (SWR error-with-cache path).
+    private(set) var refreshFailed: Bool = false
+    /// Timestamp of the last successful network refresh. Drives the
+    /// freshness TTL: a re-appearing view within `refreshTTL` trusts the
+    /// cache and skips revalidation.
+    private(set) var lastRefreshedAt: Date?
+
+    /// Freshness window: a re-appearing view whose data refreshed within
+    /// this many seconds skips the network revalidation and trusts cache.
+    static let refreshTTL: TimeInterval = 45
+
+    /// Whether a `.task`-driven re-appearance should revalidate. `true`
+    /// when there is no prior successful refresh or it is older than the
+    /// TTL. Manual refresh bypasses this (calls `refresh()` directly).
+    var shouldRefresh: Bool {
+        guard let lastRefreshedAt else { return true }
+        return Date().timeIntervalSince(lastRefreshedAt) >= Self.refreshTTL
+    }
     /// Whether the server reports more pages beyond what's loaded.
     private(set) var hasMore: Bool = false
     /// The `offset` to pass on the next `loadMore` call. `nil` when
@@ -68,15 +94,30 @@ final class OwnedListsViewModel {
 
     // MARK: - Intents
 
-    /// First-time load. Resets paging state. Safe to call repeatedly.
+    /// First-time load, stale-while-revalidate (PLAN.md §5):
+    /// 1. Paint from the on-disk cache immediately; if non-empty the
+    ///    full-screen spinner is suppressed.
+    /// 2. Revalidate over the network in the background; while it runs and
+    ///    a cache was shown, `isRefreshing` is set instead of `isLoading`.
+    /// 3. Cold start (no cache) keeps today's blocking-spinner behavior.
+    /// Safe to call repeatedly.
     func initialLoad() async {
-        await load(reset: true)
+        let cached = await lists.cachedMyLists()
+        let paintedFromCache = !cached.isEmpty
+        if paintedFromCache {
+            lists_loaded = cached
+            // Paging is unknown from the cache; a full revalidation follows
+            // and re-establishes `hasMore` / `nextOffset` authoritatively.
+            hasMore = false
+            nextOffset = nil
+        }
+        await revalidate(cachePainted: paintedFromCache)
     }
 
-    /// Refreshes the owned-lists list (the toolbar Refresh button when
-    /// no GitHub-backed selection is active).
+    /// Manual refresh (toolbar / pull-to-refresh). Always bypasses the TTL
+    /// and blanks nothing — it revalidates against whatever is on screen.
     func refresh() async {
-        await load(reset: true)
+        await revalidate(cachePainted: !lists_loaded.isEmpty)
     }
 
     /// Appends the next page when one exists. No-op while a load is
@@ -182,20 +223,36 @@ final class OwnedListsViewModel {
 
     // MARK: - Internals
 
-    private func load(reset: Bool) async {
-        if reset {
+    /// Runs the network load and folds the result in. When `cachePainted`
+    /// is true the spinner is suppressed (`isRefreshing` instead of
+    /// `isLoading`) and a failure keeps the cached rows on screen
+    /// (`refreshFailed`) rather than blanking the list.
+    private func revalidate(cachePainted: Bool) async {
+        if cachePainted {
+            isRefreshing = true
+        } else {
             lists_loaded = []
             hasMore = false
             nextOffset = nil
+            isLoading = true
+            error = nil
         }
-        isLoading = true
-        error = nil
-        defer { isLoading = false }
+        refreshFailed = false
+        defer {
+            isLoading = false
+            isRefreshing = false
+        }
         do {
             let page = try await lists.myLists(limit: Self.pageSize, offset: 0)
             apply(page, reset: true)
+            lastRefreshedAt = Date()
         } catch {
-            self.error = error
+            if cachePainted {
+                // Keep the cached rows; surface a non-blocking failure hint.
+                refreshFailed = true
+            } else {
+                self.error = error
+            }
         }
     }
 

@@ -600,6 +600,122 @@ final class DocumentsServiceTests: XCTestCase {
         guard CGImageDestinationFinalize(dest) else { return Data() }
         return mutable as Data
     }
+
+    // MARK: - Documents cache-first read surface
+
+    func test_givenStore_whenListingDocuments_thenWritesThroughToCache() async throws {
+        // Given — happy path: a store injected, root documents fetched.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.paginatedDocuments(ids: ["d1", "d2"]))
+        let store = FakeDocumentStore()
+        let service = DocumentsService(api: api, store: store)
+
+        // When
+        _ = try await service.documents(in: nil, limit: 20, offset: 0)
+
+        // Then — the fetched documents were written through to the cache.
+        let cached = await store.allDocuments()
+        XCTAssertEqual(Set(cached.map(\.id)), ["d1", "d2"])
+    }
+
+    func test_givenCachedDocumentsInFolders_whenReadingCachedByFolder_thenFiltersByFolderId() async throws {
+        // Given — documents split across a folder and the root.
+        let store = FakeDocumentStore()
+        await store.upsert(sampleDocument(id: "in-folder", folderId: "f-1"), localEditedAt: nil)
+        await store.upsert(sampleDocument(id: "at-root", folderId: nil), localEditedAt: nil)
+        let service = DocumentsService(api: StubAPIClient(), store: store)
+
+        // When
+        let inFolder = await service.cachedDocuments(in: "f-1")
+        let atRoot = await service.cachedDocuments(in: nil)
+
+        // Then — each read returns only its folder's documents.
+        XCTAssertEqual(inFolder.map(\.id), ["in-folder"])
+        XCTAssertEqual(atRoot.map(\.id), ["at-root"])
+    }
+
+    func test_givenTombstonedCachedDocument_whenReadingCached_thenDeletedRowsFilteredOut() async throws {
+        // Given — a live doc and a tombstoned doc in the same folder.
+        let store = FakeDocumentStore()
+        await store.upsert(sampleDocument(id: "live", folderId: "f-1"), localEditedAt: nil)
+        await store.upsert(sampleDocument(id: "gone", folderId: "f-1", deleted: true), localEditedAt: nil)
+        let service = DocumentsService(api: StubAPIClient(), store: store)
+
+        // When
+        let cached = await service.cachedDocuments(in: "f-1")
+
+        // Then — the tombstoned row is never painted from cache.
+        XCTAssertEqual(cached.map(\.id), ["live"])
+    }
+
+    func test_givenNoStore_whenReadingCachedDocuments_thenReturnsEmpty() async throws {
+        // Given — boundary: no store injected.
+        let service = DocumentsService(api: StubAPIClient())
+
+        // When
+        let cached = await service.cachedDocuments(in: nil)
+
+        // Then
+        XCTAssertTrue(cached.isEmpty)
+    }
+
+    func test_givenStore_whenListingFolders_thenWritesThroughToCache() async throws {
+        // Given — happy path: a store injected, folders fetched.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.paginatedFolders(ids: ["fo-1", "fo-2"]))
+        let store = FakeDocumentStore()
+        let service = DocumentsService(api: api, store: store)
+
+        // When
+        _ = try await service.folders(limit: 20, offset: 0)
+
+        // Then — the fetched folders were written through to the cache.
+        let cached = await store.allFolders()
+        XCTAssertEqual(Set(cached.map(\.id)), ["fo-1", "fo-2"])
+    }
+
+    func test_givenCachedFolders_whenReadingCachedFolders_thenReturnsLiveFoldersOnly() async throws {
+        // Given — a live folder and a tombstoned folder.
+        let store = FakeDocumentStore()
+        await store.upsertFolder(FolderNode(id: "live", name: "Live"))
+        await store.upsertFolder(FolderNode(id: "gone", name: "Gone", deleted: true))
+        let service = DocumentsService(api: StubAPIClient(), store: store)
+
+        // When
+        let cached = await service.cachedFolders()
+
+        // Then — the tombstoned folder is filtered out.
+        XCTAssertEqual(cached.map(\.id), ["live"])
+    }
+
+    func test_givenNoStore_whenReadingCachedFolders_thenReturnsEmpty() async throws {
+        // Given — boundary: no store injected.
+        let service = DocumentsService(api: StubAPIClient())
+
+        // When
+        let cached = await service.cachedFolders()
+
+        // Then
+        XCTAssertTrue(cached.isEmpty)
+    }
+
+    private func sampleDocument(
+        id: String,
+        folderId: String?,
+        deleted: Bool = false
+    ) -> Document {
+        Document(
+            id: id,
+            folderId: folderId,
+            title: "Doc \(id)",
+            body: DocumentBody(markdown: "# \(id)"),
+            updatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            isPublic: false,
+            deleted: deleted,
+            version: nil
+        )
+    }
 }
 
 // MARK: - StubSyncCoordinator
@@ -644,4 +760,45 @@ actor StubSyncCoordinator: DocumentSyncCoordinating {
     func enqueue(_ change: DocumentChange) async {
         enqueuedChanges.append(change)
     }
+}
+
+// MARK: - FakeDocumentStore
+
+/// In-memory `DocumentStore` double for the `DocumentsService` cache-first
+/// read tests. Only the document/folder read + upsert surface is exercised
+/// here; the outbox / sync-state methods are minimal stubs sufficient for
+/// these tests. An `actor` for Swift 6 strict-concurrency safety.
+actor FakeDocumentStore: DocumentStore {
+    private var documents: [String: Document] = [:]
+    private var folders: [String: FolderNode] = [:]
+
+    // Documents
+    func allDocuments() async -> [Document] { Array(documents.values) }
+    func cachedDocument(id: String) async -> Document? { documents[id] }
+    func localEditedAt(id: String) async -> Date? { nil }
+    func upsert(_ document: Document, localEditedAt: Date?) async { documents[document.id] = document }
+    func removeDocument(id: String) async { documents.removeValue(forKey: id) }
+    func clearLocalEdit(id: String) async {}
+
+    // Folders
+    func allFolders() async -> [FolderNode] { Array(folders.values) }
+    func cachedFolder(id: String) async -> FolderNode? { folders[id] }
+    func upsertFolder(_ folder: FolderNode) async { folders[folder.id] = folder }
+    func removeFolder(id: String) async {
+        folders.removeValue(forKey: id)
+        for (docID, doc) in documents where doc.folderId == id { documents.removeValue(forKey: docID) }
+    }
+
+    // Outbox (unused by these tests)
+    func enqueueOutbox(_ change: DocumentChange) async throws {}
+    func outboxEntries() async -> [OutboxEntry] { [] }
+    func dequeueOutbox(entryId: String) async {}
+    func markOutboxFailure(entryId: String, message: String) async {}
+
+    // Sync state (unused by these tests)
+    func lastSyncAt() async -> Date? { nil }
+    func lastSyncToken() async -> String? { nil }
+    func updateSyncState(lastSyncAt: Date?, lastSyncToken: String?, pendingOutboxCount: Int) async {}
+
+    func clear() async { documents.removeAll(); folders.removeAll() }
 }

@@ -34,6 +34,17 @@ final class ScheduledPostsViewModel {
     /// True while a load is in flight.
     private(set) var isLoading: Bool = false
 
+    /// True while a background revalidation runs *after* the cache has
+    /// already painted the list (stale-while-revalidate, PLAN.md §5).
+    /// Non-blocking: the view shows a subtle indicator instead of the
+    /// full-screen loading state.
+    private(set) var isRefreshing: Bool = false
+
+    /// True when a background revalidation failed while cached posts were on
+    /// screen. The list keeps its cached rows; the view surfaces this as an
+    /// unobtrusive hint rather than blanking the list.
+    private(set) var refreshFailed: Bool = false
+
     /// Surfaced error from the most recent failed load. Cleared on the next
     /// successful round-trip.
     private(set) var error: Error?
@@ -46,6 +57,19 @@ final class ScheduledPostsViewModel {
     /// so a failed mutation doesn't blank the loaded list.
     private(set) var actionError: Error?
 
+    /// Timestamp of the last successful network refresh — drives the TTL.
+    private(set) var lastRefreshedAt: Date?
+
+    /// Freshness window: a re-appearing view whose posts refreshed within
+    /// this many seconds skips revalidation and trusts cache.
+    static let refreshTTL: TimeInterval = 45
+
+    /// Whether a `.task`-driven re-appearance should revalidate.
+    var shouldRefresh: Bool {
+        guard let lastRefreshedAt else { return true }
+        return Date().timeIntervalSince(lastRefreshedAt) >= Self.refreshTTL
+    }
+
     // MARK: - Init
 
     init(messages: MessagesServicing) {
@@ -54,20 +78,53 @@ final class ScheduledPostsViewModel {
 
     // MARK: - Intents
 
-    /// First-time + refresh load. Replaces the rendered list with the server
-    /// payload. On failure the prior list is left intact and `error` is set so
-    /// the view can show a retry affordance without losing what it had.
+    /// First-time + refresh load, stale-while-revalidate (PLAN.md §5): on a
+    /// cold start it paints the cached posts immediately (suppressing the
+    /// full-screen loading state) and then revalidates over the network. A
+    /// manual refresh (the list is already loaded) revalidates in place. On
+    /// a network failure the prior list is left intact — `error` is set only
+    /// on a cold-cache failure so the view can show a retry affordance;
+    /// `refreshFailed` is set (non-blocking) when cached rows are on screen.
     func load() async {
-        guard !isLoading else { return }
-        isLoading = true
-        defer { isLoading = false }
+        guard !isLoading, !isRefreshing else { return }
+        // Paint from cache only on the very first load; a manual refresh keeps
+        // whatever is already rendered.
+        let cachePainted: Bool
+        if !hasLoadedOnce {
+            let cached = await messages.cachedScheduledPosts()
+            if !cached.isEmpty {
+                posts = cached
+                hasLoadedOnce = true
+                cachePainted = true
+            } else {
+                cachePainted = false
+            }
+        } else {
+            cachePainted = !posts.isEmpty
+        }
+
+        if cachePainted {
+            isRefreshing = true
+        } else {
+            isLoading = true
+        }
+        refreshFailed = false
+        defer {
+            isLoading = false
+            isRefreshing = false
+        }
         do {
             let loaded = try await messages.scheduledPosts()
             posts = loaded
             error = nil
             hasLoadedOnce = true
+            lastRefreshedAt = Date()
         } catch {
-            self.error = error
+            if cachePainted {
+                refreshFailed = true
+            } else {
+                self.error = error
+            }
             hasLoadedOnce = true
         }
     }

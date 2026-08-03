@@ -341,8 +341,12 @@ final class AppEnvironment: ObservableObject {
         // Reuse the same kit-layer APIClient: M1 list browsing hits the
         // same Bearer-only public endpoints the timeline does, so a
         // second client would be redundant and would double up auth
-        // bookkeeping at no benefit.
-        let lists = ListsService(api: api)
+        // bookkeeping at no benefit. The owned-lists cache (built once here
+        // and also handed to the environment below) is injected so the
+        // sidebar can paint from cache before the network returns
+        // (stale-while-revalidate).
+        let listsStore = Self.makeListsStore()
+        let lists = ListsService(api: api, store: listsStore)
         let social = SocialService(api: api)
         // Auth + session — the kit-level `AuthService` owns the token
         // store and credential exchange; `SessionService` adds the
@@ -356,7 +360,6 @@ final class AppEnvironment: ObservableObject {
         let currentUserStore = CurrentUserStore(session: session, liveEntitlements: liveEntitlements)
         let composerEventBus = ComposerEventBus()
         let listsEventBus = ListsEventBus()
-        let listsStore = Self.makeListsStore()
         // M4 Documents (PLAN.md §6 M4). The sync engine owns
         // `/api/documents/sync`; the service wraps single-shot CRUD +
         // delegates sync to the engine. View models read only the
@@ -375,7 +378,11 @@ final class AppEnvironment: ObservableObject {
         )
         let documentsService = DocumentsService(
             api: api,
-            sync: documentSyncEngine
+            sync: documentSyncEngine,
+            // Same store the sync engine owns — so the cache-first read
+            // surface (`cachedDocuments`/`cachedFolders`) and the engine's
+            // deltas stay consistent (stale-while-revalidate paint).
+            store: documentStore
         )
         // Server document templates (the-gaps.md G12). Reuses the same
         // kit-layer `APIClient` like the other services do — the
@@ -399,7 +406,12 @@ final class AppEnvironment: ObservableObject {
         // `authTransport`. `UserService` takes the default production base URL
         // for the browser-handoff OAuth link flow.
         let orgService = OrgService(api: api)
-        let userService = UserService(api: api)
+        // Org-memberships cache (the-gaps.md §5) — the Organizations switcher's
+        // initial-view data. On-disk in Application Support with disposable /
+        // auto-rebuild semantics; falls back to `NullOrgStore` if the container
+        // cannot be built.
+        let orgStore = Self.makeOrgStore()
+        let userService = UserService(api: api, orgStore: orgStore)
         // M7 — CSV data exports (PLAN.md §1 "Data Exports", §6 M7). Reuses
         // the same kit-layer `APIClient`; the export endpoints are the
         // decision-0001 session-only allowlist (`/api/exports/*`), already
@@ -461,48 +473,91 @@ final class AppEnvironment: ObservableObject {
 
     // MARK: - Store construction
 
-    /// Returns an in-memory `SwiftDataMessageStore`, falling back to a
-    /// no-op cache if even that cannot be constructed (sandbox edge
-    /// cases). Persistence is a stale-while-revalidate accelerator
-    /// (PLAN.md §5) — losing it is not fatal.
-    private static func makeMessageStore() -> MessageStore {
-        if let inMemory = try? SwiftDataMessageStore.inMemory() {
-            return inMemory
+    // The SwiftData caches now persist ON DISK in Application Support so a
+    // relaunch paints each section from cache instantly (stale-while-
+    // revalidate). The cache is disposable: on a schema mismatch (after an
+    // app update changed a `@Model`) or corruption, the store files are
+    // deleted and rebuilt once; if that still fails we fall back to an
+    // in-memory store (session-only), then to a no-op cache. Losing the
+    // cache is never fatal — every service treats it as best-effort.
+
+    /// Directory holding the on-disk SwiftData cache stores. Created on demand.
+    private static func cacheDirectory() -> URL {
+        let base = (try? FileManager.default.url(
+            for: .applicationSupportDirectory, in: .userDomainMask,
+            appropriateFor: nil, create: true
+        )) ?? FileManager.default.temporaryDirectory
+        let dir = base.appendingPathComponent("Cache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Removes a SQLite store file and its `-shm` / `-wal` siblings so the
+    /// container can be rebuilt from scratch.
+    private static func removeStoreFiles(at url: URL) {
+        for suffix in ["", "-shm", "-wal"] {
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix))
         }
+    }
+
+    /// Builds an on-disk store with disposable-cache semantics: try to open;
+    /// on failure nuke the files and rebuild once; on continued failure fall
+    /// back to an in-memory store. Returns `nil` only if even in-memory fails.
+    private static func makeOnDiskStore<S>(
+        fileName: String,
+        onDisk: (URL) throws -> S,
+        inMemory: () throws -> S
+    ) -> S? {
+        let url = cacheDirectory().appendingPathComponent(fileName)
+        if let store = try? onDisk(url) { return store }
+        removeStoreFiles(at: url)          // schema mismatch / corruption → rebuild
+        if let store = try? onDisk(url) { return store }
+        return try? inMemory()             // last resort: session-only cache
+    }
+
+    private static func makeMessageStore() -> MessageStore {
+        if let store = makeOnDiskStore(
+            fileName: "messages.store",
+            onDisk: SwiftDataMessageStore.onDisk(at:),
+            inMemory: SwiftDataMessageStore.inMemory
+        ) { return store }
         return NullMessageStore()
     }
 
-    /// Returns an in-memory `SwiftDataListsStore`, falling back to a
-    /// no-op cache if even that cannot be constructed. Mirrors the
-    /// `makeMessageStore` policy: persistence is best-effort.
     private static func makeListsStore() -> ListsStore {
-        if let inMemory = try? SwiftDataListsStore.inMemory() {
-            return inMemory
-        }
+        if let store = makeOnDiskStore(
+            fileName: "lists.store",
+            onDisk: SwiftDataListsStore.onDisk(at:),
+            inMemory: SwiftDataListsStore.inMemory
+        ) { return store }
         return NullListsStore()
     }
 
-    /// Returns an in-memory `SwiftDataDocumentStore`, falling back to a
-    /// `NullDocumentStore` when SwiftData refuses to construct one
-    /// (sandbox edge cases). The sync engine is built around the
-    /// `DocumentStore` protocol so the fallback keeps the engine
-    /// constructable; in that degraded mode every call is a no-op.
-    /// On-disk persistence drops in by swapping the factory for
-    /// `SwiftDataDocumentStore.onDisk(at:)`.
     private static func makeDocumentStore() -> DocumentStore {
-        if let inMemory = try? SwiftDataDocumentStore.inMemory() {
-            return inMemory
-        }
+        if let store = makeOnDiskStore(
+            fileName: "documents.store",
+            onDisk: SwiftDataDocumentStore.onDisk(at:),
+            inMemory: SwiftDataDocumentStore.inMemory
+        ) { return store }
         return NullDocumentStore()
     }
 
-    /// Returns an in-memory `SwiftDataFollowCountsStore`, or `nil` if
-    /// SwiftData refuses to construct one (sandbox edge cases). The
-    /// M5 profile view treats the cache as best-effort — a `nil` store
-    /// simply means counts always come from the network with no
-    /// stale-while-revalidate paint.
     private static func makeFollowCountsStore() -> SwiftDataFollowCountsStore? {
-        try? SwiftDataFollowCountsStore.inMemory()
+        makeOnDiskStore(
+            fileName: "followcounts.store",
+            onDisk: SwiftDataFollowCountsStore.onDisk(at:),
+            inMemory: SwiftDataFollowCountsStore.inMemory
+        )
+    }
+
+    /// Org membership cache (initial-view data for the Organizations section).
+    private static func makeOrgStore() -> OrgStore {
+        if let store = makeOnDiskStore(
+            fileName: "orgs.store",
+            onDisk: SwiftDataOrgStore.onDisk(at:),
+            inMemory: SwiftDataOrgStore.inMemory
+        ) { return store }
+        return NullOrgStore()
     }
 }
 
@@ -516,6 +571,20 @@ private struct NullMessageStore: MessageStore {
     func replaceTimeline(_ messages: [Message], scope: TimelineScope, tag: String?) async {}
     func cachedMessage(id: String) async -> Message? { nil }
     func upsert(_ messages: [Message]) async {}
+    func cachedScheduled() async -> [Message] { [] }
+    func replaceScheduled(_ messages: [Message]) async {}
+    func clear() async {}
+}
+
+// MARK: - NullOrgStore
+
+/// No-op `OrgStore` used only when the on-disk / in-memory SwiftData org store
+/// cannot be constructed at all. Matches the `NullMessageStore` last-resort
+/// fallback pattern — the service contract treats every cache as best-effort,
+/// so a no-op returning `[]` is a safe degraded mode.
+private struct NullOrgStore: OrgStore {
+    func cachedMemberships() async -> [UserOrganization] { [] }
+    func cacheMemberships(_ memberships: [UserOrganization]) async {}
     func clear() async {}
 }
 
