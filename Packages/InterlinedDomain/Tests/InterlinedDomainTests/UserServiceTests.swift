@@ -156,6 +156,85 @@ final class UserServiceTests: XCTestCase {
         XCTAssertTrue(memberships.isEmpty)
     }
 
+    // MARK: - organizations SWR cache
+
+    func test_givenStore_whenLoadingOrganizations_thenWritesThroughToCache() async throws {
+        // Given — happy path: a store injected, API returns two memberships.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.userOrganizationsEnvelope([
+            Fixtures.userOrganizationObject(id: "o-1", name: "Acme", role: "owner"),
+            Fixtures.userOrganizationObject(id: "o-2", name: "Globex", role: "member")
+        ]))
+        let store = FakeOrgStore()
+        let service = UserService(api: api, orgStore: store)
+
+        // When
+        _ = try await service.organizations()
+
+        // Then — the fresh list was written through to the cache.
+        let cached = await store.cachedMemberships()
+        XCTAssertEqual(cached.map(\.id), ["o-1", "o-2"])
+    }
+
+    func test_givenPrimedCacheAndAPIFailure_whenLoadingOrganizations_thenReturnsCached() async throws {
+        // Given — upstream API failure with a primed cache.
+        let store = FakeOrgStore()
+        await store.cacheMemberships([sampleMembership(id: "cached-org", role: .admin)])
+        let api = StubAPIClient()
+        await api.enqueue(failure: .transport(message: "offline"))
+        let service = UserService(api: api, orgStore: store)
+
+        // When
+        let memberships = try await service.organizations()
+
+        // Then — the stale cache is surfaced instead of throwing.
+        XCTAssertEqual(memberships.map(\.id), ["cached-org"])
+    }
+
+    func test_givenEmptyCacheAndAPIFailure_whenLoadingOrganizations_thenThrows() async throws {
+        // Given — cold cache and a failing API (nothing to fall back to).
+        let store = FakeOrgStore()
+        let api = StubAPIClient()
+        await api.enqueue(failure: .unauthorized(serverMessage: nil))
+        let service = UserService(api: api, orgStore: store)
+
+        // When / Then
+        do {
+            _ = try await service.organizations()
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .unauthorized(serverMessage: nil))
+        }
+    }
+
+    func test_givenPrimedCache_whenReadingCachedOrganizations_thenReturnsCacheWithNoNetworkCall() async throws {
+        // Given — a primed cache and an API that would fail if called.
+        let store = FakeOrgStore()
+        await store.cacheMemberships([sampleMembership(id: "cached-org", role: .owner)])
+        let api = StubAPIClient()
+        let service = UserService(api: api, orgStore: store)
+
+        // When — the cache read must not touch the network.
+        let cached = await service.cachedOrganizations()
+
+        // Then
+        XCTAssertEqual(cached.map(\.id), ["cached-org"])
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty)
+    }
+
+    func test_givenNoStore_whenReadingCachedOrganizations_thenReturnsEmpty() async throws {
+        // Given — boundary: no store injected.
+        let api = StubAPIClient()
+        let service = UserService(api: api)
+
+        // When
+        let cached = await service.cachedOrganizations()
+
+        // Then
+        XCTAssertTrue(cached.isEmpty)
+    }
+
     // MARK: - identityLinkURL
 
     func test_givenGitHubProvider_whenResolvingLinkURL_thenBuildsAuthorizeURLWithLinkTrue() throws {
@@ -565,4 +644,25 @@ final class UserServiceTests: XCTestCase {
             XCTAssertEqual(error, .unauthorized(serverMessage: "token expired"))
         }
     }
+
+    // MARK: - Org-cache helpers
+
+    private func sampleMembership(id: String, role: OrgRole) -> UserOrganization {
+        UserOrganization(
+            organization: Organization(id: id, name: "Org \(id)", isPublic: true),
+            role: role,
+            joinedAt: nil
+        )
+    }
+}
+
+/// In-memory `OrgStore` double for the `UserService` SWR cache tests. Mirrors
+/// the domain layer's `InMemoryMessageStore` shape — an `actor` so its mutable
+/// state is safe under Swift 6 strict concurrency.
+private actor FakeOrgStore: OrgStore {
+    private var memberships: [UserOrganization] = []
+
+    func cachedMemberships() async -> [UserOrganization] { memberships }
+    func cacheMemberships(_ memberships: [UserOrganization]) async { self.memberships = memberships }
+    func clear() async { memberships.removeAll() }
 }

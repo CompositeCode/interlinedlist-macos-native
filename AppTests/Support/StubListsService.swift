@@ -66,6 +66,11 @@ actor StubListsService: ListsServicing {
     private var addConnectionOutcomes: [Result<ListConnection, Error>] = []
     private var removeConnectionOutcomes: [Result<Void, Error>] = []
 
+    /// Cache-first read surface (PLAN.md §5 SWR). Default `[]` so unprepared
+    /// paths behave like a cold cache; set a value to prime a paint-first test
+    /// for the later view-model wiring pass.
+    private var cachedMyListsValue: [OwnedList] = []
+
     private(set) var recorded: [RecordedListsCall] = []
 
     /// The full `ListSchema` passed to the most recent `updateSchema` call.
@@ -77,6 +82,8 @@ actor StubListsService: ListsServicing {
     // MARK: Programmable enqueue helpers
     func enqueueMyLists(success page: OwnedListsPage) { myListsOutcomes.append(.success(page)) }
     func enqueueMyLists(failure error: Error) { myListsOutcomes.append(.failure(error)) }
+
+    func setCachedMyLists(_ lists: [OwnedList]) { cachedMyListsValue = lists }
 
     func enqueueCreate(success list: OwnedList) { createOutcomes.append(.success(list)) }
     func enqueueCreate(failure error: Error) { createOutcomes.append(.failure(error)) }
@@ -152,6 +159,8 @@ actor StubListsService: ListsServicing {
         recorded.append(.init(kind: .myLists(limit: limit, offset: offset)))
         return try take(&myListsOutcomes, label: "myLists")
     }
+
+    func cachedMyLists() async -> [OwnedList] { cachedMyListsValue }
 
     func detail(listId: String) async throws -> OwnedList {
         recorded.append(.init(kind: .detail(listId: listId)))

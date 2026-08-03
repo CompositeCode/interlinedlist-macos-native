@@ -25,7 +25,18 @@ public protocol UserServicing: Sendable {
     /// Loads the organizations the signed-in user belongs to, with their own
     /// membership role and joined-at. Powers the org switcher. The
     /// `{ organizations: [...] }` envelope is internal.
+    ///
+    /// When an `OrgStore` is injected the result is written through to the
+    /// cache; if the live fetch fails and the cache holds a prior non-empty
+    /// membership list, that cached list is returned instead of throwing
+    /// (stale-while-revalidate / offline fallback — mirrors
+    /// `MessagesService.timeline`).
     func organizations() async throws -> [UserOrganization]
+
+    /// Surfaces the cached membership list (when a store is injected and holds
+    /// one), so the switcher can paint before `organizations()` returns. Empty
+    /// when no store is injected or the cache is cold.
+    func cachedOrganizations() async -> [UserOrganization]
 
     /// Resolves the web authorize URL for linking a new OAuth identity
     /// (PLAN.md §4 — "OAuth … link-account-only in v1"; Wave 7 spike
@@ -127,6 +138,10 @@ public final class UserService: UserServicing {
 
     private let api: APIClientProtocol
 
+    /// Optional org-memberships cache port. When `nil`, `organizations()`
+    /// fetches live with no caching and `cachedOrganizations()` returns `[]`.
+    private let orgStore: OrgStore?
+
     /// The site origin OAuth authorize URLs are resolved against. Defaults to
     /// the production host (matching `APIClient`'s default `baseURL`); tests
     /// inject a stub origin so the assembled URL is deterministic.
@@ -134,15 +149,20 @@ public final class UserService: UserServicing {
 
     /// - Parameters:
     ///   - api: the networking seam (a stub in tests).
+    ///   - orgStore: optional org-memberships cache port. When `nil`, the
+    ///     service fetches live with no caching (the default keeps existing
+    ///     `UserService(api:)` call sites source-compatible).
     ///   - baseURL: the site origin used only to resolve the OAuth authorize
     ///     URL (browser-handoff link flow). Defaults to the production host,
     ///     so existing composition-root call sites (`UserService(api:)`) are
     ///     unaffected.
     public init(
         api: APIClientProtocol,
+        orgStore: OrgStore? = nil,
         baseURL: URL = URL(string: "https://interlinedlist.com")!
     ) {
         self.api = api
+        self.orgStore = orgStore
         self.baseURL = baseURL
     }
 
@@ -152,8 +172,25 @@ public final class UserService: UserServicing {
     }
 
     public func organizations() async throws -> [UserOrganization] {
-        let response = try await api.send(User.organizations())
-        return response.organizations.map(UserOrganization.init(from:))
+        do {
+            let response = try await api.send(User.organizations())
+            let memberships = response.organizations.map(UserOrganization.init(from:))
+            await orgStore?.cacheMemberships(memberships)
+            return memberships
+        } catch let error as APIError {
+            // Offline / upstream failure: fall back to a cached list when one
+            // exists. A genuine empty cache still surfaces the error so the UI
+            // shows a real failure rather than a silent empty switcher.
+            if let orgStore {
+                let cached = await orgStore.cachedMemberships()
+                if !cached.isEmpty { return cached }
+            }
+            throw error
+        }
+    }
+
+    public func cachedOrganizations() async -> [UserOrganization] {
+        await orgStore?.cachedMemberships() ?? []
     }
 
     public func identityLinkURL(provider: IdentityProvider, instance: String?) throws -> URL {

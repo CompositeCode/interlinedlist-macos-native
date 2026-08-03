@@ -43,9 +43,31 @@ final class DocumentsListViewModel {
     /// load-more, or per-document CRUD).
     private(set) var isLoading: Bool = false
 
+    /// True while a background revalidation runs *after* the cache has
+    /// already painted the list (stale-while-revalidate, PLAN.md §5).
+    private(set) var isRefreshing: Bool = false
+
+    /// True when a background revalidation failed while cached documents
+    /// were on screen. The list keeps its cached rows; the view surfaces
+    /// this as an unobtrusive hint rather than blanking the column.
+    private(set) var refreshFailed: Bool = false
+
     /// Surfaced error from the most recent failed load / create /
     /// delete. Cleared on the next successful round-trip.
     private(set) var error: Error?
+
+    /// Timestamp of the last successful network refresh — drives the TTL.
+    private(set) var lastRefreshedAt: Date?
+
+    /// Freshness window: a re-appearing view whose documents refreshed
+    /// within this many seconds skips revalidation and trusts cache.
+    static let refreshTTL: TimeInterval = 45
+
+    /// Whether a `.task`-driven re-appearance should revalidate.
+    var shouldRefresh: Bool {
+        guard let lastRefreshedAt else { return true }
+        return Date().timeIntervalSince(lastRefreshedAt) >= Self.refreshTTL
+    }
 
     /// Whether the server reports more pages beyond what's loaded.
     private(set) var hasMore: Bool = false
@@ -69,23 +91,28 @@ final class DocumentsListViewModel {
 
     // MARK: - Intents
 
-    /// Reloads the list for `folderID`. Resets paging state. Safe to
-    /// call repeatedly; the sidebar selection-change handler calls it
-    /// every time the user picks a new folder.
+    /// Reloads the list for `folderID`, stale-while-revalidate (PLAN.md §5):
+    /// paint the folder's cached documents immediately (no blocking spinner
+    /// when non-empty), then revalidate over the network in the background.
+    /// A cold folder (empty cache) keeps the blocking-spinner behavior.
+    /// Resets paging + selection. Safe to call repeatedly; the sidebar
+    /// selection-change handler calls it every time the user picks a folder.
     func reload(in folderID: FolderNode.ID?) async {
         self.folderID = folderID
-        documentsLoaded = []
         selectedDocumentID = nil
         hasMore = false
         nextOffset = nil
-        await load(reset: true)
+        let cached = await documents.cachedDocuments(in: folderID)
+        let paintedFromCache = !cached.isEmpty
+        documentsLoaded = cached  // empty for a cold folder → spinner shows
+        await revalidate(cachePainted: paintedFromCache)
     }
 
     /// Refreshes the rendered list. Triggered by the toolbar refresh
     /// button and by the documents event loop after a `deltaApplied`
-    /// event for the current folder.
+    /// event for the current folder. Always bypasses the TTL.
     func refresh() async {
-        await load(reset: true)
+        await revalidate(cachePainted: !documentsLoaded.isEmpty)
     }
 
     /// Appends the next page when one exists. No-op while a load is
@@ -236,8 +263,46 @@ final class DocumentsListViewModel {
             hasMore = page.count == Self.pageSize
             nextOffset = hasMore ? page.count : nil
             error = nil
+            lastRefreshedAt = Date()
         } catch {
             self.error = error
+        }
+    }
+
+    /// Runs the network load and folds the result in. When `cachePainted`
+    /// is true the spinner is suppressed (`isRefreshing`) and a failure
+    /// keeps the cached documents on screen (`refreshFailed`) rather than
+    /// blanking the list. Used by the SWR `reload(in:)` / `refresh()` paths;
+    /// `load(reset:)` remains the blocking path the sync event loop uses.
+    private func revalidate(cachePainted: Bool) async {
+        if cachePainted {
+            isRefreshing = true
+        } else {
+            isLoading = true
+            error = nil
+        }
+        refreshFailed = false
+        defer {
+            isLoading = false
+            isRefreshing = false
+        }
+        do {
+            let page = try await documents.documents(
+                in: folderID,
+                limit: Self.pageSize,
+                offset: 0
+            )
+            documentsLoaded = page
+            hasMore = page.count == Self.pageSize
+            nextOffset = hasMore ? page.count : nil
+            error = nil
+            lastRefreshedAt = Date()
+        } catch {
+            if cachePainted {
+                refreshFailed = true
+            } else {
+                self.error = error
+            }
         }
     }
 }

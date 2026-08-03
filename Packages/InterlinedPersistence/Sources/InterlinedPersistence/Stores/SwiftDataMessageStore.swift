@@ -54,6 +54,18 @@ public actor SwiftDataMessageStore: MessageStore {
         return SwiftDataMessageStore(container: container)
     }
 
+    /// On-disk factory. The caller supplies a file URL; the container persists
+    /// the timeline + scheduled caches so a relaunch paints from cache
+    /// (stale-while-revalidate). Mirrors `SwiftDataListsStore.onDisk(at:)`.
+    public static func onDisk(at url: URL) throws -> SwiftDataMessageStore {
+        let configuration = ModelConfiguration(url: url)
+        let container = try ModelContainer(
+            for: MessageRecord.self, TimelinePageRecord.self,
+            configurations: configuration
+        )
+        return SwiftDataMessageStore(container: container)
+    }
+
     // MARK: - MessageStore
 
     public func cachedTimeline(scope: TimelineScope, tag: String?) async -> [Message] {
@@ -125,6 +137,51 @@ public actor SwiftDataMessageStore: MessageStore {
             try context.save()
         } catch {
             logger.error("upsert save failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    public func cachedScheduled() async -> [Message] {
+        let context = self.context
+        do {
+            // Scheduled posts are the records carrying a non-nil `scheduledAt`,
+            // returned in schedule order so the UI can group by day/week/month.
+            let descriptor = FetchDescriptor<MessageRecord>(
+                predicate: #Predicate { record in record.scheduledAt != nil },
+                sortBy: [SortDescriptor(\.scheduledAt, order: .forward)]
+            )
+            let records = try context.fetch(descriptor)
+            // Re-hydrate any repost target from the by-id index (best-effort).
+            return records.map { record in
+                record.toMessage { originalID in
+                    self.byIDMessage(id: originalID, context: context)
+                }
+            }
+        } catch {
+            logger.error("cachedScheduled fetch failed: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
+    public func replaceScheduled(_ messages: [Message]) async {
+        let context = self.context
+        do {
+            // Page semantics scoped to the scheduled slice: delete ONLY the
+            // records with a non-nil `scheduledAt` so timeline-cached records
+            // (scheduledAt == nil) are never clobbered, then re-insert the
+            // fresh scheduled set. A scheduled post shares no id with a
+            // published one, so a plain delete-then-insert is safe here.
+            let descriptor = FetchDescriptor<MessageRecord>(
+                predicate: #Predicate { record in record.scheduledAt != nil }
+            )
+            for existing in try context.fetch(descriptor) {
+                context.delete(existing)
+            }
+            for message in messages {
+                context.insert(MessageRecord(from: message))
+            }
+            try context.save()
+        } catch {
+            logger.error("replaceScheduled save failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

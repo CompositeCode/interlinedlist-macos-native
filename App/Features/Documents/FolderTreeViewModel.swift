@@ -40,9 +40,31 @@ final class FolderTreeViewModel {
     /// True while a folder-tree round-trip is in flight.
     private(set) var isLoading: Bool = false
 
+    /// True while a background revalidation runs *after* the cache has
+    /// already painted the tree (stale-while-revalidate, PLAN.md §5).
+    private(set) var isRefreshing: Bool = false
+
+    /// True when a background revalidation failed while cached folders were
+    /// on screen. The tree keeps its cached folders; the view surfaces this
+    /// as an unobtrusive hint rather than blanking the sidebar.
+    private(set) var refreshFailed: Bool = false
+
     /// Surfaced error from the most recent failed load / create /
     /// rename / delete. Cleared on the next successful round-trip.
     private(set) var error: Error?
+
+    /// Timestamp of the last successful network refresh — drives the TTL.
+    private(set) var lastRefreshedAt: Date?
+
+    /// Freshness window: a re-appearing view whose folders refreshed within
+    /// this many seconds skips revalidation and trusts cache.
+    static let refreshTTL: TimeInterval = 45
+
+    /// Whether a `.task`-driven re-appearance should revalidate.
+    var shouldRefresh: Bool {
+        guard let lastRefreshedAt else { return true }
+        return Date().timeIntervalSince(lastRefreshedAt) >= Self.refreshTTL
+    }
 
     /// The folders, projected into a parent/children index for sidebar
     /// rendering. Recomputed on every call — cheap (folders are
@@ -59,17 +81,25 @@ final class FolderTreeViewModel {
 
     // MARK: - Intents
 
-    /// First-time load. Resets state. Safe to call repeatedly.
+    /// First-time load, stale-while-revalidate (PLAN.md §5): paint from the
+    /// on-disk cache immediately (no blocking spinner when non-empty), then
+    /// revalidate over the network in the background. Cold start (empty
+    /// cache) keeps the blocking-spinner behavior. Safe to call repeatedly.
     func initialLoad() async {
-        await reload()
+        let cached = await documents.cachedFolders()
+        let paintedFromCache = !cached.isEmpty
+        if paintedFromCache {
+            folders = cached
+        }
+        await revalidate(cachePainted: paintedFromCache)
     }
 
     /// Refreshes the folder tree. The toolbar Refresh button (when
     /// added) calls this; the documents-feature event loop also calls
     /// it after a `deltaApplied` event so other windows' folder
-    /// edits flow through.
+    /// edits flow through. Always bypasses the TTL.
     func refresh() async {
-        await reload()
+        await revalidate(cachePainted: !folders.isEmpty)
     }
 
     /// Selects a folder by id (or `nil` for the unfiled-root view).
@@ -158,15 +188,32 @@ final class FolderTreeViewModel {
 
     // MARK: - Internals
 
-    private func reload() async {
-        isLoading = true
-        defer { isLoading = false }
+    /// Runs the network load and folds the result in. When `cachePainted`
+    /// is true the spinner is suppressed (`isRefreshing`) and a failure
+    /// keeps the cached folders on screen (`refreshFailed`) rather than
+    /// blanking the sidebar.
+    private func revalidate(cachePainted: Bool) async {
+        if cachePainted {
+            isRefreshing = true
+        } else {
+            isLoading = true
+        }
+        refreshFailed = false
+        defer {
+            isLoading = false
+            isRefreshing = false
+        }
         do {
             let page = try await documents.folders(limit: Self.pageSize, offset: 0)
             folders = page
             error = nil
+            lastRefreshedAt = Date()
         } catch {
-            self.error = error
+            if cachePainted {
+                refreshFailed = true
+            } else {
+                self.error = error
+            }
         }
     }
 }

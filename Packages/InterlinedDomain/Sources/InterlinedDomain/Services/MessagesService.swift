@@ -198,7 +198,17 @@ public protocol MessagesServicing: Sendable {
     /// the gate is on *creating* a scheduled post). Returns domain `Message`
     /// values with `scheduledAt` populated; the App layer groups them by
     /// today / this week / this month.
+    ///
+    /// When a `MessageStore` is injected the result is written through to the
+    /// scheduled slice of the cache; if the live fetch fails and the cache
+    /// holds a prior non-empty scheduled slice, that cached slice is returned
+    /// instead of throwing (stale-while-revalidate / offline fallback).
     func scheduledPosts() async throws -> [Message]
+
+    /// Surfaces the cached scheduled slice (when a store is injected and holds
+    /// one), so the Scheduled view can paint before `scheduledPosts` returns.
+    /// Empty when no store is injected or the cache is cold.
+    func cachedScheduledPosts() async -> [Message]
 
     /// Uploads an image attachment, returning its hosted URL. Runs the source
     /// bytes through `ImagePrep` (resize + recompress to the API limits) before
@@ -599,10 +609,27 @@ public final class MessagesService: MessagesServicing {
     }
 
     public func scheduledPosts() async throws -> [Message] {
-        let response = try await api.send(Messages.scheduled())
-        // Read-only; do not write the by-id cache — these are future posts the
-        // timeline cache should not surface as published.
-        return response.messages.map(Message.init(from:))
+        do {
+            let response = try await api.send(Messages.scheduled())
+            let loaded = response.messages.map(Message.init(from:))
+            // Write through the scheduled slice only — `replaceScheduled` never
+            // touches the timeline / by-id caches, so these future posts are
+            // never surfaced as published.
+            await store?.replaceScheduled(loaded)
+            return loaded
+        } catch let error as APIError {
+            // Offline / upstream failure: fall back to the cached scheduled
+            // slice when one exists. A cold cache still surfaces the error.
+            if let store {
+                let cached = await store.cachedScheduled()
+                if !cached.isEmpty { return cached }
+            }
+            throw error
+        }
+    }
+
+    public func cachedScheduledPosts() async -> [Message] {
+        await store?.cachedScheduled() ?? []
     }
 
     public func uploadImage(_ data: Data) async throws -> String {

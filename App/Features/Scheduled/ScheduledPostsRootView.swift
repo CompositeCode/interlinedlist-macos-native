@@ -18,6 +18,11 @@ import InterlinedDomain
 
 struct ScheduledPostsRootView: View {
 
+    /// Pre-warmed view model supplied by `MainWindowView` via the launch
+    /// coordinator. When non-nil the view skips creation and its cache-first
+    /// initial load; a re-appearance still honors the freshness TTL.
+    var preloadedViewModel: ScheduledPostsViewModel? = nil
+
     @Environment(\.appEnvironment) private var environment
     @Environment(\.openWindow) private var openWindow
 
@@ -37,6 +42,15 @@ struct ScheduledPostsRootView: View {
             .toolbar {
                 if let viewModel {
                     ToolbarItemGroup(placement: .primaryAction) {
+                        // Stale-while-revalidate: a subtle spinner while a
+                        // background refresh runs over cached posts already on
+                        // screen. The full-screen loading state only shows on a
+                        // cold start.
+                        if viewModel.isRefreshing {
+                            ProgressView()
+                                .controlSize(.small)
+                                .help("Refreshing scheduled posts…")
+                        }
                         Button {
                             openWindow(id: ComposeWindowID.newPost)
                         } label: {
@@ -67,8 +81,18 @@ struct ScheduledPostsRootView: View {
     private func bootstrap() async {
         guard let environment else { return }
         if viewModel == nil {
-            let vm = ScheduledPostsViewModel(messages: environment.messages)
-            viewModel = vm
+            if let preloaded = preloadedViewModel {
+                // Pre-warmed by the launch coordinator — its cache-first load
+                // is already in flight / done; don't refetch here.
+                viewModel = preloaded
+            } else {
+                let vm = ScheduledPostsViewModel(messages: environment.messages)
+                viewModel = vm
+                await vm.load()
+            }
+        } else if let vm = viewModel, vm.shouldRefresh {
+            // Re-appearance past the freshness TTL — revalidate; within the
+            // TTL we trust the cache and skip the network.
             await vm.load()
         }
     }
