@@ -50,7 +50,7 @@ struct GitHubIssuesView: View {
         }
         .sheet(item: $selectedIssue) { issue in
             if let viewModel {
-                GitHubIssueDetailView(issue: issue, viewModel: viewModel)
+                GitHubIssueDetailView(initialIssue: issue, viewModel: viewModel)
             }
         }
     }
@@ -260,30 +260,25 @@ private struct GitHubIssueRow: View {
 // MARK: - GitHubIssueDetailView
 
 private struct GitHubIssueDetailView: View {
-    let issue: GitHubIssue
+    let initialIssue: GitHubIssue
     let viewModel: GitHubIssuesViewModel
 
     @Environment(\.dismiss) private var dismiss
     @State private var commentText: String = ""
+    @State private var selectedLabels: Set<String> = []
+    @State private var selectedAssignees: Set<String> = []
+
+    /// The live copy from the view model (reflects in-place edits), falling
+    /// back to the snapshot the sheet was presented with.
+    private var issue: GitHubIssue {
+        viewModel.issues.first { $0.number == initialIssue.number } ?? initialIssue
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(issue.title.isEmpty ? "#\(issue.number)" : issue.title).font(.headline)
-                    HStack(spacing: 6) {
-                        Text(issue.state == .closed ? "Closed" : "Open")
-                            .font(.caption).foregroundStyle(issue.state == .closed ? .purple : .green)
-                        Text("#\(issue.number)").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Spacer()
-                if let url = issue.url {
-                    Link(destination: url) { Label("Open on GitHub", systemImage: "arrow.up.forward.square") }
-                }
-                Button("Done") { dismiss() }
-            }
-            .padding()
+            header
+            Divider()
+            editingBar
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
@@ -301,28 +296,121 @@ private struct GitHubIssueDetailView: View {
                             }
                         }
                     }
+                    if !issue.assignees.isEmpty {
+                        Text("Assignees: " + issue.assignees.map { "@\($0.login)" }.joined(separator: ", "))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
             }
             Divider()
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField("Add a comment…", text: $commentText, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...4)
-                Button {
-                    Task {
-                        await viewModel.addComment(to: issue, body: commentText)
-                        if viewModel.error == nil { commentText = ""; dismiss() }
-                    }
-                } label: {
-                    if viewModel.isCommenting { ProgressView().controlSize(.small) } else { Text("Comment") }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isCommenting)
-            }
-            .padding()
+            commentBar
         }
-        .frame(minWidth: 520, minHeight: 460)
+        .frame(minWidth: 520, minHeight: 480)
+        .task {
+            selectedLabels = Set(issue.labels.map(\.name))
+            selectedAssignees = Set(issue.assignees.map(\.login))
+            await viewModel.loadEditingCatalog()
+        }
+    }
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(issue.title.isEmpty ? "#\(issue.number)" : issue.title).font(.headline)
+                HStack(spacing: 6) {
+                    Text(issue.state == .closed ? "Closed" : "Open")
+                        .font(.caption).foregroundStyle(issue.state == .closed ? .purple : .green)
+                    Text("#\(issue.number)").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if let url = issue.url {
+                Link(destination: url) { Label("Open on GitHub", systemImage: "arrow.up.forward.square") }
+            }
+            Button("Done") { dismiss() }
+        }
+        .padding()
+    }
+
+    private var editingBar: some View {
+        HStack(spacing: 8) {
+            Button {
+                Task { await viewModel.toggleState(issue) }
+            } label: {
+                if issue.state == .closed {
+                    Label("Reopen", systemImage: "arrow.counterclockwise.circle")
+                } else {
+                    Label("Close", systemImage: "checkmark.circle")
+                }
+            }
+            .disabled(viewModel.isUpdating)
+
+            Menu {
+                if viewModel.labelCatalog.isEmpty {
+                    Text(viewModel.isLoadingCatalog ? "Loading…" : "No labels")
+                }
+                ForEach(viewModel.labelCatalog) { label in
+                    Button {
+                        toggle(label.name, in: &selectedLabels) { newSet in
+                            Task { await viewModel.setLabels(Array(newSet), on: issue) }
+                        }
+                    } label: {
+                        Label(label.name, systemImage: selectedLabels.contains(label.name) ? "checkmark" : "circle")
+                    }
+                }
+            } label: {
+                Label("Labels", systemImage: "tag")
+            }
+            .disabled(viewModel.isUpdating)
+
+            Menu {
+                if viewModel.assignableUsers.isEmpty {
+                    Text(viewModel.isLoadingCatalog ? "Loading…" : "No assignable users")
+                }
+                ForEach(viewModel.assignableUsers) { user in
+                    Button {
+                        toggle(user.login, in: &selectedAssignees) { newSet in
+                            Task { await viewModel.setAssignees(Array(newSet), on: issue) }
+                        }
+                    } label: {
+                        Label("@\(user.login)", systemImage: selectedAssignees.contains(user.login) ? "checkmark" : "circle")
+                    }
+                }
+            } label: {
+                Label("Assignees", systemImage: "person.crop.circle.badge.plus")
+            }
+            .disabled(viewModel.isUpdating)
+
+            if viewModel.isUpdating { ProgressView().controlSize(.small) }
+            Spacer()
+        }
+        .padding(.horizontal).padding(.vertical, 8)
+    }
+
+    private var commentBar: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField("Add a comment…", text: $commentText, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(1...4)
+            Button {
+                Task {
+                    await viewModel.addComment(to: issue, body: commentText)
+                    if viewModel.error == nil { commentText = "" }
+                }
+            } label: {
+                if viewModel.isCommenting { ProgressView().controlSize(.small) } else { Text("Comment") }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(commentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || viewModel.isCommenting)
+        }
+        .padding()
+    }
+
+    /// Flips membership of `value` in `set` and hands the new set to `apply`.
+    private func toggle(_ value: String, in set: inout Set<String>, apply: (Set<String>) -> Void) {
+        if set.contains(value) { set.remove(value) } else { set.insert(value) }
+        apply(set)
     }
 }
