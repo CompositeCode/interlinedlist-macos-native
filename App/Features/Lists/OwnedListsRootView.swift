@@ -29,6 +29,7 @@ struct OwnedListsRootView: View {
     @State private var showsWatchers: Bool = false
     @State private var showsShareLinks: Bool = false
     @State private var showsConnections: Bool = false
+    @State private var showsIssues: Bool = false
     @State private var listIDPendingDelete: String?
 
     var body: some View {
@@ -169,6 +170,14 @@ struct OwnedListsRootView: View {
                     Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
                 }
                 .disabled(viewModel.selectedListID == nil)
+
+                Button {
+                    showsIssues = true
+                } label: {
+                    Label("Issues", systemImage: "ladybug")
+                }
+                .disabled(viewModel.selectedListGitHubRepo == nil)
+                .help("Browse and create GitHub issues for this list")
             }
         }
         .sheet(isPresented: $showsNewListSheet) {
@@ -201,6 +210,11 @@ struct OwnedListsRootView: View {
                     knownLists: viewModel.lists_loaded,
                     environment: environment
                 )
+            }
+        }
+        .sheet(isPresented: $showsIssues) {
+            if let environment, let repo = viewModel.selectedListGitHubRepo {
+                GitHubIssuesView(repo: repo, environment: environment)
             }
         }
         .confirmationDialog(

@@ -180,6 +180,14 @@ final class OwnedListsViewModel {
         selectedList?.gitHubSource != nil
     }
 
+    /// The `"owner/repo"` slug of the selected GitHub-backed list, when it has
+    /// one — the scope for the issue browser (work-consolidation.md G4). `nil`
+    /// when no list is selected or it isn't GitHub-backed (or the source hasn't
+    /// surfaced a repository yet), which gates the toolbar's Issues button.
+    var selectedListGitHubRepo: String? {
+        selectedList?.gitHubSource?.repository
+    }
+
     // MARK: - Nested-list helper
 
     /// Returns the root-level lists (those with no parent) in display
