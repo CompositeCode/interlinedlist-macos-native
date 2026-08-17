@@ -1,6 +1,6 @@
 import Foundation
 
-/// Request builders for the **Moderation** API group (the-gaps.md G2) — block,
+/// Request builders for the **Moderation** API group (work-consolidation.md G2) — block,
 /// mute, and report users and messages.
 ///
 /// Paths verified against the live `/help/api/moderation` docs and the

@@ -140,7 +140,64 @@ final class ListConnectionsViewModelTests: XCTestCase {
 
     // MARK: - layout determinism
 
-    func test_givenSeedNodes_whenLayout_thenFocusAtCenter() async {
+    func test_givenGraph_whenLayoutRunTwice_thenPositionsAreIdentical() async {
+        let stub = StubListsService()
+        let focus = ListsFixtures.ownedList(id: "L1")
+        let other = ListsFixtures.ownedList(id: "L2")
+        let third = ListsFixtures.ownedList(id: "L3")
+        let e1 = ListsFixtures.connection(id: "E1", from: "L1", to: "L2")
+        let e2 = ListsFixtures.connection(id: "E2", from: "L1", to: "L3")
+        await stub.enqueueConnections(success: [e1, e2])
+        let viewModel = ListConnectionsViewModel(
+            lists: stub,
+            eventBus: ListsEventBus(),
+            focusListId: "L1",
+            knownLists: [focus, other, third]
+        )
+        await viewModel.load()
+        let size = CGSize(width: 600, height: 400)
+
+        viewModel.layout(in: size)
+        let firstPass = viewModel.nodes.map { ($0.id, $0.position) }
+        viewModel.layout(in: size)
+        let secondPass = viewModel.nodes.map { ($0.id, $0.position) }
+
+        XCTAssertEqual(firstPass.count, secondPass.count)
+        for (first, second) in zip(firstPass, secondPass) {
+            XCTAssertEqual(first.0, second.0)
+            XCTAssertEqual(first.1, second.1)
+        }
+    }
+
+    func test_givenGraph_whenLayout_thenAllPositionsWithinBounds() async {
+        let stub = StubListsService()
+        let lists = (1...5).map { ListsFixtures.ownedList(id: "L\($0)") }
+        let edges = (2...5).map {
+            ListsFixtures.connection(id: "E\($0)", from: "L1", to: "L\($0)")
+        }
+        await stub.enqueueConnections(success: edges)
+        let viewModel = ListConnectionsViewModel(
+            lists: stub,
+            eventBus: ListsEventBus(),
+            focusListId: "L1",
+            knownLists: lists
+        )
+        await viewModel.load()
+        let size = CGSize(width: 600, height: 400)
+
+        viewModel.layout(in: size)
+
+        for node in viewModel.nodes {
+            XCTAssertTrue(node.position.x.isFinite)
+            XCTAssertTrue(node.position.y.isFinite)
+            XCTAssertGreaterThanOrEqual(node.position.x, 0)
+            XCTAssertLessThanOrEqual(node.position.x, size.width)
+            XCTAssertGreaterThanOrEqual(node.position.y, 0)
+            XCTAssertLessThanOrEqual(node.position.y, size.height)
+        }
+    }
+
+    func test_givenDraggedNode_whenLayout_thenPinnedPositionPreserved() async {
         let stub = StubListsService()
         let focus = ListsFixtures.ownedList(id: "L1")
         let other = ListsFixtures.ownedList(id: "L2")
@@ -153,14 +210,14 @@ final class ListConnectionsViewModelTests: XCTestCase {
             knownLists: [focus, other]
         )
         await viewModel.load()
-
         let size = CGSize(width: 600, height: 400)
+        let pinned = CGPoint(x: 42, y: 84)
+        viewModel.setNodePosition(id: "L2", to: pinned)
+
         viewModel.layout(in: size)
 
-        let focusNode = viewModel.nodes.first { $0.isFocused }
-        XCTAssertNotNil(focusNode)
-        XCTAssertEqual(Double(focusNode?.position.x ?? 0), 300, accuracy: 0.001)
-        XCTAssertEqual(Double(focusNode?.position.y ?? 0), 200, accuracy: 0.001)
+        let target = viewModel.nodes.first { $0.id == "L2" }
+        XCTAssertEqual(target?.position, pinned)
     }
 
     // MARK: - drag re-position

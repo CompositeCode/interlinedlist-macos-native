@@ -60,8 +60,17 @@ struct ComposerWindowView: View {
                     // cross-post toggles. The view model gates against nil so
                     // the toggle still functions in preview / test hosts that
                     // don't wire the full environment.
-                    userService: environment.userService
+                    userService: environment.userService,
+                    // G14: server-authoritative message-length limit for the
+                    // live character counter + publish gate.
+                    contentLimits: environment.contentLimits,
+                    // G11a: resolves the LinkedIn posting target when the user
+                    // enables the LinkedIn cross-post toggle.
+                    linkedIn: environment.linkedIn
                 )
+                // Pull the live limits once; the provider falls back to the
+                // built-in default, so this never leaves the counter unset.
+                await viewModel?.refreshLimits()
             }
         }
         .onChange(of: viewModel?.didFinish) { _, finished in
@@ -332,11 +341,35 @@ struct ComposerWindowView: View {
                     .accessibilityLabel("Bluesky cross-posting is not available")
             }
 
+            // G11a: the setter resolves the LinkedIn posting target so the user
+            // sees which destination the post publishes to; rolls the toggle
+            // back with a hint when the account has no LinkedIn target.
             Toggle(isOn: Binding(
                 get: { viewModel.crossPostToLinkedIn },
-                set: { viewModel.crossPostToLinkedIn = $0 }
+                set: { enabled in Task { await viewModel.setLinkedInEnabled(enabled) } }
             )) { Text("LinkedIn") }
                 .disabled(!viewModel.canUseSubscriberFeatures)
+
+            if viewModel.crossPostToLinkedIn, let target = viewModel.linkedInPersonalTarget {
+                Text("Posting as \(target.label)")
+                    .font(.ilMono(10))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Posting to LinkedIn as \(target.label)")
+            }
+
+            if viewModel.crossPostToLinkedIn, viewModel.linkedInOrgScopeMissing {
+                Text("Organization pages aren't available for your LinkedIn account.")
+                    .font(.ilMono(10))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("LinkedIn organization pages are unavailable")
+            }
+
+            if viewModel.linkedInNotConfigured {
+                Text("LinkedIn isn't connected. Link it in Settings → Linked Accounts.")
+                    .font(.ilMono(10))
+                    .foregroundStyle(Color.red)
+                    .accessibilityLabel("LinkedIn cross-posting is not available; connect LinkedIn in Settings")
+            }
 
             // G7: X / Twitter cross-post toggle. Mirrors LinkedIn exactly — a
             // plain boolean binding (no async readiness check; only Bluesky and
@@ -367,9 +400,30 @@ struct ComposerWindowView: View {
             .background(ILColor.surface)
             .overlay(
                 RoundedRectangle(cornerRadius: ILMetric.radiusSm)
-                    .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
+                    .stroke(
+                        viewModel.isOverMessageLimit
+                            ? Color.red.opacity(0.7)
+                            : Color.secondary.opacity(0.25),
+                        lineWidth: 1
+                    )
             )
             .accessibilityLabel("Message body")
+
+            // G14: live character counter. Turns red once the body exceeds the
+            // server limit; the publish button is disabled via `isPublishable`.
+            HStack(spacing: 6) {
+                Spacer()
+                if viewModel.isOverMessageLimit {
+                    Text("\(-viewModel.messageCharactersRemaining) over limit")
+                        .foregroundStyle(Color.red)
+                }
+                Text("\(viewModel.messageCharacterCount) / \(viewModel.messageCharacterLimit)")
+                    .foregroundStyle(viewModel.isOverMessageLimit ? Color.red : Color.secondary)
+            }
+            .font(.ilMono(10))
+            .accessibilityLabel(
+                "\(viewModel.messageCharacterCount) of \(viewModel.messageCharacterLimit) characters"
+            )
         }
     }
 

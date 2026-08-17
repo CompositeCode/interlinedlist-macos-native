@@ -1,6 +1,6 @@
 // ListFoldersViewModel
 //
-// Drives the Lists-sidebar folder tree (the-gaps.md G6). Owns the loaded
+// Drives the Lists-sidebar folder tree (work-consolidation.md G6). Owns the loaded
 // `[ListFolderNode]` tree, the loading / error state, and the create /
 // rename / move / delete actions. Reads through `ListFoldersServicing`
 // only — no direct API or entitlements access — so unit tests substitute

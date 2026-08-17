@@ -1,7 +1,7 @@
 import XCTest
 @testable import InterlinedKit
 
-/// BDD tests for the Moderation endpoint group (the-gaps.md G2).
+/// BDD tests for the Moderation endpoint group (work-consolidation.md G2).
 final class ModerationEndpointTests: XCTestCase {
 
     private let baseURL = URL(string: "https://stub.local")!

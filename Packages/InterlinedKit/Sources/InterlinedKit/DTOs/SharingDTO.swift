@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Sharing DTOs (the-gaps.md G3)
+// MARK: - Sharing DTOs (work-consolidation.md G3)
 //
 // Tokenized share links for lists and documents. Shapes verified live
 // 2026-07-31 (authorized create→capture→revoke on the test account's own list):

@@ -5,17 +5,18 @@
 // answer: interactive (drag nodes, drag-to-add-edge, tap-to-remove),
 // SwiftUI-only (no `NSViewRepresentable`).
 //
-// **Implementation choice — deterministic radial layout for v1.**
-// We shipped the deterministic path rather than the force-directed
-// physics simulation. The brief allowed either, and a deterministic
-// layout is testable, stable, and degrades gracefully when the
-// connection set is large. The view drives drag with state updates;
-// the layout function recomputes positions when nodes change so
-// freshly-added nodes find a home without a relayout dance.
-//
-// TODO(M3.x): swap the radial layout for a force-directed pass
-// (repulsion + spring on each `TimelineView(.animation)` frame)
-// once we have enough real connection data to tune the parameters.
+// **Implementation choice — deterministic force-directed layout.**
+// `layout(in:)` delegates to `ForceDirectedLayout` (in
+// `InterlinedDomain`): a pure Fruchterman–Reingold pass with
+// edge-springs pulling connected lists together and pairwise
+// repulsion pushing everything apart, iterated with a fixed cooling
+// schedule and then normalized/centered into the canvas. The layout
+// is a deterministic function of (node ids, edges, size) — nodes are
+// seeded on a circle by index, the iteration count is fixed, and no
+// `Date`/`arc4random` is used — so the same graph always lays out
+// identically and the physics is unit-testable without SwiftUI. The
+// view drives drag with state updates; a dragged node's position is
+// preserved across relayouts so the user doesn't see it jump home.
 
 import Foundation
 import Observation
@@ -52,15 +53,27 @@ final class ListConnectionsViewModel {
     /// size to `layout(in:)` but the initial layout uses this.
     static let defaultCanvasSize = CGSize(width: 600, height: 400)
 
+    /// The deterministic force-directed layout engine. A pure value
+    /// type living in `InterlinedDomain`; injected so tests can tune
+    /// iteration counts if needed, but the default is production.
+    private let layoutEngine: ForceDirectedLayout
+
+    /// Node ids the user has explicitly dragged. Their positions are
+    /// pinned across relayouts so a drag doesn't get overwritten by
+    /// the next physics pass.
+    private var pinnedNodeIds: Set<String> = []
+
     init(
         lists: ListsServicing,
         eventBus: ListsEventBus,
         focusListId: String,
-        knownLists: [OwnedList] = []
+        knownLists: [OwnedList] = [],
+        layoutEngine: ForceDirectedLayout = ForceDirectedLayout()
     ) {
         self.lists = lists
         self.eventBus = eventBus
         self.focusListId = focusListId
+        self.layoutEngine = layoutEngine
         seedKnownLists(knownLists)
     }
 
@@ -113,36 +126,40 @@ final class ListConnectionsViewModel {
     }
 
     /// Updates a node's position (called from the view's drag
-    /// gesture). The drag is non-physics — the new position sticks.
+    /// gesture). The drag is non-physics — the new position sticks and
+    /// the node is pinned so subsequent relayouts don't move it.
     func setNodePosition(id: String, to position: CGPoint) {
         guard let index = nodes.firstIndex(where: { $0.id == id }) else { return }
         nodes[index].position = position
+        pinnedNodeIds.insert(id)
     }
 
-    /// Recomputes a deterministic radial layout in the given canvas
-    /// size. Focus list at center, neighbours equally spaced on the
-    /// circumference. Deterministic so tests can assert positions.
+    /// Recomputes a deterministic force-directed layout in the given
+    /// canvas size by delegating to `ForceDirectedLayout`. Connected
+    /// lists cluster (edge springs), all nodes repel each other, and
+    /// the settled cloud is normalized/centered into the canvas.
+    ///
+    /// Deterministic: same nodes + edges + size ⇒ identical positions.
+    /// Nodes the user has dragged are pinned and keep their position.
     func layout(in size: CGSize) {
         guard !nodes.isEmpty else { return }
-        let center = CGPoint(x: size.width / 2.0, y: size.height / 2.0)
-        let radius = min(size.width, size.height) * 0.35
-        let focus = nodes.first { $0.isFocused }
-        let neighbours = nodes.filter { !$0.isFocused }
-        let total = neighbours.count
-        for (index, node) in nodes.enumerated() {
-            if node.isFocused {
-                nodes[index].position = center
-                continue
-            }
-            // Index among neighbours determines angle.
-            guard let neighbourIndex = neighbours.firstIndex(where: { $0.id == node.id })
-            else { continue }
-            let angle = 2.0 * Double.pi * Double(neighbourIndex) / Double(max(total, 1))
-            let x = center.x + CGFloat(cos(angle)) * radius
-            let y = center.y + CGFloat(sin(angle)) * radius
-            nodes[index].position = CGPoint(x: x, y: y)
+        let ids = nodes.map(\.id)
+        let layoutEdges = edges.map {
+            ForceDirectedLayout.Edge(from: $0.fromListId, to: $0.toListId)
         }
-        _ = focus // silence unused-warning when no focus
+        let positions = layoutEngine.positions(
+            nodeIDs: ids,
+            edges: layoutEdges,
+            size: size
+        )
+        for index in nodes.indices {
+            let id = nodes[index].id
+            // Honour user drags; only reflow un-pinned nodes.
+            guard !pinnedNodeIds.contains(id) else { continue }
+            if let point = positions[id] {
+                nodes[index].position = point
+            }
+        }
     }
 
     /// Applies a `ListsEvent`. Connection events arrive from any

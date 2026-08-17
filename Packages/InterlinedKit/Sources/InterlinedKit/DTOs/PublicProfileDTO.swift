@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - PublicProfileDTO (the-gaps.md D2)
+// MARK: - PublicProfileDTO (work-consolidation.md D2)
 //
 // `GET /api/users/{username}` — the public profile of any user by handle.
 // Shape verified live 2026-07-31 (read-only). This endpoint did not exist when

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Request builders for the **List Folders** API group (the-gaps.md G6) —
+/// Request builders for the **List Folders** API group (work-consolidation.md G6) —
 /// hierarchical folders that organize the current user's lists. Distinct from
 /// document folders (`/api/documents/folders/*`); these live at `/api/folders`.
 ///

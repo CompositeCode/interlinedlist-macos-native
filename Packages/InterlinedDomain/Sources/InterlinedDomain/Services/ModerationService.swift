@@ -3,7 +3,7 @@ import InterlinedKit
 
 // MARK: - ModerationServicing
 
-/// The moderation surface the App layer codes against (the-gaps.md G2) — list
+/// The moderation surface the App layer codes against (work-consolidation.md G2) — list
 /// the accounts you block / mute, block / unblock, mute / unmute, and report
 /// users or messages.
 ///

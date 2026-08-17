@@ -3,7 +3,7 @@ import InterlinedKit
 
 // MARK: - LinkedInTarget
 
-/// A LinkedIn destination the user can cross-post to (the-gaps.md G11a).
+/// A LinkedIn destination the user can cross-post to (work-consolidation.md G11a).
 public struct LinkedInTarget: Sendable, Equatable, Hashable, Identifiable {
     public enum Kind: String, Sendable, Equatable, Hashable {
         case personal

@@ -3,7 +3,7 @@ import Foundation
 // MARK: - DocumentTemplate
 
 /// A starter template that seeds a new document's title and Markdown body
-/// before it is handed to the normal create flow (feature-gaps.md §1.4).
+/// before it is handed to the normal create flow (work-consolidation.md).
 ///
 /// **This is a client-side feature.** The InterlinedList API exposes no
 /// documents-templates endpoint (see

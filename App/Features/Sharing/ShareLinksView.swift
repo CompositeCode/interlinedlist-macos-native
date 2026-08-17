@@ -1,7 +1,7 @@
 // ShareLinksView
 //
 // The "Links" panel of the share sheet for a list or a document
-// (the-gaps.md G3). A create form (role picker over `ShareRole.allCases`
+// (work-consolidation.md G3). A create form (role picker over `ShareRole.allCases`
 // + optional expiry) atop a list of active links, each with a
 // copy/share affordance and a revoke button. Presented as a sheet from
 // the Lists toolbar and the Documents editor toolbar.

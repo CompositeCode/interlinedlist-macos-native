@@ -1,7 +1,7 @@
 // ShareURLParser
 //
 // Pure parser that turns a pasted share URL or an `interlinedlist://`
-// deep link into a typed `ParsedShare` (the-gaps.md G3). Recognizes both
+// deep link into a typed `ParsedShare` (work-consolidation.md G3). Recognizes both
 // resource shapes:
 //   • lists:      …/lists/shared/{token}
 //   • documents:  …/documents/shared/{token}

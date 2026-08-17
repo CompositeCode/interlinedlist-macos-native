@@ -80,6 +80,16 @@ public protocol UserServicing: Sendable {
     /// supply the current password.
     func deleteAccount(password: String) async throws
 
+    // MARK: - Preferences (settings storage)
+
+    /// Fetches the current account's server-synced preferences
+    /// (work-consolidation.md — settings storage). Maps `GET /api/user`.
+    func settings() async throws -> UserSettings
+
+    /// Persists a settings snapshot via `POST /api/user/update` and returns the
+    /// server's authoritative post-update settings.
+    func updateSettings(_ settings: UserSettings) async throws -> UserSettings
+
     // MARK: - User search / lookup (NW-1)
 
     /// Searches for users by username prefix. Returns the first `limit` matches.
@@ -266,6 +276,18 @@ public final class UserService: UserServicing {
 
     public func deleteAccount(password: String) async throws {
         _ = try await api.send(User.delete(DeleteAccountRequest(password: password)))
+    }
+
+    // MARK: - Preferences (settings storage)
+
+    public func settings() async throws -> UserSettings {
+        let response = try await api.send(User.current())
+        return UserSettings(from: response.user)
+    }
+
+    public func updateSettings(_ settings: UserSettings) async throws -> UserSettings {
+        let response = try await api.send(User.update(settings.updateRequest))
+        return UserSettings(from: response.user)
     }
 
     // MARK: - User search / lookup (NW-1)

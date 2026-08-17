@@ -226,4 +226,46 @@ final class MessageDetailViewModelTests: XCTestCase {
         let m = MessageFixtures.message(id: "m1", author: MessageFixtures.author(id: "owner"))
         XCTAssertTrue(viewModel.canEdit(m, currentUserID: "owner"))
     }
+
+    // MARK: - Markdown export
+
+    func test_givenLoadedThread_whenExportMarkdown_thenStagesRenderedThreadAndFilename() async throws {
+        // Given a loaded root message and one reply.
+        let stub = StubMessagesService()
+        let root = MessageFixtures.message(
+            id: "m1", author: MessageFixtures.author(username: "ada"), text: "Root post"
+        )
+        let reply = MessageFixtures.message(
+            id: "r1", author: MessageFixtures.author(id: "u-bob", username: "bob"),
+            text: "A reply", parentID: "m1"
+        )
+        await stub.enqueueMessage(success: root)
+        await stub.enqueueReplies(success: [reply])
+        let viewModel = MessageDetailViewModel(messages: stub, messageID: "m1")
+        await viewModel.load()
+
+        // When
+        viewModel.exportMarkdown()
+
+        // Then — filename derives from the root author; the rendered thread
+        // carries the root post and the reply as a block quote.
+        let export = try XCTUnwrap(viewModel.pendingMarkdownExport)
+        XCTAssertEqual(export.filename, "thread-ada")
+        XCTAssertTrue(export.text.contains("**@ada**"))
+        XCTAssertTrue(export.text.contains("Root post"))
+        XCTAssertTrue(export.text.contains("> **@bob**"))
+        XCTAssertTrue(export.text.contains("> A reply"))
+
+        viewModel.clearMarkdownExport()
+        XCTAssertNil(viewModel.pendingMarkdownExport)
+    }
+
+    func test_givenNoLoadedMessage_whenExportMarkdown_thenStagesNothing() {
+        // Boundary: nothing to export before the thread loads.
+        let viewModel = MessageDetailViewModel(messages: StubMessagesService(), messageID: "m1")
+
+        viewModel.exportMarkdown()
+
+        XCTAssertNil(viewModel.pendingMarkdownExport)
+    }
 }

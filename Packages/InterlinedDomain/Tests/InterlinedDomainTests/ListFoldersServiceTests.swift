@@ -2,7 +2,7 @@ import XCTest
 import InterlinedKit
 @testable import InterlinedDomain
 
-/// BDD-named coverage for `ListFoldersService` (the-gaps.md G6). Quartet per
+/// BDD-named coverage for `ListFoldersService` (work-consolidation.md G6). Quartet per
 /// public method: happy + invalid + failure + empty/boundary. Includes the
 /// subscriber gate and the tree builder.
 final class ListFoldersServiceTests: XCTestCase {

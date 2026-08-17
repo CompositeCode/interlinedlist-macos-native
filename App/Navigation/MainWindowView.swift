@@ -74,7 +74,7 @@ struct MainWindowView: View {
     // re-navigate.
     @State private var pendingMessageDeepLinkID: String? = nil
 
-    // Share Links (the-gaps.md G3) — when an opened share URL resolves to a
+    // Share Links (work-consolidation.md G3) — when an opened share URL resolves to a
     // `ParsedShare`, `ShareLinkDeepLink` posts `.openShareLink` and this
     // state drives the `ResolveShareView` landing sheet.
     @State private var pendingShare: ParsedShare? = nil
@@ -149,7 +149,7 @@ struct MainWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .notificationsShow)) { _ in
             selection = .notifications
         }
-        // Web-parity (the-gaps.md G5) — the ⌘F menu command posts
+        // Web-parity (work-consolidation.md G5) — the ⌘F menu command posts
         // `.searchShow`; switch the sidebar to Search, then re-post
         // `.searchFocus` so the field takes focus once it is on screen.
         .onReceive(NotificationCenter.default.publisher(for: .searchShow)) { _ in
@@ -162,7 +162,7 @@ struct MainWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .searchShowDocuments)) { _ in
             selection = .documents
         }
-        // Direct Messages (the-gaps.md G1) — the ⌥⌘M menu command and the
+        // Direct Messages (work-consolidation.md G1) — the ⌥⌘M menu command and the
         // profile "Message" button post `.directMessagesShow` to route the
         // sidebar to Messages. The `.directMessagesOpenThread` event that
         // may accompany it is observed by `DirectMessagesRootView` itself,
@@ -226,7 +226,7 @@ struct MainWindowView: View {
         .sheet(isPresented: $showExportSheet, onDismiss: { pendingExportType = nil }) {
             ExportView(initialExportType: pendingExportType)
         }
-        // Share Links (the-gaps.md G3) — an opened share URL posts
+        // Share Links (work-consolidation.md G3) — an opened share URL posts
         // `.openShareLink` with the `ParsedShare`. Present the resolve/claim
         // landing; on a successful claim, route the sidebar to the resource
         // section so the user lands where they now have access.
@@ -283,7 +283,7 @@ private struct SidebarDetailDispatcher: View {
     var body: some View {
         switch section {
         case .search:
-            // Web-parity (the-gaps.md G5) — the global search surface
+            // Web-parity (work-consolidation.md G5) — the global search surface
             // over messages / lists / documents. Routed from the sidebar
             // and from the ⌘F menu command.
             SearchRootView()
@@ -298,7 +298,7 @@ private struct SidebarDetailDispatcher: View {
         case .notifications:
             NotificationsRootView()
         case .messages:
-            // Web-parity (the-gaps.md G1) — the Direct Messages surface:
+            // Web-parity (work-consolidation.md G1) — the Direct Messages surface:
             // folder switcher → conversation list → thread. Routed from
             // the sidebar, the ⌥⌘M menu command, and the profile
             // "Message" button.

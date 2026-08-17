@@ -1,6 +1,6 @@
 // DirectMessagesMenuCommands
 //
-// Menu-bar command for the Direct Messages feature (the-gaps.md G1). Adds
+// Menu-bar command for the Direct Messages feature (work-consolidation.md G1). Adds
 // a single "Messages" command that routes the sidebar to the Messages
 // section:
 //   - Messages  (⌥⌘M) — select the Messages sidebar row.

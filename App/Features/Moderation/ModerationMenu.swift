@@ -1,6 +1,6 @@
 // ModerationMenu + ReportReasonSheet
 //
-// Reusable moderation affordances (the-gaps.md G2). `ModerationMenu`
+// Reusable moderation affordances (work-consolidation.md G2). `ModerationMenu`
 // renders the Block / Mute / Report buttons intended to sit inside an
 // existing `contextMenu { … }` or overflow `Menu { … }`, so hosts can
 // drop it into a profile header or a timeline row additively without

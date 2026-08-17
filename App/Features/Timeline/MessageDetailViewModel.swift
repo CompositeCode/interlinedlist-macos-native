@@ -54,6 +54,12 @@ final class MessageDetailViewModel {
     /// same row from firing twice while the round-trip resolves.
     private var pendingDigOperations: Set<String> = []
 
+    /// A rendered Markdown export of the loaded thread (root + replies)
+    /// awaiting the save panel (work-consolidation.md §1b). Non-nil → the
+    /// view presents a `.fileExporter`; the view clears it when the panel
+    /// resolves.
+    private(set) var pendingMarkdownExport: MarkdownExportRequest?
+
     init(messages: MessagesServicing, messageID: String) {
         self.messages = messages
         self.messageID = messageID
@@ -83,6 +89,27 @@ final class MessageDetailViewModel {
     /// `.refreshable` modifier.
     func refresh() async {
         await load()
+    }
+
+    // MARK: - Markdown export
+
+    /// Renders the loaded thread (root post + its replies, replies ordered by
+    /// `createdAt` inside the engine) as Markdown and stages it for the
+    /// `.fileExporter` save panel (work-consolidation.md §1b). No-op until the
+    /// root message has loaded.
+    func exportMarkdown() {
+        guard let root = message else { return }
+        let text = MarkdownExporter().markdown(forThreadRoot: root, replies: replies)
+        let stem = MarkdownExportRequest.filenameStem(
+            from: "thread-\(root.author.username)",
+            fallback: "thread"
+        )
+        pendingMarkdownExport = MarkdownExportRequest(filename: stem, text: text)
+    }
+
+    /// Clears the staged Markdown export after the save panel resolves.
+    func clearMarkdownExport() {
+        pendingMarkdownExport = nil
     }
 
     private func loadMessage() async -> Message? {

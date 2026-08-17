@@ -1,7 +1,7 @@
 import XCTest
 @testable import InterlinedKit
 
-/// BDD tests for the Direct Messages endpoint group (the-gaps.md G1).
+/// BDD tests for the Direct Messages endpoint group (work-consolidation.md G1).
 /// Fixtures mirror the shapes captured live 2026-07-31.
 final class DirectMessagesEndpointTests: XCTestCase {
 

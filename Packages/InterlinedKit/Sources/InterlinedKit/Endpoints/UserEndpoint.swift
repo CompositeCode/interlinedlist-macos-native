@@ -102,7 +102,7 @@ public enum User {
     }
 
     /// `GET /api/users/{username}` — a public user profile by handle
-    /// (the-gaps.md D2). Bearer-authenticated so private/follow-aware
+    /// (work-consolidation.md D2). Bearer-authenticated so private/follow-aware
     /// visibility resolves for the signed-in viewer; 404 for unknown handles.
     public static func publicProfile(username: String) -> Request<PublicProfileDTO> {
         Request(method: .get, path: "/api/users/\(username)", auth: .bearer)

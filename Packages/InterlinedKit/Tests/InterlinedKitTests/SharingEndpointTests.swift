@@ -1,7 +1,7 @@
 import XCTest
 @testable import InterlinedKit
 
-/// BDD tests for the Sharing (share-links) endpoint group (the-gaps.md G3).
+/// BDD tests for the Sharing (share-links) endpoint group (work-consolidation.md G3).
 /// Fixtures mirror shapes captured live 2026-07-31.
 final class SharingEndpointTests: XCTestCase {
 

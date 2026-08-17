@@ -22,7 +22,7 @@ extension Notification.Name {
 
     /// Posted when the user invokes Documents → New from Template….
     /// `DocumentsRootView` observes this and presents the template picker
-    /// sheet (feature-gaps.md §1.4). Client-side: seeds a new document from a
+    /// sheet (work-consolidation.md). Client-side: seeds a new document from a
     /// bundled starter-Markdown catalog, then routes it through the normal
     /// create path.
     static let documentsNewFromTemplate = Notification.Name("InterlinedList.documentsNewFromTemplate")

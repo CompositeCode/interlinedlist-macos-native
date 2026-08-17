@@ -2,7 +2,7 @@
 //
 // App-layer glue that turns an opened share URL (pasted or delivered via
 // the `interlinedlist://` deep-link scheme) into a routed presentation of
-// `ResolveShareView` (the-gaps.md G3). Mirrors the project's notification-
+// `ResolveShareView` (work-consolidation.md G3). Mirrors the project's notification-
 // name convention: a `Notification.Name` colocated with the feature and a
 // static poster so the URL handler in `InterlinedListApp` stays a
 // one-liner and `MainWindowView` owns the sheet presentation.

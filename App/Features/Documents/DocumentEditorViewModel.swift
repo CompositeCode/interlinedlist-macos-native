@@ -62,6 +62,11 @@ final class DocumentEditorViewModel {
     /// Cleared when the user dismisses the banner.
     private(set) var conflict: ConflictBannerViewModel.Pending?
 
+    /// A rendered Markdown export of the current buffer awaiting the save
+    /// panel (work-consolidation.md §1b). Non-nil → the view presents a
+    /// `.fileExporter`; the view clears it when the panel resolves.
+    private(set) var pendingMarkdownExport: MarkdownExportRequest?
+
     /// One in-flight auto-save task; cancelled and replaced on every
     /// keystroke so only the last edit's save round-trips.
     private var pendingSaveTask: Task<Void, Never>?
@@ -154,6 +159,33 @@ final class DocumentEditorViewModel {
     /// "Dismiss" button.
     func dismissConflict() {
         conflict = nil
+    }
+
+    /// Renders the current editor buffer — the *live* title and body, so
+    /// unsaved keystrokes are included — as Markdown and stages it for the
+    /// `.fileExporter` save panel (work-consolidation.md §1b). No-op when no
+    /// document is bound.
+    func exportMarkdown() {
+        guard let document else { return }
+        let live = Document(
+            id: document.id,
+            folderId: document.folderId,
+            title: title,
+            body: DocumentBody(markdown: body),
+            updatedAt: document.updatedAt,
+            createdAt: document.createdAt,
+            isPublic: document.isPublic,
+            deleted: document.deleted,
+            version: document.version
+        )
+        let text = MarkdownExporter().markdown(for: live)
+        let stem = MarkdownExportRequest.filenameStem(from: title, fallback: "document")
+        pendingMarkdownExport = MarkdownExportRequest(filename: stem, text: text)
+    }
+
+    /// Clears the staged Markdown export after the save panel resolves.
+    func clearMarkdownExport() {
+        pendingMarkdownExport = nil
     }
 
     // MARK: - Internals

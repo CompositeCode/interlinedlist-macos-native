@@ -1,6 +1,6 @@
 // ListFoldersViewModelTests
 //
-// BDD-named tests for the list-folders view model (the-gaps.md G6).
+// BDD-named tests for the list-folders view model (work-consolidation.md G6).
 // Covers the required quartet plus the subscriber-gate and the delete
 // rollback:
 //   - happy: load populates the tree.

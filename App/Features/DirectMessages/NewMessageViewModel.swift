@@ -1,6 +1,6 @@
 // NewMessageViewModel
 //
-// Backs the "New message" composer sheet (the-gaps.md G1). Loads the set
+// Backs the "New message" composer sheet (work-consolidation.md G1). Loads the set
 // of eligible recipients (mutual followers) via `recipients()`, tracks the
 // selection + body draft, and sends. Reads through
 // `DirectMessagesServicing` only so unit tests substitute a stub service.

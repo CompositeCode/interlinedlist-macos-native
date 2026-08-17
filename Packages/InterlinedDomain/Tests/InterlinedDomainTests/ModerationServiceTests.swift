@@ -2,7 +2,7 @@ import XCTest
 import InterlinedKit
 @testable import InterlinedDomain
 
-/// BDD-named coverage for `ModerationService` (the-gaps.md G2). Quartet per
+/// BDD-named coverage for `ModerationService` (work-consolidation.md G2). Quartet per
 /// public method: happy + invalid + failure + empty/boundary.
 final class ModerationServiceTests: XCTestCase {
 

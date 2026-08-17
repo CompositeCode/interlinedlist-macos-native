@@ -1,7 +1,7 @@
 import XCTest
 @testable import InterlinedKit
 
-/// BDD tests for the LinkedIn posting-targets endpoint group (the-gaps.md G11a).
+/// BDD tests for the LinkedIn posting-targets endpoint group (work-consolidation.md G11a).
 final class LinkedInEndpointTests: XCTestCase {
 
     private let baseURL = URL(string: "https://stub.local")!

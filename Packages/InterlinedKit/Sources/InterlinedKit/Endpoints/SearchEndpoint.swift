@@ -1,6 +1,6 @@
 import Foundation
 
-/// Request builders for the **Search** endpoints (the-gaps.md G5) — full-text
+/// Request builders for the **Search** endpoints (work-consolidation.md G5) — full-text
 /// search across the current user's messages, lists, and documents.
 ///
 /// Each route is a sub-route of its resource, but the three are grouped in one

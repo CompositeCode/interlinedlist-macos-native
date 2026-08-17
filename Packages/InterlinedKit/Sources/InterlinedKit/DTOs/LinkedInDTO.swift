@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - LinkedIn posting-target DTOs (the-gaps.md G11a)
+// MARK: - LinkedIn posting-target DTOs (work-consolidation.md G11a)
 //
 // Shapes verified live 2026-07-31 (read-only):
 //   GET /api/linkedin/posting-targets

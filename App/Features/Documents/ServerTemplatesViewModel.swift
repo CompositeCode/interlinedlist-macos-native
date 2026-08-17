@@ -1,7 +1,7 @@
 // ServerTemplatesViewModel
 //
 // Drives the "Your templates" section of the "New from Template…" picker
-// (the-gaps.md G12). Lists the user's own **server-side** saved template
+// (work-consolidation.md G12). Lists the user's own **server-side** saved template
 // documents (`DocumentTemplateRef`), creates a new document from one, and can
 // seed the default starter set.
 //

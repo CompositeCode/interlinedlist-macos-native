@@ -1,7 +1,7 @@
 // BlockedAndMutedViewModel
 //
 // Drives `BlockedAndMutedView`: the Settings "Blocked & Muted" pane
-// (the-gaps.md G2). Owns the two rendered rosters (blocked / muted), the
+// (work-consolidation.md G2). Owns the two rendered rosters (blocked / muted), the
 // loading / error state, and the unblock / unmute actions. Reads through
 // `ModerationServicing` only — no direct API access — so unit tests
 // substitute a stub service.

@@ -65,6 +65,8 @@ actor StubListsService: ListsServicing {
     private var connectionsOutcomes: [Result<[ListConnection], Error>] = []
     private var addConnectionOutcomes: [Result<ListConnection, Error>] = []
     private var removeConnectionOutcomes: [Result<Void, Error>] = []
+    private var publicListOutcomes: [Result<ListDetail, Error>] = []
+    private var publicRowsOutcomes: [Result<RowsPage, Error>] = []
 
     /// Cache-first read surface (PLAN.md §5 SWR). Default `[]` so unprepared
     /// paths behave like a cold cache; set a value to prime a paint-first test
@@ -136,6 +138,11 @@ actor StubListsService: ListsServicing {
     func enqueueRemoveConnectionSuccess() { removeConnectionOutcomes.append(.success(())) }
     func enqueueRemoveConnection(failure error: Error) { removeConnectionOutcomes.append(.failure(error)) }
 
+    func enqueuePublicList(success detail: ListDetail) { publicListOutcomes.append(.success(detail)) }
+    func enqueuePublicList(failure error: Error) { publicListOutcomes.append(.failure(error)) }
+    func enqueuePublicRows(success page: RowsPage) { publicRowsOutcomes.append(.success(page)) }
+    func enqueuePublicRows(failure error: Error) { publicRowsOutcomes.append(.failure(error)) }
+
     // MARK: ListsServicing — public browse
 
     func publicLists(username: String, limit: Int, offset: Int) async throws -> ListsPage {
@@ -145,12 +152,12 @@ actor StubListsService: ListsServicing {
 
     func publicList(username: String, slug: String) async throws -> ListDetail {
         recorded.append(.init(kind: .publicList(username: username, slug: slug)))
-        throw StubError.notProgrammed("publicList")
+        return try take(&publicListOutcomes, label: "publicList")
     }
 
     func publicRows(username: String, slug: String, limit: Int, offset: Int) async throws -> RowsPage {
         recorded.append(.init(kind: .publicRows(username: username, slug: slug, limit: limit, offset: offset)))
-        throw StubError.notProgrammed("publicRows")
+        return try take(&publicRowsOutcomes, label: "publicRows")
     }
 
     // MARK: ListsServicing — owned CRUD
@@ -314,6 +321,22 @@ enum ListsFixtures {
 
     static func ownedListsPage(_ lists: [OwnedList], hasMore: Bool = false, nextOffset: Int? = nil) -> OwnedListsPage {
         OwnedListsPage(lists: lists, hasMore: hasMore, nextOffset: nextOffset)
+    }
+
+    static func listDetail(
+        id: String = "L1",
+        title: String = "Bikes",
+        description: String? = nil,
+        schemaDescription: String? = nil
+    ) -> ListDetail {
+        ListDetail(
+            summary: ListSummary(id: id, title: title, description: description, visibility: .public),
+            schemaDescription: schemaDescription
+        )
+    }
+
+    static func rowsPage(_ rows: [ListRow], hasMore: Bool = false, nextOffset: Int? = nil) -> RowsPage {
+        RowsPage(rows: rows, hasMore: hasMore, nextOffset: nextOffset)
     }
 
     static func row(

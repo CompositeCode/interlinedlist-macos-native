@@ -783,10 +783,190 @@ final class ComposerViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.crossPostToMastodon)
         XCTAssertFalse(viewModel.mastodonNotConfigured)
     }
+
+    // MARK: - Content limits (G14)
+
+    func test_givenBodyWithinDefaultLimit_whenChecked_thenNotOverAndPublishable() {
+        let viewModel = ComposerViewModel(messages: StubMessagesService(), eventBus: ComposerEventBus(), mode: .newPost)
+        viewModel.body = "hello"
+
+        XCTAssertEqual(viewModel.messageCharacterCount, 5)
+        XCTAssertEqual(viewModel.messageCharacterLimit, ContentLimits.default.messageMaxContentLength)
+        XCTAssertFalse(viewModel.isOverMessageLimit)
+        XCTAssertTrue(viewModel.isPublishable)
+    }
+
+    func test_givenProvider_whenRefreshLimits_thenAdoptsServerLimit() async {
+        let provider = StubContentLimitsProvider(makeLimits(messageMaxContentLength: 10))
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(), eventBus: ComposerEventBus(),
+            mode: .newPost, contentLimits: provider
+        )
+
+        await viewModel.refreshLimits()
+
+        XCTAssertEqual(viewModel.messageCharacterLimit, 10)
+    }
+
+    func test_givenBodyOverLimit_whenChecked_thenOverAndNotPublishable() async {
+        let provider = StubContentLimitsProvider(makeLimits(messageMaxContentLength: 10))
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(), eventBus: ComposerEventBus(),
+            mode: .newPost, contentLimits: provider
+        )
+        await viewModel.refreshLimits()
+
+        viewModel.body = String(repeating: "a", count: 11)
+
+        XCTAssertTrue(viewModel.isOverMessageLimit)
+        XCTAssertEqual(viewModel.messageCharactersRemaining, -1)
+        XCTAssertFalse(viewModel.isPublishable)
+    }
+
+    func test_givenBodyOverLimit_whenSubmitting_thenBlockedWithoutCreatePost() async {
+        let provider = StubContentLimitsProvider(makeLimits(messageMaxContentLength: 3))
+        let stub = StubMessagesService()
+        let viewModel = ComposerViewModel(
+            messages: stub, eventBus: ComposerEventBus(),
+            mode: .newPost, contentLimits: provider
+        )
+        await viewModel.refreshLimits()
+        viewModel.body = "too long"
+
+        await viewModel.submit()
+
+        let recorded = await stub.recorded
+        XCTAssertTrue(recorded.isEmpty, "Over-limit body must not reach the network")
+    }
+
+    func test_givenNoProvider_whenRefreshLimits_thenKeepsDefault() async {
+        let viewModel = ComposerViewModel(messages: StubMessagesService(), eventBus: ComposerEventBus(), mode: .newPost)
+
+        await viewModel.refreshLimits()
+
+        XCTAssertEqual(viewModel.messageCharacterLimit, ContentLimits.default.messageMaxContentLength)
+    }
+
+    // MARK: - LinkedIn posting targets (G11a)
+
+    func test_givenPersonalTarget_whenEnablingLinkedIn_thenLoadsTargetAndStaysEnabled() async {
+        let service = StubLinkedInService(result: .success(
+            LinkedInPostingTargets(
+                targets: [LinkedInTarget(kind: .personal, label: "Ada Lovelace", isEnabled: true)],
+                orgScopeMissing: false
+            )
+        ))
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(), eventBus: ComposerEventBus(),
+            mode: .newPost, linkedIn: service
+        )
+
+        await viewModel.setLinkedInEnabled(true)
+
+        XCTAssertTrue(viewModel.crossPostToLinkedIn)
+        XCTAssertEqual(viewModel.linkedInPersonalTarget?.label, "Ada Lovelace")
+        XCTAssertFalse(viewModel.linkedInNotConfigured)
+        XCTAssertFalse(viewModel.linkedInOrgScopeMissing)
+    }
+
+    func test_givenNoTargets_whenEnablingLinkedIn_thenRollsBackWithHint() async {
+        let service = StubLinkedInService(result: .success(.empty))
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(), eventBus: ComposerEventBus(),
+            mode: .newPost, linkedIn: service
+        )
+
+        await viewModel.setLinkedInEnabled(true)
+
+        XCTAssertFalse(viewModel.crossPostToLinkedIn, "No LinkedIn target → toggle rolls back")
+        XCTAssertTrue(viewModel.linkedInNotConfigured)
+    }
+
+    func test_givenOrgScopeMissing_whenEnablingLinkedIn_thenFlagsOrgScopeButStaysEnabled() async {
+        let service = StubLinkedInService(result: .success(
+            LinkedInPostingTargets(
+                targets: [LinkedInTarget(kind: .personal, label: "Ada", isEnabled: true)],
+                orgScopeMissing: true
+            )
+        ))
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(), eventBus: ComposerEventBus(),
+            mode: .newPost, linkedIn: service
+        )
+
+        await viewModel.setLinkedInEnabled(true)
+
+        XCTAssertTrue(viewModel.crossPostToLinkedIn)
+        XCTAssertTrue(viewModel.linkedInOrgScopeMissing)
+    }
+
+    func test_givenServiceFailure_whenEnablingLinkedIn_thenLeavesToggleEnabled() async {
+        // Non-fatal: the boolean cross-post path still works; we just can't show
+        // the resolved target label.
+        let service = StubLinkedInService(result: .failure(URLError(.badServerResponse)))
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(), eventBus: ComposerEventBus(),
+            mode: .newPost, linkedIn: service
+        )
+
+        await viewModel.setLinkedInEnabled(true)
+
+        XCTAssertTrue(viewModel.crossPostToLinkedIn)
+        XCTAssertFalse(viewModel.linkedInNotConfigured)
+        XCTAssertNil(viewModel.linkedInPersonalTarget)
+    }
+
+    func test_givenNoService_whenEnablingLinkedIn_thenTogglesPlainlyWithoutTargets() async {
+        let viewModel = ComposerViewModel(messages: StubMessagesService(), eventBus: ComposerEventBus(), mode: .newPost)
+
+        await viewModel.setLinkedInEnabled(true)
+
+        XCTAssertTrue(viewModel.crossPostToLinkedIn)
+        XCTAssertTrue(viewModel.linkedInTargets.isEmpty)
+        XCTAssertFalse(viewModel.linkedInNotConfigured)
+    }
+
+    func test_givenEnabledWithHint_whenDisablingLinkedIn_thenClearsFlags() async {
+        let service = StubLinkedInService(result: .success(.empty))
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(), eventBus: ComposerEventBus(),
+            mode: .newPost, linkedIn: service
+        )
+        await viewModel.setLinkedInEnabled(true)   // sets linkedInNotConfigured
+        XCTAssertTrue(viewModel.linkedInNotConfigured)
+
+        await viewModel.setLinkedInEnabled(false)
+
+        XCTAssertFalse(viewModel.crossPostToLinkedIn)
+        XCTAssertFalse(viewModel.linkedInNotConfigured)
+    }
+
+    // MARK: - Content-limit test helpers
+
+    private func makeLimits(messageMaxContentLength: Int) -> ContentLimits {
+        ContentLimits(
+            imageMaxBytes: 1, imageMaxPixels: 1, imageAcceptedFormats: [],
+            videoMaxBytes: 1, videoAcceptedFormats: [],
+            messageMaxContentLength: messageMaxContentLength
+        )
+    }
 }
 
 /// Spy that records whether the subscriber-lapse refresh hook fired.
 private actor RefreshSpy {
     private(set) var didRefresh = false
     func mark() { didRefresh = true }
+}
+
+/// Returns a fixed `ContentLimits` for composer limit tests (G14).
+private struct StubContentLimitsProvider: ContentLimitsProviding {
+    let value: ContentLimits
+    init(_ value: ContentLimits) { self.value = value }
+    func limits() async -> ContentLimits { value }
+}
+
+/// Returns a fixed posting-targets outcome for composer LinkedIn tests (G11a).
+private struct StubLinkedInService: LinkedInServicing {
+    let result: Result<LinkedInPostingTargets, Error>
+    func postingTargets() async throws -> LinkedInPostingTargets { try result.get() }
 }

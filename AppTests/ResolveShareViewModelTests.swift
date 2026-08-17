@@ -1,6 +1,6 @@
 // ResolveShareViewModelTests
 //
-// BDD-named tests for the shared-resource landing view model (the-gaps.md
+// BDD-named tests for the shared-resource landing view model (work-consolidation.md
 // G3). Covers the required quartet plus the ownership-gating rule:
 //   - happy: resolve populates the resource + role; claim (signed in,
 //     claimable) records the authoritative `ShareClaim`.

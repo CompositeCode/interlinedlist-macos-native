@@ -2,7 +2,7 @@ import Foundation
 import InterlinedKit
 
 /// A reference to one of the user's **server-side** template documents
-/// (the-gaps.md G12). Distinct from `DocumentTemplate`, which is the app's
+/// (work-consolidation.md G12). Distinct from `DocumentTemplate`, which is the app's
 /// built-in, client-side starter catalog (Blank / Meeting Notes / …). Server
 /// templates are the user's own saved documents in the `_templates` folder and
 /// sync across devices.

@@ -1,6 +1,6 @@
 // ListFoldersSectionView
 //
-// The folder-tree section for the Lists sidebar (the-gaps.md G6). A
+// The folder-tree section for the Lists sidebar (work-consolidation.md G6). A
 // self-contained section that owns its own `ListFoldersViewModel`, loads
 // the tree on appear, and renders the nested folders with create /
 // rename / move / delete affordances. Designed to be dropped into the

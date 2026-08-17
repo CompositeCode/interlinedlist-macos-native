@@ -30,6 +30,8 @@ struct RecordedUserCall: Sendable, Equatable {
         case mastodonConfigured(instance: String)
         case identityLinkURLNative(provider: String, instance: String?)
         case linkIdentityNative(provider: String, code: String, state: String)
+        case settings
+        case updateSettings
     }
     let kind: Kind
 }
@@ -50,6 +52,12 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     private var blueskyConfiguredOutcomes: [Result<Bool, Error>] = []
     private var mastodonConfiguredOutcomes: [Result<Bool, Error>] = []
     private var linkIdentityNativeOutcomes: [Result<LinkedIdentity, Error>] = []
+    private var settingsOutcomes: [Result<UserSettings, Error>] = []
+    private var updateSettingsOutcomes: [Result<UserSettings, Error>] = []
+
+    /// The settings snapshot passed to the most recent `updateSettings` call,
+    /// so a test can assert what was sent.
+    private var _lastUpdatedSettings: UserSettings?
 
     /// Cache-first read surface (PLAN.md §5 SWR). Default `[]` so unprepared
     /// paths behave like a cold cache; set a value to prime a paint-first test
@@ -154,6 +162,29 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func enqueueLinkIdentityNative(failure error: Error) {
         lock.lock(); defer { lock.unlock() }
         linkIdentityNativeOutcomes.append(.failure(error))
+    }
+
+    func enqueueSettings(success settings: UserSettings) {
+        lock.lock(); defer { lock.unlock() }
+        settingsOutcomes.append(.success(settings))
+    }
+    func enqueueSettings(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        settingsOutcomes.append(.failure(error))
+    }
+    func enqueueUpdateSettings(success settings: UserSettings) {
+        lock.lock(); defer { lock.unlock() }
+        updateSettingsOutcomes.append(.success(settings))
+    }
+    func enqueueUpdateSettings(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        updateSettingsOutcomes.append(.failure(error))
+    }
+
+    /// The settings snapshot passed to the most recent `updateSettings` call.
+    var lastUpdatedSettings: UserSettings? {
+        lock.lock(); defer { lock.unlock() }
+        return _lastUpdatedSettings
     }
 
     func setCachedOrganizations(_ orgs: [UserOrganization]) {
@@ -281,6 +312,25 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func linkIdentityNative(provider: IdentityProvider, code: String, state: String) async throws -> LinkedIdentity {
         try perform(label: "linkIdentityNative", record: .linkIdentityNative(provider: provider.wireToken, code: code, state: state)) { $0.linkIdentityNativeOutcomes }
             set: { $0.linkIdentityNativeOutcomes = $1 }
+    }
+
+    func settings() async throws -> UserSettings {
+        try perform(label: "settings", record: .settings) { $0.settingsOutcomes }
+            set: { $0.settingsOutcomes = $1 }
+    }
+
+    func updateSettings(_ settings: UserSettings) async throws -> UserSettings {
+        recordLastUpdatedSettings(settings)
+        return try perform(label: "updateSettings", record: .updateSettings) { $0.updateSettingsOutcomes }
+            set: { $0.updateSettingsOutcomes = $1 }
+    }
+
+    /// Synchronous lock-guarded write so the `async` `updateSettings` never
+    /// touches `NSLock` directly (Swift 6 forbids `lock()`/`unlock()` in an
+    /// async context — mirrors `readCachedOrganizations`).
+    private func recordLastUpdatedSettings(_ settings: UserSettings) {
+        lock.lock(); defer { lock.unlock() }
+        _lastUpdatedSettings = settings
     }
 
     // MARK: - Internals

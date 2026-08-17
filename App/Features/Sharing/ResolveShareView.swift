@@ -1,6 +1,6 @@
 // ResolveShareView
 //
-// The shared-resource landing (the-gaps.md G3). Presented as a sheet when
+// The shared-resource landing (work-consolidation.md G3). Presented as a sheet when
 // the user opens a `…/lists/shared/{token}` or `…/documents/shared/{token}`
 // link — pasted into the landing field or delivered via the
 // `interlinedlist://` deep-link scheme. Shows the resolved resource title +
