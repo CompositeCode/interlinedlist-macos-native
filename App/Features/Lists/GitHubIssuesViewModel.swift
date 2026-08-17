@@ -141,6 +141,68 @@ final class GitHubIssuesViewModel {
         }
     }
 
+    // MARK: - Editing (labels / assignees / state)
+
+    /// The repo's label catalog + assignable users, loaded lazily by the issue
+    /// detail view so its label/assignee menus have options to offer.
+    private(set) var labelCatalog: [GitHubLabel] = []
+    private(set) var assignableUsers: [GitHubActor] = []
+    private(set) var isLoadingCatalog: Bool = false
+    private(set) var isUpdating: Bool = false
+
+    /// Loads the label + assignee catalogs once (subsequent calls are no-ops).
+    func loadEditingCatalog() async {
+        guard labelCatalog.isEmpty, assignableUsers.isEmpty, !isLoadingCatalog else { return }
+        isLoadingCatalog = true
+        defer { isLoadingCatalog = false }
+        do {
+            labelCatalog = try await github.labels(repo: repo)
+            assignableUsers = try await github.assignableUsers(repo: repo)
+            error = nil
+        } catch let error as GitHubServiceError {
+            handle(error)
+        } catch is CancellationError {
+            // View teardown — not a failure.
+        } catch {
+            self.error = error
+        }
+    }
+
+    /// Closes an open issue or reopens a closed one.
+    func toggleState(_ issue: GitHubIssue) async {
+        let newState: GitHubIssueState = issue.state == .closed ? .open : .closed
+        await applyUpdate(to: issue.number, GitHubIssueUpdate(state: newState))
+    }
+
+    /// Replaces the label set on `issue`.
+    func setLabels(_ labels: [String], on issue: GitHubIssue) async {
+        await applyUpdate(to: issue.number, GitHubIssueUpdate(labels: labels))
+    }
+
+    /// Replaces the assignee set on `issue`.
+    func setAssignees(_ assignees: [String], on issue: GitHubIssue) async {
+        await applyUpdate(to: issue.number, GitHubIssueUpdate(assignees: assignees))
+    }
+
+    /// Applies an update and swaps the server's returned copy into the list in
+    /// place (so the row and the open detail both reflect the change).
+    private func applyUpdate(to number: Int, _ update: GitHubIssueUpdate) async {
+        guard !isUpdating else { return }
+        isUpdating = true
+        defer { isUpdating = false }
+        do {
+            let updated = try await github.updateIssue(repo: repo, number: number, update)
+            if let index = issues.firstIndex(where: { $0.number == number }) {
+                issues[index] = updated
+            }
+            error = nil
+        } catch let error as GitHubServiceError {
+            handle(error)
+        } catch {
+            self.error = error
+        }
+    }
+
     /// Called by the view after a successful "Link GitHub" flow to re-attempt
     /// the load now that an identity exists.
     func reloadAfterLink() async {

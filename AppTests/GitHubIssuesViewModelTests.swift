@@ -167,4 +167,77 @@ final class GitHubIssuesViewModelTests: XCTestCase {
         XCTAssertEqual(vm.linkState, .linked)
         XCTAssertEqual(vm.issues.map(\.number), [1])
     }
+
+    // MARK: - Editing (labels / assignees / state)
+
+    func test_givenCatalog_whenLoading_thenPopulatesLabelsAndAssignees() async {
+        let stub = StubGitHubService()
+        stub.labelsResult = .success([GitHubLabel(name: "bug"), GitHubLabel(name: "docs")])
+        stub.assigneesResult = .success([GitHubActor(login: "octocat")])
+        let vm = GitHubIssuesViewModel(github: stub, repo: "o/r")
+
+        await vm.loadEditingCatalog()
+
+        XCTAssertEqual(vm.labelCatalog.map(\.name), ["bug", "docs"])
+        XCTAssertEqual(vm.assignableUsers.map(\.login), ["octocat"])
+    }
+
+    func test_givenOpenIssue_whenTogglingState_thenClosesAndSwapsReturnedCopy() async {
+        let stub = StubGitHubService()
+        stub.issuesResult = .success([makeIssue(7, state: .open)])
+        stub.updateResult = .success(makeIssue(7, title: "T", state: .closed))
+        let vm = GitHubIssuesViewModel(github: stub, repo: "o/r")
+        await vm.load()
+
+        await vm.toggleState(makeIssue(7, state: .open))
+
+        XCTAssertEqual(vm.issues.first?.state, .closed)
+        XCTAssertEqual(stub.updates.first?.number, 7)
+        XCTAssertEqual(stub.updates.first?.update.state, .closed)
+    }
+
+    func test_givenClosedIssue_whenTogglingState_thenReopens() async {
+        let stub = StubGitHubService()
+        stub.issuesResult = .success([makeIssue(7, state: .closed)])
+        let vm = GitHubIssuesViewModel(github: stub, repo: "o/r")
+        await vm.load()
+
+        await vm.toggleState(makeIssue(7, state: .closed))
+
+        XCTAssertEqual(stub.updates.first?.update.state, .open)
+    }
+
+    func test_givenLabels_whenSetting_thenSendsLabelUpdate() async {
+        let stub = StubGitHubService()
+        stub.issuesResult = .success([makeIssue(7)])
+        let vm = GitHubIssuesViewModel(github: stub, repo: "o/r")
+        await vm.load()
+
+        await vm.setLabels(["bug", "p1"], on: makeIssue(7))
+
+        XCTAssertEqual(stub.updates.first?.update.labels, ["bug", "p1"])
+    }
+
+    func test_givenAssignees_whenSetting_thenSendsAssigneeUpdate() async {
+        let stub = StubGitHubService()
+        stub.issuesResult = .success([makeIssue(7)])
+        let vm = GitHubIssuesViewModel(github: stub, repo: "o/r")
+        await vm.load()
+
+        await vm.setAssignees(["octocat"], on: makeIssue(7))
+
+        XCTAssertEqual(stub.updates.first?.update.assignees, ["octocat"])
+    }
+
+    func test_givenNotLinked_whenUpdating_thenFlipsToNotLinked() async {
+        let stub = StubGitHubService()
+        stub.issuesResult = .success([makeIssue(7)])
+        stub.updateResult = .failure(GitHubServiceError.notLinked(message: "not linked"))
+        let vm = GitHubIssuesViewModel(github: stub, repo: "o/r")
+        await vm.load()
+
+        await vm.toggleState(makeIssue(7))
+
+        XCTAssertEqual(vm.linkState, .notLinked)
+    }
 }
