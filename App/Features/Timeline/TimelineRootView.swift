@@ -39,6 +39,7 @@ struct TimelineRootView: View {
     // message's author; block / mute fire directly against the
     // moderation service.
     @State private var reportActionVM: ModerationActionViewModel?
+    @State private var createIssueTarget: Message?
 
     // M5.x — deep-link routing. When a system notification banner for a
     // message is tapped, `MainWindowView` sets this binding to the target
@@ -108,6 +109,13 @@ struct TimelineRootView: View {
         ) {
             if let reportActionVM {
                 ReportReasonSheet(viewModel: reportActionVM)
+            }
+        }
+        // Create-GitHub-issue-from-message sheet (work-consolidation.md G4).
+        // Presented when the row's "Create GitHub Issue…" item fires.
+        .sheet(item: $createIssueTarget) { target in
+            if let environment {
+                CreateIssueFromMessageView(message: target, environment: environment)
             }
         }
         .confirmationDialog(
@@ -290,6 +298,9 @@ struct TimelineRootView: View {
                                 messageID: tapped.id,
                                 service: environment?.moderation ?? NoopModerationService()
                             )
+                        },
+                        onCreateGitHubIssue: { tapped in
+                            createIssueTarget = tapped
                         }
                     )
                 }
