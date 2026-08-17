@@ -181,6 +181,14 @@ final class AppEnvironment: ObservableObject {
     /// posting target so the user sees where the post will publish.
     let linkedIn: LinkedInServicing
 
+    /// The GitHub issue-integration surface (work-consolidation.md G4) — browse
+    /// repos, list/create/edit issues, and comment for GitHub-backed lists and
+    /// the "create issue from message" action. Requires a linked GitHub
+    /// identity; the service reports the unlinked state as
+    /// `GitHubServiceError.notLinked` so the App can deep-link the existing
+    /// native OAuth flow. Exposed as the protocol so test doubles substitute in.
+    let github: GitHubServicing
+
     /// The Direct Messages surface the Messages feature binds against
     /// (work-consolidation.md G1). Exposed as the protocol so test doubles
     /// substitute in. Wraps the `/api/messages/*` DM endpoints (folders,
@@ -261,6 +269,7 @@ final class AppEnvironment: ObservableObject {
         moderation: ModerationServicing,
         contentLimits: ContentLimitsProviding,
         linkedIn: LinkedInServicing,
+        github: GitHubServicing,
         directMessages: DirectMessagesServicing,
         directMessagesEventBus: DirectMessagesEventBus,
         listFoldersAPI: APIClientProtocol,
@@ -290,6 +299,7 @@ final class AppEnvironment: ObservableObject {
         self.moderation = moderation
         self.contentLimits = contentLimits
         self.linkedIn = linkedIn
+        self.github = github
         self.directMessages = directMessages
         self.directMessagesEventBus = directMessagesEventBus
         self.listFoldersAPI = listFoldersAPI
@@ -449,6 +459,12 @@ final class AppEnvironment: ObservableObject {
         // of the account's personal posting target for the composer's LinkedIn
         // cross-post toggle. Reuses the shared kit-layer `APIClient`.
         let linkedIn = LinkedInService(api: api)
+        // GitHub issue integration (work-consolidation.md G4) — browse repos,
+        // list/create/edit issues, and comment. Reuses the shared kit-layer
+        // `APIClient`; requires a linked GitHub identity (the service maps the
+        // unlinked-account 400 to `GitHubServiceError.notLinked` so the UI can
+        // deep-link the existing native OAuth flow).
+        let github = GitHubService(api: api)
         // Direct Messages (work-consolidation.md G1). Reuses the same kit-layer
         // `APIClient` like `lists` / `social` / `search` do — the DM
         // endpoints are already routed by the shared `authTransport`. The
@@ -480,6 +496,7 @@ final class AppEnvironment: ObservableObject {
             moderation: moderation,
             contentLimits: contentLimits,
             linkedIn: linkedIn,
+            github: github,
             directMessages: directMessages,
             directMessagesEventBus: directMessagesEventBus,
             listFoldersAPI: api,
