@@ -1,7 +1,7 @@
 import XCTest
 @testable import InterlinedKit
 
-/// BDD tests for the Search endpoint group (the-gaps.md G5).
+/// BDD tests for the Search endpoint group (work-consolidation.md G5).
 final class SearchEndpointTests: XCTestCase {
 
     private let baseURL = URL(string: "https://stub.local")!

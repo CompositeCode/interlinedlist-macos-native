@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Server document-template DTOs (the-gaps.md G12)
+// MARK: - Server document-template DTOs (work-consolidation.md G12)
 //
 // The user's own saved template documents (distinct from the client-side
 // built-in catalog). Shapes verified live 2026-07-31:

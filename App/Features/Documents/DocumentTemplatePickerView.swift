@@ -1,7 +1,7 @@
 // DocumentTemplatePickerView
 //
-// Sheet for "New Document from Template…" (feature-gaps.md §1.4, the-gaps.md
-// G12). Presents two sections:
+// Sheet for "New Document from Template…" (work-consolidation.md G12).
+// Presents two sections:
 //
 //   • "Built-in" — the bundled `DocumentTemplate.builtIn` catalog (Blank /
 //     Meeting Notes / Daily Log / PRD). Selecting one seeds a fresh document

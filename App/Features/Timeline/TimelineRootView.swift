@@ -34,7 +34,7 @@ struct TimelineRootView: View {
     @State private var editTarget: Message?
     @State private var deleteTarget: Message?
 
-    // Web-parity (the-gaps.md G2) — moderation. The report sheet is
+    // Web-parity (work-consolidation.md G2) — moderation. The report sheet is
     // driven by a `ModerationActionViewModel` built for the tapped
     // message's author; block / mute fire directly against the
     // moderation service.
@@ -97,7 +97,7 @@ struct TimelineRootView: View {
         .sheet(item: $editTarget) { target in
             ComposerWindowView(mode: .edit(messageID: target.id, original: target))
         }
-        // Report sheet (the-gaps.md G2). Presented when the row's
+        // Report sheet (work-consolidation.md G2). Presented when the row's
         // "Report…" item fires. The action VM carries the message id so
         // it submits a message report; dismissing clears it.
         .sheet(

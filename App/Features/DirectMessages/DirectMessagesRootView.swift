@@ -1,6 +1,6 @@
 // DirectMessagesRootView
 //
-// The Direct Messages sidebar section (the-gaps.md G1). A three-part flow
+// The Direct Messages sidebar section (work-consolidation.md G1). A three-part flow
 // inside the detail column:
 //   1. a folder switcher (Inbox / Sent / Deleted) — a segmented picker,
 //   2. the conversation list for that folder (grouped by other participant),

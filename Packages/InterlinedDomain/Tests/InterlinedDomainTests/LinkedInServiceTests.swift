@@ -2,7 +2,7 @@ import XCTest
 import InterlinedKit
 @testable import InterlinedDomain
 
-/// BDD-named coverage for `LinkedInService` (the-gaps.md G11a).
+/// BDD-named coverage for `LinkedInService` (work-consolidation.md G11a).
 final class LinkedInServiceTests: XCTestCase {
 
     func test_givenTargets_whenLoading_thenMapsAndFlagsOrgScope() async throws {

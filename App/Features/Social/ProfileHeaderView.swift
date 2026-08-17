@@ -89,7 +89,7 @@ struct ProfileHeaderView: View {
                 }
                 Spacer()
                 HStack(spacing: 8) {
-                    // Direct Messages (the-gaps.md G1) — additive "Message"
+                    // Direct Messages (work-consolidation.md G1) — additive "Message"
                     // affordance. Self-gating: it reads `AppEnvironment`
                     // itself and renders nothing unless the profiled user
                     // is an eligible recipient (mutual follower), so it
@@ -141,7 +141,7 @@ struct ProfileHeaderView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Profile for \(profile.displayName), @\(profile.username)")
-        // Web-parity (the-gaps.md G2) — Block / Mute / Report on the
+        // Web-parity (work-consolidation.md G2) — Block / Mute / Report on the
         // profile via a right-click context menu. Additive: the header's
         // own affordances (follow button, counts) are untouched. The
         // modifier reads `AppEnvironment` itself, so this stays pure

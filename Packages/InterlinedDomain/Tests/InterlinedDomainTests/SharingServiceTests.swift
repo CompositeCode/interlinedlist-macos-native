@@ -2,7 +2,7 @@ import XCTest
 import InterlinedKit
 @testable import InterlinedDomain
 
-/// BDD-named coverage for `SharingService` (the-gaps.md G3). Quartet per public
+/// BDD-named coverage for `SharingService` (work-consolidation.md G3). Quartet per public
 /// method: happy + invalid + failure + empty/boundary. Includes the subscriber
 /// gate on create.
 final class SharingServiceTests: XCTestCase {

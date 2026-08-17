@@ -1,6 +1,6 @@
 // DMThreadViewModel
 //
-// Drives the thread column of `DirectMessagesRootView` (the-gaps.md G1) —
+// Drives the thread column of `DirectMessagesRootView` (work-consolidation.md G1) —
 // a resolved 1:1 conversation with one other user. Owns the rendered
 // message list, the composer draft, the send action, the mark-read-on-
 // open behaviour, and the live `threadUpdates` poll. Reads through

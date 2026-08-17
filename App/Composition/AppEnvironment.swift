@@ -94,7 +94,7 @@ final class AppEnvironment: ObservableObject {
     /// doubles substitute in.
     let documentsService: DocumentsServicing
 
-    /// The server-side document-templates surface (the-gaps.md G12) — the
+    /// The server-side document-templates surface (work-consolidation.md G12) — the
     /// user's own saved template documents. Distinct from the client-side
     /// `DocumentTemplate.builtIn` catalog: this lists / creates-from / seeds
     /// server templates so the "New from Template" picker can show a
@@ -160,31 +160,41 @@ final class AppEnvironment: ObservableObject {
     let exportsService: ExportsServicing
 
     /// The global-search surface the Search feature binds against
-    /// (the-gaps.md G5). Exposed as the protocol so test doubles
+    /// (work-consolidation.md G5). Exposed as the protocol so test doubles
     /// substitute in. Fans out over messages / lists / documents and
     /// returns domain values.
     let search: SearchServicing
 
     /// The moderation surface the Blocked & Muted settings pane and the
     /// per-user / per-message report affordances bind against
-    /// (the-gaps.md G2). Exposed as the protocol so test doubles
+    /// (work-consolidation.md G2). Exposed as the protocol so test doubles
     /// substitute in.
     let moderation: ModerationServicing
 
+    /// The content-limits surface the composer binds against for live
+    /// message-length validation (work-consolidation.md G14). Wraps
+    /// `GET /api/limits`; falls back to `ContentLimits.default` on failure.
+    let contentLimits: ContentLimitsProviding
+
+    /// The LinkedIn posting-targets surface the composer's LinkedIn cross-post
+    /// toggle binds against (work-consolidation.md G11a) — resolves the personal
+    /// posting target so the user sees where the post will publish.
+    let linkedIn: LinkedInServicing
+
     /// The Direct Messages surface the Messages feature binds against
-    /// (the-gaps.md G1). Exposed as the protocol so test doubles
+    /// (work-consolidation.md G1). Exposed as the protocol so test doubles
     /// substitute in. Wraps the `/api/messages/*` DM endpoints (folders,
     /// thread, send, recipients, unread, read/trash/restore) and returns
     /// domain `DirectMessage` / `DMThread` / `DMPage` values.
     let directMessages: DirectMessagesServicing
 
-    /// Cross-window event bus for the Direct Messages feature (the-gaps.md
+    /// Cross-window event bus for the Direct Messages feature (work-consolidation.md
     /// G1). Sending / reading / trashing posts to this bus so the DM list,
     /// an open thread, and the unread-badge coordinator update in place
     /// without a refetch.
     let directMessagesEventBus: DirectMessagesEventBus
 
-    /// Live list-folders surface (the-gaps.md G6). Folders are
+    /// Live list-folders surface (work-consolidation.md G6). Folders are
     /// subscriber-gated on create, so the service is rebuilt on each
     /// access with the current account's entitlements — mirroring
     /// `liveEntitlements`, so a mid-session subscription change re-gates
@@ -201,7 +211,7 @@ final class AppEnvironment: ObservableObject {
     /// rebuild the folders service with live entitlements on each access.
     private let listFoldersAPI: APIClientProtocol
 
-    /// Live share-links surface (the-gaps.md G3). Creating a link is
+    /// Live share-links surface (work-consolidation.md G3). Creating a link is
     /// subscriber-gated, so — exactly like `listFolders` — the service is
     /// rebuilt on each access with the current account's entitlements, so a
     /// mid-session subscription change re-gates link creation without stale
@@ -249,6 +259,8 @@ final class AppEnvironment: ObservableObject {
         exportsService: ExportsServicing,
         search: SearchServicing,
         moderation: ModerationServicing,
+        contentLimits: ContentLimitsProviding,
+        linkedIn: LinkedInServicing,
         directMessages: DirectMessagesServicing,
         directMessagesEventBus: DirectMessagesEventBus,
         listFoldersAPI: APIClientProtocol,
@@ -276,6 +288,8 @@ final class AppEnvironment: ObservableObject {
         self.exportsService = exportsService
         self.search = search
         self.moderation = moderation
+        self.contentLimits = contentLimits
+        self.linkedIn = linkedIn
         self.directMessages = directMessages
         self.directMessagesEventBus = directMessagesEventBus
         self.listFoldersAPI = listFoldersAPI
@@ -295,15 +309,13 @@ final class AppEnvironment: ObservableObject {
     /// menu items, and a singleton `ComposerEventBus` so the composer
     /// window can notify the open Timeline of a successful write.
     ///
-    /// TODO: M4 — swap the in-memory message store for a persistent
-    /// one once `InterlinedPersistence` exposes a public factory for
-    /// the on-disk `ModelContainer`. The schema types are package-
-    /// internal today, so the App target cannot construct a persistent
-    /// container without crossing the package boundary. Per PLAN.md §5
-    /// the cache accelerates rendering but is best-effort; the
-    /// in-memory variant keeps stale-while-revalidate working within
-    /// a single session, and document sync (M4) is what actually
-    /// needs persistence.
+    /// The message store is the **on-disk SwiftData cache**
+    /// (`SwiftDataMessageStore.onDisk`), matching the lists / documents /
+    /// orgs caches: the timeline paints from disk on launch and revalidates
+    /// in the background (stale-while-revalidate, PLAN.md §5).
+    /// `makeMessageStore()` degrades to an in-memory SwiftData store and
+    /// finally a `NullMessageStore` if the container can't be built — the
+    /// cache is best-effort, never a correctness dependency.
     static func live() -> AppEnvironment {
         // Store the bearer token in the shared Keychain access group so the
         // bundled document-sync agent can read it (silent, single sign-in).
@@ -384,7 +396,7 @@ final class AppEnvironment: ObservableObject {
             // deltas stay consistent (stale-while-revalidate paint).
             store: documentStore
         )
-        // Server document templates (the-gaps.md G12). Reuses the same
+        // Server document templates (work-consolidation.md G12). Reuses the same
         // kit-layer `APIClient` like the other services do — the
         // `/api/documents/templates` endpoints are already routed by the
         // shared `authTransport`. Ungated, so a plain stored service.
@@ -406,7 +418,7 @@ final class AppEnvironment: ObservableObject {
         // `authTransport`. `UserService` takes the default production base URL
         // for the browser-handoff OAuth link flow.
         let orgService = OrgService(api: api)
-        // Org-memberships cache (the-gaps.md §5) — the Organizations switcher's
+        // Org-memberships cache (work-consolidation.md) — the Organizations switcher's
         // initial-view data. On-disk in Application Support with disposable /
         // auto-rebuild semantics; falls back to `NullOrgStore` if the container
         // cannot be built.
@@ -417,7 +429,7 @@ final class AppEnvironment: ObservableObject {
         // decision-0001 session-only allowlist (`/api/exports/*`), already
         // routed by the shared `authTransport`.
         let exportsService = ExportsService(api: api)
-        // Web-parity batch (the-gaps.md G5 / G2 / G6). All three reuse the
+        // Web-parity batch (work-consolidation.md G5 / G2 / G6). All three reuse the
         // same kit-layer `APIClient` like `lists` / `social` do — their
         // endpoints are already routed by the shared `authTransport`.
         //   • Search — full-text over messages / lists / documents (G5).
@@ -428,7 +440,16 @@ final class AppEnvironment: ObservableObject {
         //     create, G6).
         let search = SearchService(api: api)
         let moderation = ModerationService(api: api)
-        // Direct Messages (the-gaps.md G1). Reuses the same kit-layer
+        // Content limits (work-consolidation.md G14) — `GET /api/limits` drives
+        // the composer's live message-length validation. Reuses the shared
+        // kit-layer `APIClient`; the service falls back to
+        // `ContentLimits.default` when the endpoint is unavailable.
+        let contentLimits = ContentLimitsService(api: api)
+        // LinkedIn posting targets (work-consolidation.md G11a) — read-only fetch
+        // of the account's personal posting target for the composer's LinkedIn
+        // cross-post toggle. Reuses the shared kit-layer `APIClient`.
+        let linkedIn = LinkedInService(api: api)
+        // Direct Messages (work-consolidation.md G1). Reuses the same kit-layer
         // `APIClient` like `lists` / `social` / `search` do — the DM
         // endpoints are already routed by the shared `authTransport`. The
         // event bus is a singleton so the DM list, an open thread, and the
@@ -457,10 +478,12 @@ final class AppEnvironment: ObservableObject {
             exportsService: exportsService,
             search: search,
             moderation: moderation,
+            contentLimits: contentLimits,
+            linkedIn: linkedIn,
             directMessages: directMessages,
             directMessagesEventBus: directMessagesEventBus,
             listFoldersAPI: api,
-            // Share Links (the-gaps.md G3) reuse the same kit-layer
+            // Share Links (work-consolidation.md G3) reuse the same kit-layer
             // `APIClient`; the API client is retained on the environment so
             // `sharing` can rebuild the service with live entitlements per
             // access (link creation is subscriber-gated). The base URL feeds

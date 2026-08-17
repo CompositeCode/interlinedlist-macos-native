@@ -1,6 +1,6 @@
 // SearchViewModel
 //
-// Drives `SearchRootView`: the global search surface (the-gaps.md G5).
+// Drives `SearchRootView`: the global search surface (work-consolidation.md G5).
 // Owns the debounced query string, the grouped `SearchResults`, and the
 // loading / error state. Reads through `SearchServicing` only — no direct
 // API access — so unit tests substitute a stub service.

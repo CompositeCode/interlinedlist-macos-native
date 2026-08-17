@@ -1,6 +1,6 @@
 import Foundation
 
-/// Server document-template builders (the-gaps.md G12), added to the existing
+/// Server document-template builders (work-consolidation.md G12), added to the existing
 /// `Documents` namespace as an additive extension so the base endpoint file is
 /// untouched. Verified live 2026-07-31.
 public extension Documents {

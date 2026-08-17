@@ -1,6 +1,6 @@
 import Foundation
 
-/// Request builders for the **Sharing / Share Links** API group (the-gaps.md
+/// Request builders for the **Sharing / Share Links** API group (work-consolidation.md
 /// G3) — tokenized view/edit/admin links for lists and documents. Creating a
 /// link is subscriber-gated server-side (the domain service checks too);
 /// resolving/claiming/revoking are not.

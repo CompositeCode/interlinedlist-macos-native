@@ -213,7 +213,7 @@ struct ExportDocument: FileDocument {
 
 /// A `FileDocument` wrapping a rendered Markdown string for the `.fileExporter`
 /// save panel — the AppKit-free way to save the client-composed Markdown export
-/// (feature-gaps.md §1.3) without an `NSSavePanel`.
+/// (work-consolidation.md §1b) without an `NSSavePanel`.
 struct MarkdownFileDocument: FileDocument {
     static let readableContentTypes: [UTType] = [.markdownText, .plainText]
 

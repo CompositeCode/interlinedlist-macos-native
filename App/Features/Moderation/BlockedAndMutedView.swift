@@ -1,6 +1,6 @@
 // BlockedAndMutedView
 //
-// Settings "Blocked & Muted" pane (the-gaps.md G2). Lists the accounts the
+// Settings "Blocked & Muted" pane (work-consolidation.md G2). Lists the accounts the
 // current user has blocked and muted, each with an inline unblock / unmute
 // action. A thin shell over `BlockedAndMutedViewModel`: it observes state,
 // dispatches user intents, and leaves all loading / mutation logic in the

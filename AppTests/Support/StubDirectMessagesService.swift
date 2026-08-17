@@ -1,7 +1,7 @@
 // StubDirectMessagesService
 //
 // Deterministic `DirectMessagesServicing` stub for App-layer view-model
-// tests of the Direct Messages feature (the-gaps.md G1). Mirrors the
+// tests of the Direct Messages feature (work-consolidation.md G1). Mirrors the
 // project's other stubs (`StubSearchService`, `StubModerationService`):
 // an actor with one FIFO outcome queue per call site + a recorded-call
 // log so tests can assert both the returned value and that the right

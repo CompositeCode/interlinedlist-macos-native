@@ -1,6 +1,6 @@
 // SearchRootView
 //
-// Global search surface (the-gaps.md G5). A single search field over the
+// Global search surface (work-consolidation.md G5). A single search field over the
 // current user's messages, lists, and documents, with the hits grouped
 // under three sections. The view is a thin shell over `SearchViewModel`:
 // it binds the field, dispatches submit / clear, and renders whichever

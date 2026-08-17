@@ -1,7 +1,7 @@
 // StubDocumentTemplatesService
 //
 // Deterministic `DocumentTemplatesServicing` stub for App-layer view-model
-// tests of the server document-templates feature (the-gaps.md G12). Mirrors the
+// tests of the server document-templates feature (work-consolidation.md G12). Mirrors the
 // project's other stubs: an actor with one FIFO outcome queue per call site plus
 // a recorded-call log so tests can assert both the surfaced result and that the
 // right calls were (or were not) made.

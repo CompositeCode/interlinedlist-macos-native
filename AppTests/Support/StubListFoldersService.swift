@@ -1,7 +1,7 @@
 // StubListFoldersService
 //
 // Deterministic `ListFoldersServicing` stub for App-layer view-model
-// tests of the list-folders feature (the-gaps.md G6). Mirrors the
+// tests of the list-folders feature (work-consolidation.md G6). Mirrors the
 // project's other stubs: an actor with one FIFO outcome queue per call
 // site + a recorded-call log.
 //

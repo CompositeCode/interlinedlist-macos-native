@@ -1,6 +1,6 @@
 // DMThreadViewModelTests
 //
-// BDD-named tests for the DM thread view model (the-gaps.md G1). Covers
+// BDD-named tests for the DM thread view model (work-consolidation.md G1). Covers
 // the required quartet plus the optimistic-send rollback, mark-read-on-
 // open, and the poll lifecycle (cancellation):
 //   - happy: send appends optimistically then replaces with the server

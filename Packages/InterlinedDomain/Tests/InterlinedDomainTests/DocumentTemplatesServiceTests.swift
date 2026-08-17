@@ -2,7 +2,7 @@ import XCTest
 import InterlinedKit
 @testable import InterlinedDomain
 
-/// BDD-named coverage for `DocumentTemplatesService` (the-gaps.md G12).
+/// BDD-named coverage for `DocumentTemplatesService` (work-consolidation.md G12).
 final class DocumentTemplatesServiceTests: XCTestCase {
 
     func test_givenTemplates_whenLoading_thenMapsRefsAndHitsPath() async throws {

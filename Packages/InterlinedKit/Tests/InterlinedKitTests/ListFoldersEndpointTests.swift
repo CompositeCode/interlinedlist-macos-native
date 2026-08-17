@@ -1,7 +1,7 @@
 import XCTest
 @testable import InterlinedKit
 
-/// BDD tests for the List Folders endpoint group (the-gaps.md G6).
+/// BDD tests for the List Folders endpoint group (work-consolidation.md G6).
 final class ListFoldersEndpointTests: XCTestCase {
 
     private let baseURL = URL(string: "https://stub.local")!

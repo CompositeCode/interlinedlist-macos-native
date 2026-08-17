@@ -173,6 +173,38 @@ final class DocumentEditorViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.conflict)
     }
 
+    // MARK: - Markdown export
+
+    func test_givenBoundDocumentWithLiveEdits_whenExportMarkdown_thenStagesRenderedBufferAndFilename() {
+        // Given a bound document whose live buffer has unsaved edits.
+        let stub = StubDocumentsService()
+        let viewModel = DocumentEditorViewModel(documents: stub, debounce: .zero)
+        viewModel.bind(to: DocumentsFixtures.document(id: "D1", title: "Saved Title", body: "saved body"))
+        viewModel.title = "My Notes"
+        viewModel.body = "# Heading\n\nSome text."
+
+        // When
+        viewModel.exportMarkdown()
+
+        // Then — the live buffer is exported (not the saved copy), with a
+        // sanitised filename derived from the title.
+        let export = viewModel.pendingMarkdownExport
+        XCTAssertEqual(export?.filename, "my-notes")
+        XCTAssertEqual(export?.text, "# My Notes\n\n# Heading\n\nSome text.\n")
+
+        viewModel.clearMarkdownExport()
+        XCTAssertNil(viewModel.pendingMarkdownExport)
+    }
+
+    func test_givenNoBoundDocument_whenExportMarkdown_thenStagesNothing() {
+        // Boundary: nothing to export before a document is bound.
+        let viewModel = DocumentEditorViewModel(documents: StubDocumentsService(), debounce: .zero)
+
+        viewModel.exportMarkdown()
+
+        XCTAssertNil(viewModel.pendingMarkdownExport)
+    }
+
     // MARK: - Helpers
 
     /// Yields the runloop several times so the debounce task + the

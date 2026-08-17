@@ -1,7 +1,7 @@
 // StubSharingService
 //
 // Deterministic `SharingServicing` stub for App-layer view-model tests of
-// the Share Links feature (the-gaps.md G3). Mirrors the project's other
+// the Share Links feature (work-consolidation.md G3). Mirrors the project's other
 // stubs: an actor with one FIFO outcome queue per call site + a recorded-
 // call log so tests can assert *what* was called (and, for the invalid-
 // input quartet member, that nothing was called).

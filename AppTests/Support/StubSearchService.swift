@@ -1,7 +1,7 @@
 // StubSearchService
 //
 // Deterministic `SearchServicing` stub for App-layer view-model tests of
-// the global search feature (the-gaps.md G5). Mirrors the project's other
+// the global search feature (work-consolidation.md G5). Mirrors the project's other
 // stubs: an actor with one FIFO outcome queue per resource + a recorded-
 // call log.
 //

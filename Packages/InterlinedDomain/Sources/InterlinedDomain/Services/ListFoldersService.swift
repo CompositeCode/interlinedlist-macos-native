@@ -25,7 +25,7 @@ extension ListFoldersError: LocalizedError, CustomStringConvertible {
 
 // MARK: - ListFoldersServicing
 
-/// The list-folders surface the App layer codes against (the-gaps.md G6) — read
+/// The list-folders surface the App layer codes against (work-consolidation.md G6) — read
 /// the folder tree, create (subscriber-gated), rename, move, and delete folders.
 ///
 /// Follows the domain-service DI shape and mirrors `ListsService`'s entitlement

@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - DMFolder
 
-/// The three per-user DM folders (the-gaps.md G1). Each side of a conversation
+/// The three per-user DM folders (work-consolidation.md G1). Each side of a conversation
 /// maintains its own folder membership independently.
 public enum DMFolder: String, Sendable, Equatable, Hashable, CaseIterable, Identifiable {
     case inbox

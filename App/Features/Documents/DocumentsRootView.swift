@@ -18,6 +18,7 @@
 // file consumes only `InterlinedDomain` (no `InterlinedKit` import).
 
 import SwiftUI
+import UniformTypeIdentifiers
 import InterlinedDomain
 
 struct DocumentsRootView: View {
@@ -35,11 +36,11 @@ struct DocumentsRootView: View {
     @State private var editor: DocumentEditorViewModel?
     @State private var syncStatus: SyncStatusViewModel?
 
-    /// Drives the "New from Template…" picker sheet (feature-gaps.md §1.4).
+    /// Drives the "New from Template…" picker sheet (work-consolidation.md).
     @State private var isTemplatePickerPresented = false
 
     /// Drives the Share Links panel for the document currently open in the
-    /// editor (the-gaps.md G3).
+    /// editor (work-consolidation.md G3).
     @State private var isShareLinksPresented = false
 
     var body: some View {
@@ -158,6 +159,14 @@ struct DocumentsRootView: View {
                 .help("Create and manage shareable links for this document")
 
                 Button {
+                    editor.exportMarkdown()
+                } label: {
+                    Label("Export as Markdown", systemImage: "arrow.down.doc")
+                }
+                .disabled(editor.document == nil)
+                .help("Export this document as a Markdown file")
+
+                Button {
                     Task { await syncStatus.syncNow() }
                 } label: {
                     Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
@@ -181,6 +190,17 @@ struct DocumentsRootView: View {
             if let documentID = editor.document?.id {
                 ShareLinksView(target: .document(id: documentID), environment: environment)
             }
+        }
+        .fileExporter(
+            isPresented: Binding(
+                get: { editor.pendingMarkdownExport != nil },
+                set: { if !$0 { editor.clearMarkdownExport() } }
+            ),
+            document: MarkdownFileDocument(editor.pendingMarkdownExport?.text),
+            contentType: .markdownText,
+            defaultFilename: editor.pendingMarkdownExport?.filename ?? "document"
+        ) { _ in
+            editor.clearMarkdownExport()
         }
     }
 

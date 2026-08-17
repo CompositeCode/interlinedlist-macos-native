@@ -3,7 +3,7 @@ import InterlinedKit
 
 // MARK: - ListFolder
 
-/// A folder that organizes the current user's lists (the-gaps.md G6). Nesting
+/// A folder that organizes the current user's lists (work-consolidation.md G6). Nesting
 /// is expressed via `parentId`; the App rebuilds the tree with `ListFolder.tree`.
 public struct ListFolder: Sendable, Equatable, Hashable, Identifiable {
     public let id: String

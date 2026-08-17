@@ -1,7 +1,7 @@
 import XCTest
 @testable import InterlinedKit
 
-/// BDD tests for the server document-templates builders (the-gaps.md G12).
+/// BDD tests for the server document-templates builders (work-consolidation.md G12).
 final class DocumentTemplatesEndpointTests: XCTestCase {
 
     private let baseURL = URL(string: "https://stub.local")!

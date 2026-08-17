@@ -1,6 +1,6 @@
 import Foundation
 
-/// Request builders for the **LinkedIn posting targets** API group (the-gaps.md
+/// Request builders for the **LinkedIn posting targets** API group (work-consolidation.md
 /// G11a) — the destinations the user can cross-post to on LinkedIn (their
 /// personal profile and, when the org scope is granted, org pages).
 ///

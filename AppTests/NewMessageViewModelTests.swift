@@ -1,6 +1,6 @@
 // NewMessageViewModelTests
 //
-// BDD-named tests for the new-message composer view model (the-gaps.md
+// BDD-named tests for the new-message composer view model (work-consolidation.md
 // G1). Covers the required quartet:
 //   - happy: a picked recipient + non-blank body sends and reports the
 //     sent message.

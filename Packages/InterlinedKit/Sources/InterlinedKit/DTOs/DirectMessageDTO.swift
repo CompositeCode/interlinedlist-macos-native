@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Direct Message DTOs (the-gaps.md G1)
+// MARK: - Direct Message DTOs (work-consolidation.md G1)
 //
 // Shapes verified live 2026-07-31 via an authorized recon DM (sent from the
 // test account, captured, then trashed):

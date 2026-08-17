@@ -2,7 +2,7 @@ import XCTest
 import InterlinedKit
 @testable import InterlinedDomain
 
-/// BDD-named coverage for `SearchService` (the-gaps.md G5). Quartet per public
+/// BDD-named coverage for `SearchService` (work-consolidation.md G5). Quartet per public
 /// method: happy + invalid/short-circuit + failure + empty/boundary.
 final class SearchServiceTests: XCTestCase {
 

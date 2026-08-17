@@ -160,7 +160,7 @@ final class ExportViewModelTests: XCTestCase {
         XCTAssertNotNil(vm.pendingExport)
     }
 
-    // MARK: - Markdown export (feature-gaps.md §1.3)
+    // MARK: - Markdown export (work-consolidation.md §1b)
 
     func test_givenOwnedListsWithRows_whenExportListsAsMarkdown_thenRendersTable() async throws {
         // Given one owned list with one row (no further pages).

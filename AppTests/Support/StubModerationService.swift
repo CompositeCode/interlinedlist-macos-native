@@ -1,7 +1,7 @@
 // StubModerationService
 //
 // Deterministic `ModerationServicing` stub for App-layer view-model tests
-// of the moderation feature (the-gaps.md G2). Mirrors the project's other
+// of the moderation feature (work-consolidation.md G2). Mirrors the project's other
 // stubs: an actor with one FIFO outcome queue per call site + a recorded-
 // call log.
 

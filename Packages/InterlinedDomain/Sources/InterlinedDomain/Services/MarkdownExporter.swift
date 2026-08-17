@@ -1,13 +1,13 @@
 import Foundation
 
 /// Renders domain models to Markdown for the "Markdown export" data-portability
-/// feature advertised on interlinedlist.com (feature-gaps.md §1.3 — "Markdown
+/// feature advertised on interlinedlist.com (work-consolidation.md §1b — "Markdown
 /// export for lists, documents, and message threads with structured table
 /// conversion").
 ///
 /// **Why this is a client-side renderer.** The `/api/exports/*` endpoints return
 /// CSV only — there is no Markdown format on the wire and no per-document /
-/// per-thread export endpoint (see `feature-blockages.md` BE-1). So the app
+/// per-thread export endpoint (see `work-consolidation.md` §2 (P2-F)). So the app
 /// composes Markdown itself from already-fetched domain models. This type is the
 /// reusable engine every entry point calls; it is a pure value transformer with
 /// no I/O, so it is exhaustively unit-testable and free of `Date.now`-style
@@ -49,7 +49,7 @@ public struct MarkdownExporter: Sendable {
     /// Renders a message thread: the root post, then its replies in ascending
     /// creation order as block quotes. Replies are rendered flat (sorted by
     /// `createdAt`) rather than nested by `parentID`; deep-nesting is a later
-    /// refinement noted in feature-gaps.md.
+    /// refinement noted in work-consolidation.md.
     public func markdown(forThreadRoot root: Message, replies: [Message]) -> String {
         var out = "# Thread\n\n"
         out += renderPost(root)

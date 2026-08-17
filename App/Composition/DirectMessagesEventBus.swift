@@ -1,6 +1,6 @@
 // DirectMessagesEventBus
 //
-// Cross-window pub/sub bus for the Direct Messages feature (the-gaps.md
+// Cross-window pub/sub bus for the Direct Messages feature (work-consolidation.md
 // G1). Mirrors `NotificationsEventBus` / `ComposerEventBus`: an internal
 // actor holds the live continuations keyed by UUID; `events()` returns
 // an `AsyncStream<DirectMessagesEvent>` per subscriber.
