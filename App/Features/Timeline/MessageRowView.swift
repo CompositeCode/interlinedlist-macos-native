@@ -58,6 +58,11 @@ struct MessageRowView: View {
     /// support-URL fallback so reporting is a real backend action.
     var onReport: ((Message) -> Void)? = nil
 
+    /// Optional "Create GitHub issue" handler (work-consolidation.md G4). When
+    /// non-nil, a "Create GitHub Issue…" item opens the host's create-issue
+    /// sheet pre-filled from this message.
+    var onCreateGitHubIssue: ((Message) -> Void)? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
@@ -239,6 +244,14 @@ struct MessageRowView: View {
                 onRepost(message)
             } label: {
                 Label("Repost", systemImage: "arrow.2.squarepath")
+            }
+        }
+
+        if let onCreateGitHubIssue {
+            Button {
+                onCreateGitHubIssue(message)
+            } label: {
+                Label("Create GitHub Issue\u{2026}", systemImage: "ladybug")
             }
         }
 
