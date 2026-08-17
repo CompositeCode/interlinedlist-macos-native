@@ -173,7 +173,7 @@ final class DocumentsListViewModel {
     }
 
     /// Creates a new document seeded from a client-side `DocumentTemplate`
-    /// (feature-gaps.md §1.4). The chosen template supplies the starter
+    /// (work-consolidation.md). The chosen template supplies the starter
     /// Markdown body; the title defaults to the template name but the caller
     /// may override it, and the user can rename it in the editor afterward.
     ///

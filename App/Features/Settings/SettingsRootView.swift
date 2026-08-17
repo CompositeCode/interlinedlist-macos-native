@@ -26,14 +26,21 @@ struct SettingsRootView: View {
                     Label("Account", systemImage: "person.crop.circle")
                 }
 
-            // Web-parity (the-gaps.md G2) — blocked / muted account
+            // Server-synced account preferences (work-consolidation.md — settings
+            // storage) via `POST /api/user/update`.
+            PreferencesView()
+                .tabItem {
+                    Label("Preferences", systemImage: "slider.horizontal.3")
+                }
+
+            // Web-parity (work-consolidation.md G2) — blocked / muted account
             // management with inline unblock / unmute.
             BlockedAndMutedView()
                 .tabItem {
                     Label("Blocked & Muted", systemImage: "hand.raised")
                 }
 
-            // Document sync agent (synch-plan.md) — enable the background helper
+            // Document sync agent (work-consolidation.md §3b) — enable the background helper
             // that mirrors documents to a local folder for Obsidian.
             DocumentSyncSettingsView()
                 .tabItem {

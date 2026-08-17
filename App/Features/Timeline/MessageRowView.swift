@@ -45,7 +45,7 @@ struct MessageRowView: View {
     /// The host is responsible for the confirmation dialog.
     var onDelete: ((Message) -> Void)? = nil
 
-    /// Optional block handler (the-gaps.md G2). When non-nil, a "Block
+    /// Optional block handler (work-consolidation.md G2). When non-nil, a "Block
     /// author" item is added to the overflow menu. The host performs the
     /// moderation call and refreshes the timeline.
     var onBlock: ((Message) -> Void)? = nil
@@ -262,7 +262,7 @@ struct MessageRowView: View {
             }
         }
 
-        // Moderation (the-gaps.md G2). Block / Mute target the author;
+        // Moderation (work-consolidation.md G2). Block / Mute target the author;
         // Report opens the host's report sheet for this message. All are
         // ownership-independent (Report satisfies App Store Review
         // Guideline 1.2: User-Generated Content requires a report

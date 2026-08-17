@@ -1,6 +1,6 @@
 // ModerationActionViewModel
 //
-// Backs the reusable `ModerationMenu` + `ReportReasonSheet` (the-gaps.md
+// Backs the reusable `ModerationMenu` + `ReportReasonSheet` (work-consolidation.md
 // G2). One instance drives the moderation affordances for a single
 // subject — a user (by username) and optionally a specific message (by
 // id). Reads through `ModerationServicing` only so unit tests substitute

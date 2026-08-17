@@ -1,7 +1,7 @@
 // ShareLinksViewModel
 //
 // Drives `ShareLinksView` — the "Links" tab of the share panel for a list
-// or a document (the-gaps.md G3). Owns the loaded active links, the create
+// or a document (work-consolidation.md G3). Owns the loaded active links, the create
 // form state (role + optional expiry), the loading / error state, and the
 // create / copy / revoke intents. Reads through `SharingServicing` only —
 // no direct API or entitlements access — so unit tests substitute a stub

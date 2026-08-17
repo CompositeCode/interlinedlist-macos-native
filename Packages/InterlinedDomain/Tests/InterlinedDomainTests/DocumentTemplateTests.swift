@@ -2,7 +2,7 @@ import XCTest
 @testable import InterlinedDomain
 
 /// BDD-named tests for the client-side document-template catalog
-/// (feature-gaps.md §1.4). Pure value-type checks — the catalog is static and
+/// (work-consolidation.md). Pure value-type checks — the catalog is static and
 /// dependency-free, so there is no service to stub.
 final class DocumentTemplateTests: XCTestCase {
 

@@ -1,6 +1,6 @@
 // ProfileMessageButtonViewModelTests
 //
-// BDD-named tests for the profile "Message" button gate (the-gaps.md G1).
+// BDD-named tests for the profile "Message" button gate (work-consolidation.md G1).
 // Covers the ownership-gating rule and eligibility:
 //   - happy: an eligible (mutual recipient) profile shows the button.
 //   - invalid input (self): messaging yourself is hidden without a call.

@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - Moderation DTOs (the-gaps.md G2)
+// MARK: - Moderation DTOs (work-consolidation.md G2)
 //
 // Block / mute / report. Envelope keys verified live 2026-07-31 (authenticated
 // Bearer probe): `GET /api/user/blocks` → `{ blockedUsers: [...], pagination }`,

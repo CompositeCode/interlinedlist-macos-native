@@ -2,7 +2,7 @@
 //
 // BDD-named tests for the DM badge coordinator's pure fold logic and for
 // the `UnreadBadgeAggregator` that sums the notifications + DM slots
-// (the-gaps.md G1). The coordinator's stream plumbing is not exercised
+// (work-consolidation.md G1). The coordinator's stream plumbing is not exercised
 // here (it's the same shape as the notifications coordinator, whose glue
 // is already covered); we test the fold and the aggregation math, which
 // is where the "don't regress the notifications badge" contract lives.

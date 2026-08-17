@@ -54,7 +54,7 @@ struct InterlinedListApp: App {
     @State private var dockBadge: NotificationsUnreadBadgeCoordinator?
 
     /// Coordinator that turns DM-bus events into the DM contribution of
-    /// the dock badge (the-gaps.md G1). Held alongside `dockBadge`.
+    /// the dock badge (work-consolidation.md G1). Held alongside `dockBadge`.
     @State private var dmDockBadge: DirectMessagesUnreadBadgeCoordinator?
 
     /// Sums the notifications + DM unread contributions and performs the
@@ -98,7 +98,7 @@ struct InterlinedListApp: App {
                         let delegate = appDelegate
                         // Single writer of the dock badge. Both unread
                         // sources (notifications + DMs) report into it so
-                        // the badge reflects their sum (the-gaps.md G1);
+                        // the badge reflects their sum (work-consolidation.md G1);
                         // neither coordinator writes the badge directly
                         // anymore, so they can't clobber each other.
                         let aggregator = UnreadBadgeAggregator(
@@ -199,7 +199,7 @@ private struct AppRootView: View {
             Task { try? await environment.session.signOut() }
         }
         .onOpenURL { url in
-            // Share Links (the-gaps.md G3) — a `…/lists/shared/{token}` or
+            // Share Links (work-consolidation.md G3) — a `…/lists/shared/{token}` or
             // `…/documents/shared/{token}` URL (pasted, or delivered via the
             // `interlinedlist://` scheme) routes to the resolve/claim landing.
             // Handled first so it does not disturb the OAuth fallback below;

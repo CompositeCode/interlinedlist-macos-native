@@ -1,6 +1,6 @@
 // NewMessageSheet
 //
-// Modal composer for a brand-new conversation (the-gaps.md G1). A
+// Modal composer for a brand-new conversation (work-consolidation.md G1). A
 // recipient picker over the eligible-recipient set (`recipients()`, mutual
 // followers) plus a body field. A thin shell over `NewMessageViewModel`.
 //

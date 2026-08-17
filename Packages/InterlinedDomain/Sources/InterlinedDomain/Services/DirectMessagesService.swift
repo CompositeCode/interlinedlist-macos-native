@@ -19,7 +19,7 @@ extension DirectMessagesError: LocalizedError, CustomStringConvertible {
 
 // MARK: - DirectMessagesServicing
 
-/// The Direct Messages surface the App layer codes against (the-gaps.md G1) —
+/// The Direct Messages surface the App layer codes against (work-consolidation.md G1) —
 /// list folders, load and poll a thread, send, discover eligible recipients,
 /// the unread badge count, and per-side read/trash/restore.
 ///

@@ -3,7 +3,7 @@ import XCTest
 
 /// BDD-named coverage for `MarkdownExporter` — the client-side Markdown
 /// renderer that implements the "Markdown export for lists, documents, and
-/// threads" parity feature (feature-gaps.md §1.3). The renderer is a pure
+/// threads" parity feature (work-consolidation.md §1b). The renderer is a pure
 /// value transformer, so every surface is asserted structurally without any
 /// network or clock dependency.
 final class MarkdownExporterTests: XCTestCase {

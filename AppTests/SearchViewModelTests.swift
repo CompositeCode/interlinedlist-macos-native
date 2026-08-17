@@ -1,6 +1,6 @@
 // SearchViewModelTests
 //
-// BDD-named tests for the global-search view model (the-gaps.md G5).
+// BDD-named tests for the global-search view model (work-consolidation.md G5).
 // Covers the required quartet plus the stale-response guard and clear:
 //   - happy: a non-blank query populates the three grouped sections.
 //   - invalid input: a blank / whitespace-only query never calls the

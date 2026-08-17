@@ -1,6 +1,6 @@
 // DirectMessagesListViewModelTests
 //
-// BDD-named tests for the DM conversation-list view model (the-gaps.md
+// BDD-named tests for the DM conversation-list view model (work-consolidation.md
 // G1). Covers the required quartet plus pagination and the optimistic
 // trash/restore rollback:
 //   - happy: a folder load groups the flat listing into conversations.

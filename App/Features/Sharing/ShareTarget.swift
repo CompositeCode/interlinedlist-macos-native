@@ -1,6 +1,6 @@
 // ShareTarget
 //
-// The resource a share-links panel is scoped to (the-gaps.md G3). A list
+// The resource a share-links panel is scoped to (work-consolidation.md G3). A list
 // or a document — the `ShareLinksViewModel` switches on this to dispatch
 // to the `list*` or `document*` half of `SharingServicing`, so the view
 // layer builds one panel regardless of which resource it's sharing.

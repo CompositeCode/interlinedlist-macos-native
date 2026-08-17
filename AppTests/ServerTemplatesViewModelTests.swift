@@ -1,7 +1,7 @@
 // ServerTemplatesViewModelTests
 //
 // BDD-named view-model tests for the server document-templates section of the
-// "New from Template…" picker (the-gaps.md G12). Stubbed
+// "New from Template…" picker (work-consolidation.md G12). Stubbed
 // `DocumentTemplatesServicing` + `DocumentsServicing`; no networking.
 //
 // The quartet per behavior:

@@ -1,6 +1,6 @@
 // ShareURLParserTests
 //
-// BDD-named tests for the pure share-URL parser (the-gaps.md G3). The
+// BDD-named tests for the pure share-URL parser (work-consolidation.md G3). The
 // parser feeds both the `interlinedlist://` deep-link handler and the
 // pasted-URL path, so its recognition surface is exhaustively covered
 // here:

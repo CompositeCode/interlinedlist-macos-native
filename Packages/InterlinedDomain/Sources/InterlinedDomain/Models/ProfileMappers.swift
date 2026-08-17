@@ -52,7 +52,7 @@ extension UserProfile {
     }
 
     /// Builds a public profile from the dedicated `GET /api/users/{username}`
-    /// endpoint (the-gaps.md D2). Unlike the decision-0002 embedded-author
+    /// endpoint (work-consolidation.md D2). Unlike the decision-0002 embedded-author
     /// fallback, this source is rich: bio, join date, private flag, and
     /// follower/following counts all come straight from the payload, so no
     /// separate `counts(of:)` stitch is required.

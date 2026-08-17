@@ -1,6 +1,6 @@
 import Foundation
 
-// MARK: - List Folder DTOs (the-gaps.md G6)
+// MARK: - List Folder DTOs (work-consolidation.md G6)
 //
 // Hierarchical folders for *lists* (distinct from document folders). Envelope
 // verified live 2026-07-31: `GET /api/folders` → `{ folders: [...] }` (a flat

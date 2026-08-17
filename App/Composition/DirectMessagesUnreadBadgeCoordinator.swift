@@ -1,7 +1,7 @@
 // DirectMessagesUnreadBadgeCoordinator
 //
 // Owns the dock-badge subscription glue for the Direct Messages feature
-// (the-gaps.md G1). Mirrors `NotificationsUnreadBadgeCoordinator`: it
+// (work-consolidation.md G1). Mirrors `NotificationsUnreadBadgeCoordinator`: it
 // listens on `DirectMessagesEventBus` and translates each event into the
 // DM contribution to the shared dock badge.
 //

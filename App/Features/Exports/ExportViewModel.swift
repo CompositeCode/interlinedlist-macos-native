@@ -63,18 +63,13 @@ import InterlinedDomain
     /// clears it when the dialog resolves (success or cancel).
     var pendingExport: CSVExport? = nil
 
-    /// A rendered Markdown export waiting to be saved (feature-gaps.md §1.3).
+    /// A rendered Markdown export waiting to be saved (work-consolidation.md §1b).
     /// The `/api/exports/*` endpoints are CSV-only, so Markdown is composed
     /// client-side from domain models via `MarkdownExporter` (see
-    /// `feature-blockages.md` P2-F for the server-side ask). Drives a second
-    /// `.fileExporter` in the view.
-    var pendingMarkdownExport: MarkdownExport? = nil
-
-    /// A rendered Markdown document plus the filename stem for the save panel.
-    struct MarkdownExport: Equatable {
-        let filename: String
-        let text: String
-    }
+    /// `work-consolidation.md` P2-F for the server-side ask). Drives a second
+    /// `.fileExporter` in the view. Shares `MarkdownExportRequest` with the
+    /// per-document and per-thread export entry points.
+    var pendingMarkdownExport: MarkdownExportRequest? = nil
 
     /// Non-nil when a service call failed. Displayed as an amber-tinted
     /// banner in `ExportView`. Cleared at the start of the next export
@@ -134,7 +129,7 @@ import InterlinedDomain
     }
 
     /// Exports all of the user's owned lists as a single Markdown document
-    /// ("structured table conversion" — feature-gaps.md §1.3). Fetches every
+    /// ("structured table conversion" — work-consolidation.md §1b). Fetches every
     /// owned list and its rows client-side (the export API is CSV-only), then
     /// renders them with `MarkdownExporter`. No-op while another export is in
     /// flight. On success `pendingMarkdownExport` becomes non-nil and the view
@@ -151,7 +146,7 @@ import InterlinedDomain
             do {
                 let inputs = try await self.collectListInputs()
                 let text = self.markdownExporter.markdown(forLists: inputs)
-                self.pendingMarkdownExport = MarkdownExport(
+                self.pendingMarkdownExport = MarkdownExportRequest(
                     filename: "interlinedlist-lists",
                     text: text
                 )

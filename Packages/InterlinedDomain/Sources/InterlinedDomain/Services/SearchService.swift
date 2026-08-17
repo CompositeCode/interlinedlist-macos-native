@@ -3,7 +3,7 @@ import InterlinedKit
 
 // MARK: - SearchResults
 
-/// The combined result of a global search (the-gaps.md G5). Each resource is
+/// The combined result of a global search (work-consolidation.md G5). Each resource is
 /// searched independently; the App surface groups them under one search field.
 public struct SearchResults: Sendable, Equatable {
     public var messages: [Message]
@@ -28,7 +28,7 @@ public struct SearchResults: Sendable, Equatable {
 // MARK: - SearchServicing
 
 /// The search surface the App layer codes against — full-text search over the
-/// current user's messages, lists, and documents (the-gaps.md G5).
+/// current user's messages, lists, and documents (work-consolidation.md G5).
 ///
 /// Follows the domain-service DI shape: takes its `APIClientProtocol` as a
 /// parameter so unit tests run against a stub. Per decision 0003 the App layer

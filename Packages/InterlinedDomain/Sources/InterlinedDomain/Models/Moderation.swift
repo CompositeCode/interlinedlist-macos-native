@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - ModeratedUser
 
-/// A user the current account has blocked or muted (the-gaps.md G2). The App
+/// A user the current account has blocked or muted (work-consolidation.md G2). The App
 /// layer renders these in the Settings "Blocked & Muted" pane and uses the
 /// membership to filter timelines / threads / DM eligibility.
 public struct ModeratedUser: Sendable, Equatable, Hashable, Identifiable {

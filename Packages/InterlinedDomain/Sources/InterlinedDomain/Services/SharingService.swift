@@ -20,7 +20,7 @@ extension SharingError: LocalizedError, CustomStringConvertible {
 
 // MARK: - SharingServicing
 
-/// The sharing surface the App layer codes against (the-gaps.md G3) — create,
+/// The sharing surface the App layer codes against (work-consolidation.md G3) — create,
 /// list, and revoke tokenized share links for lists and documents, and
 /// resolve/claim a link from a pasted URL or `interlinedlist://` deep link.
 ///

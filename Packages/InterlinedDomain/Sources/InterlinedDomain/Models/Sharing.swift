@@ -3,7 +3,7 @@ import InterlinedKit
 
 // MARK: - ShareRole
 
-/// A share grant's capability level (the-gaps.md G3). Values match the live API
+/// A share grant's capability level (work-consolidation.md G3). Values match the live API
 /// (`watcher|collaborator|manager`); the UI labels follow the docs
 /// (Viewer/Editor/Admin).
 public enum ShareRole: String, Sendable, Equatable, Hashable, CaseIterable, Identifiable {

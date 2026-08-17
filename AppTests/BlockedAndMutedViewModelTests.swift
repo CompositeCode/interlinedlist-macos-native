@@ -1,7 +1,7 @@
 // BlockedAndMutedViewModelTests
 //
 // BDD-named tests for the Settings "Blocked & Muted" view model
-// (the-gaps.md G2). Covers the required quartet plus the optimistic-
+// (work-consolidation.md G2). Covers the required quartet plus the optimistic-
 // removal rollback:
 //   - happy: load populates both rosters.
 //   - invalid input (unblock unknown username): no service call, no row

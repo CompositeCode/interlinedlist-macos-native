@@ -1,23 +1,17 @@
 // ListDetailView
 //
-// Detail screen for a single public list. Loads metadata + the first
-// page of rows and renders them as a `List` of key/value cards, one
-// card per row (PLAN.md §1 "Structured lists", §6 M1).
+// Detail screen for a single public list. Loads metadata + paged rows and
+// renders them either as key/value cards or a real SwiftUI `Table` grid,
+// toggled by a segmented control above the rows (work-consolidation.md §1b —
+// bringing the owned-list grid to the read-only public browser).
 //
-// Why a card list and not a `Table` in M1:
-//
-//   - `ListRow.fields` is loose-typed (`[String: ListCellValue]`) until
-//     the M3 schema-DSL parser lands, so columns are only derivable
-//     from observed row data — not from a static schema.
-//   - SwiftUI `Table` requires either statically-keyed `TableColumn`s
-//     or `TableColumnForEach`, and the latter is macOS 14.4+. The
-//     project targets macOS 14.0, so the dynamic-column path is not
-//     yet available to us.
-//
-// The typed-per-column schema editor and full Table-with-typed-columns
-// land in M3 alongside the schema DSL parser. Here we render what the
-// loose `ListCellValue` projection exposes — `displayText` for every
-// cell — so the read-only browser ships without the parser.
+// The dynamic-column `TableColumnForEach` needs macOS 14.4+; the app targets
+// macOS 15, so the table path is available (the same path the owned
+// `ListRowsView` uses). `ListRow.fields` is loose-typed
+// (`[String: ListCellValue]`), so columns come from `ListDetailViewModel.columns`
+// (the sorted union of row-field keys) rather than a static schema, and
+// `displayText` renders every cell. `Table` has no per-row appearance hook, so
+// the grid paginates with a "Load More" footer (cards keep scroll-to-load).
 
 import SwiftUI
 import InterlinedDomain
@@ -80,11 +74,39 @@ struct ListDetailView: View {
         VStack(spacing: 0) {
             header(viewModel: viewModel)
             Divider()
+            if !viewModel.rows.isEmpty {
+                viewModeBar(viewModel: viewModel)
+            }
             rowsContent(viewModel: viewModel)
         }
         .refreshable {
             await viewModel.refresh()
         }
+    }
+
+    /// A right-aligned segmented control to switch the rows between the card
+    /// list and the `Table` grid (work-consolidation.md §1b). Shown only when
+    /// there are rows to render.
+    @ViewBuilder
+    private func viewModeBar(viewModel: ListDetailViewModel) -> some View {
+        HStack {
+            Spacer()
+            Picker("View", selection: Binding(
+                get: { viewModel.viewMode },
+                set: { viewModel.viewMode = $0 }
+            )) {
+                Label("Cards", systemImage: "rectangle.grid.2x2")
+                    .tag(ListDetailViewModel.ViewMode.cards)
+                Label("Table", systemImage: "tablecells")
+                    .tag(ListDetailViewModel.ViewMode.table)
+            }
+            .pickerStyle(.segmented)
+            .labelStyle(.iconOnly)
+            .fixedSize()
+            .accessibilityLabel("View mode")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
     }
 
     @ViewBuilder
@@ -138,7 +160,47 @@ struct ListDetailView: View {
         } else if viewModel.rows.isEmpty {
             emptyRowsState
         } else {
-            rowsCardList(viewModel: viewModel, columns: viewModel.columns)
+            switch viewModel.viewMode {
+            case .cards:
+                rowsCardList(viewModel: viewModel, columns: viewModel.columns)
+            case .table:
+                rowsTable(viewModel: viewModel)
+            }
+        }
+    }
+
+    /// The read-only `Table` grid — one column per derived field, `displayText`
+    /// per cell, and a "Load More" footer for pagination (the grid has no
+    /// per-row `.onAppear` hook). Mirrors the owned `ListRowsView` table.
+    @ViewBuilder
+    private func rowsTable(viewModel: ListDetailViewModel) -> some View {
+        VStack(spacing: 0) {
+            Table(viewModel.rows) {
+                TableColumnForEach(viewModel.columns, id: \.self) { column in
+                    TableColumn(column) { (row: ListRow) in
+                        Text(row.fields[column]?.displayText ?? "")
+                            .lineLimit(2)
+                    }
+                }
+            }
+
+            if viewModel.hasMore {
+                Divider()
+                Button {
+                    Task { await viewModel.loadMore() }
+                } label: {
+                    if viewModel.isLoading {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Text("Load More Rows")
+                    }
+                }
+                .buttonStyle(.borderless)
+                .disabled(viewModel.isLoading)
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel("Load more rows")
+            }
         }
     }
 

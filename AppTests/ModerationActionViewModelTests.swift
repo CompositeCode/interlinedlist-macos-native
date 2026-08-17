@@ -1,7 +1,7 @@
 // ModerationActionViewModelTests
 //
 // BDD-named tests for the reusable moderation-action view model
-// (the-gaps.md G2) that backs `ModerationMenu` + `ReportReasonSheet`.
+// (work-consolidation.md G2) that backs `ModerationMenu` + `ReportReasonSheet`.
 // Covers the required quartet across the block / report surfaces:
 //   - happy: block flips isBlocked + calls the service.
 //   - invalid input: reportMessage on a profile subject (no messageID)

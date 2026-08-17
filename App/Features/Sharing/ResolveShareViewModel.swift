@@ -3,7 +3,7 @@
 // Drives `ResolveShareView` — the shared-resource landing shown when the
 // user opens a `…/lists/shared/{token}` or `…/documents/shared/{token}`
 // link, whether pasted or delivered via the `interlinedlist://` deep-link
-// scheme (the-gaps.md G3).
+// scheme (work-consolidation.md G3).
 //
 // It resolves the token (`resolveListShare` / `resolveDocumentShare`),
 // surfaces the resource title + granted role, and — when the resolved

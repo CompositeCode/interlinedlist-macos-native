@@ -22,6 +22,7 @@
 //   composer window editing one of our replies, for example) flow in.
 
 import SwiftUI
+import UniformTypeIdentifiers
 import InterlinedDomain
 
 struct MessageDetailView: View {
@@ -53,6 +54,28 @@ struct MessageDetailView: View {
             }
         }
         .navigationTitle("Message")
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    viewModel?.exportMarkdown()
+                } label: {
+                    Label("Export as Markdown", systemImage: "arrow.down.doc")
+                }
+                .disabled(viewModel?.message == nil)
+                .help("Export this thread as a Markdown file")
+            }
+        }
+        .fileExporter(
+            isPresented: Binding(
+                get: { viewModel?.pendingMarkdownExport != nil },
+                set: { if !$0 { viewModel?.clearMarkdownExport() } }
+            ),
+            document: MarkdownFileDocument(viewModel?.pendingMarkdownExport?.text),
+            contentType: .markdownText,
+            defaultFilename: viewModel?.pendingMarkdownExport?.filename ?? "thread"
+        ) { _ in
+            viewModel?.clearMarkdownExport()
+        }
         .task {
             if viewModel == nil, let environment {
                 let model = MessageDetailViewModel(messages: environment.messages, messageID: messageID)

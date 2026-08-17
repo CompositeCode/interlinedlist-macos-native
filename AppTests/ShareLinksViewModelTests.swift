@@ -1,6 +1,6 @@
 // ShareLinksViewModelTests
 //
-// BDD-named tests for the Share Links view model (the-gaps.md G3). Covers
+// BDD-named tests for the Share Links view model (work-consolidation.md G3). Covers
 // the required quartet plus the pattern-specific additions:
 //   - happy: load populates active links; create prepends the server link.
 //   - invalid input: the subscriber-gate rejects create *before* the HTTP

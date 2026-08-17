@@ -1,6 +1,6 @@
 // SearchMenuCommands
 //
-// Menu-bar command for the global search feature (the-gaps.md G5). Adds
+// Menu-bar command for the global search feature (work-consolidation.md G5). Adds
 // a single `Find` command under a dedicated menu:
 //   - Search…  (⌘F) — route the sidebar to the Search section and focus
 //                      the search field.

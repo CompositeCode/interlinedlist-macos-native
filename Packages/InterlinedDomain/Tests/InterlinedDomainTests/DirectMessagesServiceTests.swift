@@ -2,7 +2,7 @@ import XCTest
 import InterlinedKit
 @testable import InterlinedDomain
 
-/// BDD-named coverage for `DirectMessagesService` (the-gaps.md G1). Quartet per
+/// BDD-named coverage for `DirectMessagesService` (work-consolidation.md G1). Quartet per
 /// public method: happy + invalid + failure + empty/boundary.
 final class DirectMessagesServiceTests: XCTestCase {
 

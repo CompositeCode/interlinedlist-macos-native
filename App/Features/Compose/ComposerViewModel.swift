@@ -57,6 +57,15 @@ final class ComposerViewModel {
 
     private let userService: UserServicing?
 
+    /// Source of server-authoritative content limits (work-consolidation.md G14).
+    /// Optional so preview / test hosts that don't wire it fall back to the
+    /// built-in `ContentLimits.default` for the character counter.
+    private let contentLimits: ContentLimitsProviding?
+
+    /// LinkedIn posting-targets surface (work-consolidation.md G11a). Optional so
+    /// preview / test hosts without it keep the plain boolean toggle behaviour.
+    private let linkedIn: LinkedInServicing?
+
     // MARK: - Editable state
 
     /// Body text of the message. Markdown source — treated as plain text here
@@ -122,6 +131,27 @@ final class ComposerViewModel {
     /// configured for that instance (NW-4).
     private(set) var mastodonNotConfigured: Bool = false
 
+    /// Resolved LinkedIn posting targets (work-consolidation.md G11a), loaded when
+    /// the user enables the LinkedIn cross-post toggle. Personal profile only
+    /// today — org pages are upstream-blocked (G11b).
+    private(set) var linkedInTargets: [LinkedInTarget] = []
+
+    /// True when the LinkedIn org scope isn't granted, so org pages are
+    /// unavailable (G11b). Surfaced as a subtle hint under the toggle.
+    private(set) var linkedInOrgScopeMissing: Bool = false
+
+    /// True when the LinkedIn toggle was enabled but the account has no LinkedIn
+    /// posting target (not connected). The toggle rolls back and the view shows
+    /// a connect hint — mirrors the Bluesky/Mastodon NW-4 pattern.
+    private(set) var linkedInNotConfigured: Bool = false
+
+    /// The primary LinkedIn destination the post will publish to (the personal
+    /// profile, falling back to the first available target). `nil` until targets
+    /// are loaded.
+    var linkedInPersonalTarget: LinkedInTarget? {
+        linkedInTargets.first { $0.kind == .personal } ?? linkedInTargets.first
+    }
+
     // MARK: - Derived gating
 
     /// Whether the account may use the subscriber-gated M6 controls. Drives the
@@ -148,13 +178,34 @@ final class ComposerViewModel {
         return mode.publishButtonLabel
     }
 
+    // MARK: - Content limits (G14)
+
+    /// The maximum message body length the server accepts. Seeded from the
+    /// built-in default and refreshed from `GET /api/limits` via
+    /// `refreshLimits()` (work-consolidation.md G14).
+    private(set) var messageCharacterLimit: Int = ContentLimits.default.messageMaxContentLength
+
+    /// The current body length, in characters. Drives the live counter.
+    var messageCharacterCount: Int { body.count }
+
+    /// Characters left before the limit; negative once over.
+    var messageCharactersRemaining: Int { messageCharacterLimit - messageCharacterCount }
+
+    /// True when the body exceeds `messageCharacterLimit`. Blocks publishing so
+    /// the user gets an immediate signal instead of a server-side rejection.
+    var isOverMessageLimit: Bool { messageCharacterCount > messageCharacterLimit }
+
     // MARK: - Validation
 
     /// Whether the current draft would be accepted for submit. Empty body is
-    /// rejected by the composer (a new message / edit always needs text). A
-    /// future-only schedule is also required when scheduling is on.
+    /// rejected by the composer (a new message / edit always needs text); an
+    /// over-limit body is rejected (G14). A future-only schedule is also
+    /// required when scheduling is on.
     var isPublishable: Bool {
         guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        if isOverMessageLimit {
             return false
         }
         if showsSubscriberControls, isScheduled, scheduledAt <= Date() {
@@ -172,7 +223,9 @@ final class ComposerViewModel {
         entitlements: EntitlementsService = EntitlementsService(customerStatus: .free),
         readData: @escaping @Sendable (URL) async throws -> Data = { try Data(contentsOf: $0) },
         onSubscriberLapse: (@MainActor () async -> Void)? = nil,
-        userService: UserServicing? = nil
+        userService: UserServicing? = nil,
+        contentLimits: ContentLimitsProviding? = nil,
+        linkedIn: LinkedInServicing? = nil
     ) {
         self.messages = messages
         self.eventBus = eventBus
@@ -181,6 +234,8 @@ final class ComposerViewModel {
         self.readData = readData
         self.onSubscriberLapse = onSubscriberLapse
         self.userService = userService
+        self.contentLimits = contentLimits
+        self.linkedIn = linkedIn
         self.scheduledAt = Date().addingTimeInterval(3600)
         switch mode {
         case .newPost:
@@ -195,6 +250,14 @@ final class ComposerViewModel {
     }
 
     // MARK: - Intents
+
+    /// Refreshes `messageCharacterLimit` from the server (work-consolidation.md
+    /// G14). No-op when no provider is wired; the provider itself never throws
+    /// (it falls back to `ContentLimits.default`), so the limit is always sane.
+    func refreshLimits() async {
+        guard let contentLimits else { return }
+        messageCharacterLimit = await contentLimits.limits().messageMaxContentLength
+    }
 
     func setVisibility(_ visibility: Visibility) {
         self.visibility = visibility
@@ -403,6 +466,34 @@ final class ComposerViewModel {
             }
         } catch {
             // Non-fatal.
+        }
+    }
+
+    /// Called when the user enables the LinkedIn cross-post toggle (work-consolidation.md
+    /// G11a). Loads the account's LinkedIn posting targets so the composer can
+    /// show *which* destination the post publishes to (the personal profile) and
+    /// whether org pages are unavailable (G11b). If the account has no LinkedIn
+    /// target it isn't connected — the toggle rolls back and the view shows a
+    /// connect hint, mirroring the Bluesky/Mastodon NW-4 pattern. The message
+    /// request keeps the existing verified `crossPostToLinkedIn` boolean; a
+    /// per-target selector waits on a confirmed request field (see
+    /// work-consolidation.md P2/G11a).
+    func setLinkedInEnabled(_ enabled: Bool) async {
+        crossPostToLinkedIn = enabled
+        linkedInNotConfigured = false
+        guard enabled, let linkedIn else { return }
+        do {
+            let result = try await linkedIn.postingTargets()
+            linkedInTargets = result.targets
+            linkedInOrgScopeMissing = result.orgScopeMissing
+            if result.targets.isEmpty {
+                crossPostToLinkedIn = false
+                linkedInNotConfigured = true
+            }
+        } catch {
+            // Non-fatal: leave the toggle as-is (mirrors Bluesky/Mastodon). The
+            // post still cross-posts via the boolean; we just can't show the
+            // resolved target label.
         }
     }
 

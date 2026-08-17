@@ -1,6 +1,6 @@
 // UnreadBadgeAggregator
 //
-// Single owner of the macOS dock-tile badge label (the-gaps.md G1).
+// Single owner of the macOS dock-tile badge label (work-consolidation.md G1).
 //
 // Before Direct Messages, the dock badge was written directly by
 // `NotificationsUnreadBadgeCoordinator` from the notifications-unread

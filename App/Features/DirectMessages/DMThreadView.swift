@@ -1,6 +1,6 @@
 // DMThreadView
 //
-// The thread column of `DirectMessagesRootView` (the-gaps.md G1): a
+// The thread column of `DirectMessagesRootView` (work-consolidation.md G1): a
 // resolved 1:1 conversation. Renders the message bubbles (aligned by
 // `isOutgoing`), a live-polling load driven by `.task`/`.onDisappear`,
 // and a composer bar. A thin shell over `DMThreadViewModel` — all load /

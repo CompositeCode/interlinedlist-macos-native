@@ -65,6 +65,17 @@ final class ListDetailViewModel {
     /// `hasMore` is false.
     private(set) var nextOffset: Int?
 
+    /// Which layout the rows render in — a card list or a real `Table` grid
+    /// (work-consolidation.md §1b). Mirrors the owned-list `ListRowsViewModel`
+    /// so the read-only public browser offers the same grid. Defaults to cards
+    /// (the browser's original layout); the user can switch to the grid.
+    var viewMode: ViewMode = .cards
+
+    enum ViewMode: Sendable, Equatable, Hashable {
+        case cards
+        case table
+    }
+
     // MARK: - Init
 
     init(

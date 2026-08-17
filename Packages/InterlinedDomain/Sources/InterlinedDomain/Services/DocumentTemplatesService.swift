@@ -3,7 +3,7 @@ import InterlinedKit
 
 // MARK: - DocumentTemplatesServicing
 
-/// The server document-templates surface (the-gaps.md G12) — list the user's
+/// The server document-templates surface (work-consolidation.md G12) — list the user's
 /// saved templates, create a document from one, and seed the default starter
 /// set. Kept as its own small service (rather than extending `DocumentsService`)
 /// so no existing `DocumentsServicing` conformance changes.

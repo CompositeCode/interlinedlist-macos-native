@@ -1,6 +1,6 @@
 import Foundation
 
-/// Request builders for the **Direct Messages** API group (the-gaps.md G1) —
+/// Request builders for the **Direct Messages** API group (work-consolidation.md G1) —
 /// private 1:1 conversations between mutual followers. Free tier (no
 /// subscription required), including image attachments.
 ///
