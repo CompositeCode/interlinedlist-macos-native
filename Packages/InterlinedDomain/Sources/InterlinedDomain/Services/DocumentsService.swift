@@ -143,6 +143,11 @@ public final class DocumentsService: DocumentsServicing {
     private let store: DocumentStore?
     private let decoder: JSONDecoder
 
+    /// Optional source of server-authoritative content limits (work-consolidation.md
+    /// G14 tail). When present, `uploadImage` enforces the live `GET /api/limits`
+    /// image ceilings; when `nil` the built-in `ImagePrep` constants apply.
+    private let contentLimits: ContentLimitsProviding?
+
     /// - Parameters:
     ///   - api: networking seam (a stub in tests).
     ///   - sync: optional coordinator. When `nil`, sync methods throw and
@@ -155,16 +160,20 @@ public final class DocumentsService: DocumentsServicing {
     ///     the sync engine owns the *same* store in production, so writes made
     ///     here and by the engine stay consistent.
     ///   - decoder: shared kit JSON configuration.
+    ///   - contentLimits: optional live limits source for `uploadImage`
+    ///     (defaults to `nil` → built-in `ImagePrep` constants).
     public init(
         api: APIClientProtocol,
         sync: DocumentSyncCoordinating? = nil,
         store: DocumentStore? = nil,
-        decoder: JSONDecoder = JSONCoders.makeDecoder()
+        decoder: JSONDecoder = JSONCoders.makeDecoder(),
+        contentLimits: ContentLimitsProviding? = nil
     ) {
         self.api = api
         self.sync = sync
         self.store = store
         self.decoder = decoder
+        self.contentLimits = contentLimits
     }
 
     // MARK: - Documents
@@ -282,9 +291,13 @@ public final class DocumentsService: DocumentsServicing {
         image: Data,
         suggestedName: String?
     ) async throws -> URL {
+        // Prefer the live `GET /api/limits` image ceilings (work-consolidation.md
+        // G14 tail); `ContentLimits.default` (== the built-in `ImagePrep`
+        // constants) when no provider is injected or the fetch fails.
+        let limits = await contentLimits?.limits() ?? .default
         let prepared: PreparedImage
         do {
-            prepared = try ImagePrep.prepare(image)
+            prepared = try ImagePrep.prepare(image, limits: limits.imagePrepLimits)
         } catch ImagePrepError.tooLargeAfterAllAttempts {
             throw DocumentsError.imageTooLargeAfterPrep
         }

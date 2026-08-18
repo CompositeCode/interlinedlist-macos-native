@@ -79,12 +79,22 @@ public enum Messages {
 
     /// `POST /api/messages` — create a message (post, reply, repost, or
     /// scheduled post depending on the fields set on `body`).
-    public static func create(_ body: CreateMessageRequest) -> Request<MessageDTO> {
+    ///
+    /// Returns `MessageWriteResponse`, not a bare `MessageDTO`: the live create
+    /// response wraps the message under `data` and reports cross-post results in
+    /// a top-level `crossPosts` array (drift observed 2026-08-17). The wrapper's
+    /// tolerant decoder also accepts the older flat shape.
+    public static func create(_ body: CreateMessageRequest) -> Request<MessageWriteResponse> {
         Request(method: .post, path: "/api/messages", body: .json(body), auth: .bearer)
     }
 
     /// `PUT /api/messages/[id]` — edit an existing message.
-    public static func update(id: String, _ body: CreateMessageRequest) -> Request<MessageDTO> {
+    ///
+    /// Uses the same `MessageWriteResponse` wrapper as `create` for symmetry.
+    /// NOTE: live `PUT /api/messages/[id]` currently returns **HTTP 405**
+    /// (observed 2026-08-17) — the edit method drifted and needs a backend
+    /// confirmation of the correct verb (see work-consolidation.md §2 · P2-I).
+    public static func update(id: String, _ body: CreateMessageRequest) -> Request<MessageWriteResponse> {
         Request(method: .put, path: "/api/messages/\(id)", body: .json(body), auth: .bearer)
     }
 

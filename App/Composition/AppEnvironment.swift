@@ -348,6 +348,12 @@ final class AppEnvironment: ObservableObject {
         )
         let api = APIClient(authTransport: authTransport)
         let store = Self.makeMessageStore()
+        // Content limits (work-consolidation.md G14) — `GET /api/limits` drives the
+        // composer's live message-length validation AND the media upload prep
+        // ceilings (G14 tail). Built early so `MessagesService` / `DocumentsService`
+        // can source their image/video budgets from the live values (falling back
+        // to `ContentLimits.default` when the endpoint is unavailable).
+        let contentLimits = ContentLimitsService(api: api)
         // Deliverable B (PLAN.md §8): the domain `MessagesService` gate must
         // track the live account, not a `.free` snapshot taken at launch. The
         // box starts `.free` (signed-out) and is updated by `CurrentUserStore`
@@ -358,7 +364,8 @@ final class AppEnvironment: ObservableObject {
         let messages = MessagesService(
             api: api,
             store: store,
-            entitlementsProvider: { liveEntitlements.current() }
+            entitlementsProvider: { liveEntitlements.current() },
+            contentLimits: contentLimits
         )
         // Reuse the same kit-layer APIClient: M1 list browsing hits the
         // same Bearer-only public endpoints the timeline does, so a
@@ -404,7 +411,9 @@ final class AppEnvironment: ObservableObject {
             // Same store the sync engine owns — so the cache-first read
             // surface (`cachedDocuments`/`cachedFolders`) and the engine's
             // deltas stay consistent (stale-while-revalidate paint).
-            store: documentStore
+            store: documentStore,
+            // Live image ceilings for `uploadImage` prep (G14 tail).
+            contentLimits: contentLimits
         )
         // Server document templates (work-consolidation.md G12). Reuses the same
         // kit-layer `APIClient` like the other services do — the
@@ -450,11 +459,8 @@ final class AppEnvironment: ObservableObject {
         //     create, G6).
         let search = SearchService(api: api)
         let moderation = ModerationService(api: api)
-        // Content limits (work-consolidation.md G14) — `GET /api/limits` drives
-        // the composer's live message-length validation. Reuses the shared
-        // kit-layer `APIClient`; the service falls back to
-        // `ContentLimits.default` when the endpoint is unavailable.
-        let contentLimits = ContentLimitsService(api: api)
+        // (Content limits are constructed near the top so the media-upload
+        // services can source their live budgets — see `contentLimits` above.)
         // LinkedIn posting targets (work-consolidation.md G11a) — read-only fetch
         // of the account's personal posting target for the composer's LinkedIn
         // cross-post toggle. Reuses the shared kit-layer `APIClient`.

@@ -25,6 +25,11 @@ struct TimelineRootView: View {
 
     @Environment(\.appEnvironment) private var environment
 
+    // Opens the dedicated composer `Window` scene (same target as ⌘N /
+    // File → New Message). Gives the timeline a visible, on-screen compose
+    // affordance rather than relying on the keyboard shortcut / menu alone.
+    @Environment(\.openWindow) private var openWindow
+
     @State private var viewModel: TimelineViewModel?
     @State private var selection: Message.ID?
     @State private var tagDraft: String = ""
@@ -241,6 +246,18 @@ struct TimelineRootView: View {
             .frame(maxWidth: 280)
 
             Spacer()
+
+            // Visible compose affordance (parity with ⌘N / File → New Message).
+            // Opens the same single-instance composer window; a second tap
+            // re-focuses the existing window rather than spawning another.
+            Button {
+                openWindow(id: ComposeWindowID.newPost)
+            } label: {
+                Label("New Message", systemImage: "square.and.pencil")
+            }
+            .buttonStyle(.borderedProminent)
+            .help("Compose a new message (⌘N)")
+            .accessibilityLabel("New Message")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

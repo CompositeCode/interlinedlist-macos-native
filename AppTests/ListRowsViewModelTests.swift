@@ -26,6 +26,50 @@ final class ListRowsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.columns, ["Title"])
     }
 
+    // MARK: - entityFields (schema-entity view, work-consolidation.md §1b)
+
+    func test_givenSchemaWithVariedFields_whenEntityFields_thenProjectsTypesOptionsAndRequirement() async {
+        let stub = StubListsService()
+        let schema = ListSchema(fields: [
+            SchemaField(name: "Title", type: .text),
+            SchemaField(name: "Priority", type: .select, enumValues: ["low", "med", "high"]),
+            SchemaField(name: "Email", type: .email, nullable: false),
+            SchemaField(name: "Notes", type: .markdown, nullable: true)
+        ])
+        await stub.enqueueSchema(success: schema)
+        await stub.enqueueRows(success: .empty)
+        let viewModel = ListRowsViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+
+        await viewModel.initialLoad()
+
+        let fields = viewModel.entityFields
+        XCTAssertEqual(fields.map(\.name), ["Title", "Priority", "Email", "Notes"])
+        // text — bare token, no options, no requirement badge (nullability unstated).
+        XCTAssertEqual(fields[0].typeDescription, "text")
+        XCTAssertTrue(fields[0].options.isEmpty)
+        XCTAssertNil(fields[0].requirementLabel)
+        // select — options folded into the description.
+        XCTAssertEqual(fields[1].options, ["low", "med", "high"])
+        XCTAssertEqual(fields[1].typeDescription, "select (low | med | high)")
+        // email declared NOT NULL → "required".
+        XCTAssertEqual(fields[2].typeDescription, "email")
+        XCTAssertEqual(fields[2].requirementLabel, "required")
+        // markdown nullable → "optional"; markdown carries no options.
+        XCTAssertTrue(fields[3].options.isEmpty)
+        XCTAssertEqual(fields[3].requirementLabel, "optional")
+    }
+
+    func test_givenEmptySchema_whenEntityFields_thenEmpty() async {
+        let stub = StubListsService()
+        await stub.enqueueSchema(success: .empty)
+        await stub.enqueueRows(success: .empty)
+        let viewModel = ListRowsViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+
+        await viewModel.initialLoad()
+
+        XCTAssertTrue(viewModel.entityFields.isEmpty)
+    }
+
     func test_givenEmptyRows_whenInitialLoad_thenColumnsFallBackToEmpty() async {
         let stub = StubListsService()
         await stub.enqueueSchema(success: .empty)

@@ -113,6 +113,33 @@ public enum ImagePrep {
     /// until one fits under `maxBytes`.
     public static let qualityLadder: [Double] = [0.9, 0.8, 0.7, 0.6, 0.5]
 
+    // MARK: - Limits
+
+    /// The size ceilings the prep pipeline enforces for a single `prepare` call.
+    ///
+    /// The static `ImagePrep.maxBytes` / `ImagePrep.maxLongestEdgePixels`
+    /// constants remain the built-in fallback (`Limits.default`), but callers
+    /// can pass **server-driven** ceilings sourced from `GET /api/limits`
+    /// (work-consolidation.md G14 tail) so the pipeline is no longer hard-coded.
+    public struct Limits: Sendable, Equatable {
+        /// Maximum encoded byte budget the result must fit within.
+        public let maxBytes: Int
+        /// Longest-edge pixel ceiling before the resize step runs.
+        public let maxLongestEdgePixels: CGFloat
+
+        public init(maxBytes: Int, maxLongestEdgePixels: CGFloat) {
+            self.maxBytes = maxBytes
+            self.maxLongestEdgePixels = maxLongestEdgePixels
+        }
+
+        /// Built-in defaults (≤ 1.4 MB, longest edge ≤ 1200 px) — used when no
+        /// live limits are supplied.
+        public static let `default` = Limits(
+            maxBytes: ImagePrep.maxBytes,
+            maxLongestEdgePixels: ImagePrep.maxLongestEdgePixels
+        )
+    }
+
     // MARK: - prepare
 
     /// Pre-process raw image bytes for upload.
@@ -126,8 +153,16 @@ public enum ImagePrep {
     ///    through `qualityLadder`.
     ///
     /// Throws `ImagePrepError.tooLargeAfterAllAttempts` only when the
-    /// smallest viable quality still exceeds `maxBytes`.
-    public static func prepare(_ raw: Data) throws -> PreparedImage {
+    /// smallest viable quality still exceeds `limits.maxBytes`.
+    ///
+    /// - Parameters:
+    ///   - raw: the source image bytes.
+    ///   - limits: the size ceilings to enforce. Defaults to `Limits.default`
+    ///     (the built-in constants); the App layer passes the live
+    ///     `GET /api/limits` values so the budget is server-driven (G14 tail).
+    public static func prepare(_ raw: Data, limits: Limits = .default) throws -> PreparedImage {
+        let maxBytes = limits.maxBytes
+        let maxLongestEdgePixels = limits.maxLongestEdgePixels
         guard let source = CGImageSourceCreateWithData(raw as CFData, nil),
               CGImageSourceGetCount(source) > 0 else {
             throw ImagePrepError.undecodable

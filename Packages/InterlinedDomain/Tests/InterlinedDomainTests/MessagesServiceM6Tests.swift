@@ -2,6 +2,12 @@ import XCTest
 import InterlinedKit
 @testable import InterlinedDomain
 
+/// Test double serving fixed content limits (work-consolidation.md G14 tail).
+private struct StubContentLimits: ContentLimitsProviding {
+    let value: ContentLimits
+    func limits() async -> ContentLimits { value }
+}
+
 /// BDD-named coverage for the `MessagesService` M6 write surface (PLAN.md §6
 /// M6 — "Subscriber & orgs", §8 entitlement gating, §7 testing). The M2
 /// surface and its tests in `MessagesServiceTests` are unchanged; this suite
@@ -21,6 +27,30 @@ final class MessagesServiceM6Tests: XCTestCase {
     /// A service whose entitlements grant nothing (free account).
     private func freeService(_ api: StubAPIClient) -> MessagesService {
         MessagesService(api: api, entitlements: EntitlementsService(customerStatus: .free))
+    }
+
+    /// A subscriber service whose media budgets come from injected **live**
+    /// content limits (work-consolidation.md G14 tail).
+    private func subscriberService(_ api: StubAPIClient, limits: ContentLimits) -> MessagesService {
+        MessagesService(
+            api: api,
+            entitlements: EntitlementsService(customerStatus: .subscriber),
+            contentLimits: StubContentLimits(value: limits)
+        )
+    }
+
+    /// Builds a `ContentLimits` that keeps the defaults except for an overridden
+    /// video byte budget — the field the G14-tail video gate now reads.
+    private func limits(videoMaxBytes: Int) -> ContentLimits {
+        let d = ContentLimits.default
+        return ContentLimits(
+            imageMaxBytes: d.imageMaxBytes,
+            imageMaxPixels: d.imageMaxPixels,
+            imageAcceptedFormats: d.imageAcceptedFormats,
+            videoMaxBytes: videoMaxBytes,
+            videoAcceptedFormats: d.videoAcceptedFormats,
+            messageMaxContentLength: d.messageMaxContentLength
+        )
     }
 
     // MARK: - createPost (plain — ungated)
@@ -562,6 +592,41 @@ final class MessagesServiceM6Tests: XCTestCase {
 
         // Then
         XCTAssertEqual(url, "https://cdn/edge.mp4")
+    }
+
+    // MARK: - uploadVideo — server-driven budget (G14 tail)
+
+    func test_givenLiveVideoLimitTighterThanStatic_whenUploading_thenEnforcesLiveLimit() async throws {
+        // Given — live limits cap video at 1 KB, far below the 3 MB static default.
+        let api = StubAPIClient()
+        let service = subscriberService(api, limits: limits(videoMaxBytes: 1_000))
+        let bytes = Data(repeating: 0, count: 1_001) // 1 B over the LIVE limit, tiny vs static
+
+        // When / Then — rejected at the live limit (the static 3 MB would pass).
+        do {
+            _ = try await service.uploadVideo(bytes, contentType: "video/mp4")
+            XCTFail("Expected MessagesError.mediaTooLarge at the live limit")
+        } catch let error as MessagesError {
+            XCTAssertEqual(error, .mediaTooLarge(byteCount: 1_001, limit: 1_000))
+        }
+        // And — never shipped the bytes.
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty)
+    }
+
+    func test_givenLiveVideoLimitLooserThanStatic_whenUploading_thenHonorsLiveLimit() async throws {
+        // Given — live limits RAISE the budget above the 3 MB static default.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.mediaUploadResponse(url: "https://cdn/big.mp4"))
+        let service = subscriberService(api, limits: limits(videoMaxBytes: MessagesService.maxVideoBytes * 2))
+        // A video that exceeds the STATIC 3 MB cap but is within the LIVE cap.
+        let bytes = Data(repeating: 0, count: MessagesService.maxVideoBytes + 1)
+
+        // When — accepted because the live (higher) budget wins.
+        let url = try await service.uploadVideo(bytes, contentType: "video/mp4")
+
+        // Then
+        XCTAssertEqual(url, "https://cdn/big.mp4")
     }
 
     // MARK: - Entitlements provider (Deliverable B — live gating, PLAN.md §8)
