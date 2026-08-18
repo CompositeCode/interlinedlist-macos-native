@@ -87,15 +87,23 @@ public actor SwiftDataMessageStore: MessageStore {
         // is cheaper than N point fetches, then we reorder in memory.
         let records = fetchRecords(byIDs: ids, context: context)
         let recordsByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
-        return ids.compactMap { id in
-            recordsByID[id]?.toMessage { originalID in
-                // Cheap repost re-hydration: look up the original message in
-                // the same fetched batch first, then fall back to the by-id
-                // index for off-page reposts.
-                recordsByID[originalID]?.toMessage(repostLookup: { _ in nil })
-                    ?? self.byIDMessage(id: originalID, context: context)
+        var messages: [Message] = []
+        messages.reserveCapacity(ids.count)
+        for id in ids {
+            guard let record = recordsByID[id] else { continue }
+            // Cheap repost re-hydration: look up the original message in the
+            // same fetched batch first, then fall back to the by-id index for
+            // off-page reposts. Resolve eagerly to a `Message` value so the
+            // actor-isolated `ModelContext` never crosses into the mapping
+            // closure — Swift 6 region isolation rejects capturing it there.
+            var original: Message?
+            if let originalID = record.pushedMessageID {
+                original = recordsByID[originalID]?.toMessage(repostLookup: { _ in nil })
+                    ?? byIDMessage(id: originalID, context: context)
             }
+            messages.append(record.toMessage(repostLookup: { _ in original }))
         }
+        return messages
     }
 
     public func replaceTimeline(_ messages: [Message], scope: TimelineScope, tag: String?) async {
@@ -151,11 +159,19 @@ public actor SwiftDataMessageStore: MessageStore {
             )
             let records = try context.fetch(descriptor)
             // Re-hydrate any repost target from the by-id index (best-effort).
-            return records.map { record in
-                record.toMessage { originalID in
-                    self.byIDMessage(id: originalID, context: context)
+            // Resolve eagerly to a `Message` value so the actor-isolated
+            // `ModelContext` never crosses into the mapping closure (Swift 6
+            // region isolation rejects capturing it there).
+            var messages: [Message] = []
+            messages.reserveCapacity(records.count)
+            for record in records {
+                var original: Message?
+                if let originalID = record.pushedMessageID {
+                    original = byIDMessage(id: originalID, context: context)
                 }
+                messages.append(record.toMessage(repostLookup: { _ in original }))
             }
+            return messages
         } catch {
             logger.error("cachedScheduled fetch failed: \(error.localizedDescription, privacy: .public)")
             return []
@@ -252,11 +268,16 @@ public actor SwiftDataMessageStore: MessageStore {
                 predicate: #Predicate { record in record.id == id }
             )
             guard let record = try context.fetch(descriptor).first else { return nil }
-            return record.toMessage { originalID in
-                // Single-hop lookup for the repost target. If it isn't in
-                // the cache we drop it — best-effort per the protocol.
-                self.byIDMessage(id: originalID, context: context).map { $0 }
+            // Single-hop lookup for the repost target, resolved eagerly to a
+            // `Message` value. If it isn't in the cache we drop it — best-effort
+            // per the protocol. Eager resolution keeps the actor-isolated
+            // `ModelContext` out of the mapping closure (Swift 6 region
+            // isolation rejects capturing it there).
+            var original: Message?
+            if let originalID = record.pushedMessageID {
+                original = byIDMessage(id: originalID, context: context)
             }
+            return record.toMessage(repostLookup: { _ in original })
         } catch {
             logger.error("cachedMessage fetch failed: \(error.localizedDescription, privacy: .public)")
             return nil

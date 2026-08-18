@@ -26,7 +26,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  XCODE_VERSION: "16.2"
+  # Match ci.yml / release.yml: Xcode 26.3 / Swift 6.3.x.
+  XCODE_VERSION: "26.3"
 
 jobs:
   contract:
