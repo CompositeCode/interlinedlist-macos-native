@@ -32,15 +32,22 @@ final class GitHubEndpointTests: XCTestCase {
         XCTAssertEqual(GitHub.repos().method, .get)
         XCTAssertEqual(GitHub.repos().auth, .bearer)
 
+        // Issues list/create are FLAT with `repo` as a query param (verified
+        // live 2026-08-17 — the nested `/repos/{repo}/issues` form 404s).
         let issues = GitHub.issues(repo: "octocat/hello", state: "open")
-        XCTAssertEqual(issues.path, "/api/github/repos/octocat/hello/issues")
+        XCTAssertEqual(issues.path, "/api/github/issues")
         XCTAssertEqual(issues.method, .get)
+        XCTAssertEqual(issues.query.first(where: { $0.name == "repo" })?.value, "octocat/hello")
         XCTAssertEqual(issues.query.first(where: { $0.name == "state" })?.value, "open")
 
         let create = GitHub.createIssue(repo: "octocat/hello", CreateGitHubIssueRequest(title: "T"))
-        XCTAssertEqual(create.path, "/api/github/repos/octocat/hello/issues")
+        XCTAssertEqual(create.path, "/api/github/issues")
         XCTAssertEqual(create.method, .post)
+        XCTAssertEqual(create.query.first(where: { $0.name == "repo" })?.value, "octocat/hello")
 
+        // updateIssue / comment paths remain the (live-404) nested form — the
+        // correct routes are unknown (see GitHubEndpoint ⚠️ notes / P1-H2). These
+        // assertions lock the current builder output, not a verified live route.
         let update = GitHub.updateIssue(repo: "octocat/hello", number: 42, UpdateGitHubIssueRequest(state: "closed"))
         XCTAssertEqual(update.path, "/api/github/repos/octocat/hello/issues/42")
         XCTAssertEqual(update.method, .patch)

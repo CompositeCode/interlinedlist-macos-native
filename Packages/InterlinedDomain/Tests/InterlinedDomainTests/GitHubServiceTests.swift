@@ -57,7 +57,9 @@ final class GitHubServiceTests: XCTestCase {
         XCTAssertEqual(issue.assignees.map(\.login), ["hubot"])
         XCTAssertEqual(issue.commentCount, 2)
         let recorded = await api.recorded
-        XCTAssertEqual(recorded.first?.path, "/api/github/repos/o/r/issues")
+        // Flat issues route with `repo` as a query param (verified live 2026-08-17).
+        XCTAssertEqual(recorded.first?.path, "/api/github/issues")
+        XCTAssertEqual(recorded.first?.query["repo"], "o/r")
         XCTAssertEqual(recorded.first?.query["state"], "all")
     }
 
@@ -92,7 +94,9 @@ final class GitHubServiceTests: XCTestCase {
         XCTAssertEqual(issue.number, 21)
         let recorded = await api.recorded
         XCTAssertEqual(recorded.first?.method, "POST")
-        XCTAssertEqual(recorded.first?.path, "/api/github/repos/o/r/issues")
+        // Flat issues route with `repo` as a query param (verified live 2026-08-17).
+        XCTAssertEqual(recorded.first?.path, "/api/github/issues")
+        XCTAssertEqual(recorded.first?.query["repo"], "o/r")
     }
 
     func test_givenStateUpdate_whenUpdating_thenPatchesIssue() async throws {
