@@ -30,6 +30,8 @@ struct ListRowsView: View {
                 tableMode(viewModel: viewModel)
             case .cards:
                 cardsMode(viewModel: viewModel)
+            case .entity:
+                entityMode(viewModel: viewModel)
             }
             if let error = viewModel.error {
                 Divider()
@@ -76,9 +78,10 @@ struct ListRowsView: View {
             )) {
                 Label("Table", systemImage: "tablecells").tag(ListRowsViewModel.ViewMode.table)
                 Label("Cards", systemImage: "rectangle.grid.2x2").tag(ListRowsViewModel.ViewMode.cards)
+                Label("Schema", systemImage: "square.on.square").tag(ListRowsViewModel.ViewMode.entity)
             }
             .pickerStyle(.segmented)
-            .frame(width: 200)
+            .frame(width: 260)
             .accessibilityLabel("View mode")
         }
         .padding(.horizontal, 12)
@@ -169,6 +172,105 @@ struct ListRowsView: View {
             }
             .padding(12)
         }
+    }
+
+    // MARK: - Entity (schema) mode
+
+    /// Schema-entity view (work-consolidation.md §1b): the list *is* the entity;
+    /// this renders one entity box describing its schema — fields, types, `select`
+    /// options, and nullability — reading the unit-tested `entityFields`
+    /// projection so the view stays presentation-only.
+    @ViewBuilder
+    private func entityMode(viewModel: ListRowsViewModel) -> some View {
+        let fields = viewModel.entityFields
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                if fields.isEmpty {
+                    emptySchemaState
+                } else {
+                    entityCard(fields: fields)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func entityCard(fields: [ListRowsViewModel.SchemaEntityField]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Entity header — the list's title names the entity.
+            HStack(spacing: 8) {
+                Image(systemName: "tablecells.badge.ellipsis")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text(list.title)
+                    .font(.ilSubtitle())
+                Spacer()
+                Text("\(fields.count) field\(fields.count == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(12)
+            Divider()
+            ForEach(Array(fields.enumerated()), id: \.element.id) { index, field in
+                if index > 0 { Divider() }
+                entityFieldRow(field)
+            }
+        }
+        .background(ILColor.surface2, in: RoundedRectangle(cornerRadius: ILMetric.radiusMd))
+        .overlay(
+            RoundedRectangle(cornerRadius: ILMetric.radiusMd)
+                .strokeBorder(Color.secondary.opacity(0.2))
+        )
+        .frame(maxWidth: 460, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func entityFieldRow(_ field: ListRowsViewModel.SchemaEntityField) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(field.name)
+                .font(.ilBody().weight(.semibold))
+            Spacer(minLength: 12)
+            Text(field.typeDescription)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+            if let requirement = field.requirementLabel {
+                Text(requirement)
+                    .font(.caption2.weight(.medium))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.15), in: Capsule())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(entityFieldAccessibilityLabel(field))
+    }
+
+    private var emptySchemaState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "square.on.square")
+                .font(.ilDisplay(30))
+                .foregroundStyle(.secondary)
+            Text("No schema defined")
+                .font(.ilSubtitle())
+            Text("Add typed fields in the Schema Editor to see this list's entity.")
+                .font(.ilBody())
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 40)
+    }
+
+    private func entityFieldAccessibilityLabel(_ field: ListRowsViewModel.SchemaEntityField) -> String {
+        var parts = ["\(field.name), \(field.typeDescription)"]
+        if let requirement = field.requirementLabel { parts.append(requirement) }
+        return parts.joined(separator: ", ")
     }
 
     @ViewBuilder

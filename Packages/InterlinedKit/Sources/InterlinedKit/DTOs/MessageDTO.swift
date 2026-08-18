@@ -214,6 +214,97 @@ public struct CrossPostResultDTO: Decodable, Sendable, Equatable {
     }
 }
 
+// MARK: - MessageDTO cross-post merge
+
+public extension MessageDTO {
+
+    /// Returns a copy of the message with its `crossPosts` results replaced.
+    ///
+    /// Used to fold the write-envelope's **top-level** `crossPosts` array into
+    /// the message decoded from the envelope's `data` object (see
+    /// `MessageWriteResponse`) — the wrapped `data` object carries only
+    /// `crossPostUrls`, while the parsed per-platform results live one level up.
+    /// A `nil` / empty argument leaves the message untouched.
+    func mergingCrossPosts(_ crossPosts: [CrossPostResultDTO]?) -> MessageDTO {
+        guard let crossPosts, !crossPosts.isEmpty else { return self }
+        return MessageDTO(
+            id: id,
+            content: content,
+            publiclyVisible: publiclyVisible,
+            userId: userId,
+            parentId: parentId,
+            linkMetadata: linkMetadata,
+            imageUrls: imageUrls,
+            videoUrls: videoUrls,
+            crossPostUrls: crossPostUrls,
+            scheduledAt: scheduledAt,
+            tags: tags,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            digCount: digCount,
+            pushCount: pushCount,
+            pushedMessageId: pushedMessageId,
+            user: user,
+            pushedMessage: pushedMessage,
+            dugByMe: dugByMe,
+            crossPosts: crossPosts
+        )
+    }
+}
+
+// MARK: - MessageWriteResponse
+
+/// Response wrapper for the message **write** endpoints (`POST /api/messages`,
+/// `PUT /api/messages/[id]`).
+///
+/// Drift observed live 2026-08-17: the create endpoint no longer returns a flat
+/// `MessageDTO`. It wraps the created/updated message under a `data` key and
+/// reports the cross-post fan-out under a **sibling, top-level** `crossPosts`
+/// array:
+///
+/// ```json
+/// { "message": "Message created successfully",
+///   "data": { …MessageDTO fields, incl. crossPostUrls… },
+///   "crossPosts": [ { "platform": "twitter", "status": "ok", "externalUrl": "…" } ] }
+/// ```
+///
+/// Decoding a bare `MessageDTO` from that body throws `keyNotFound("id")` (the
+/// id sits under `data`), so a successful publish surfaced to the user as a
+/// failure — and re-tries duplicated the post (and its cross-post). This
+/// decoder tolerates **both** shapes:
+///  - **wrapped** — unwrap `data` and fold the top-level `crossPosts` in, and
+///  - **flat** — `{ …MessageDTO… }` (the older shape; still used by the GET
+///    single-message endpoint, stubs, and fixtures),
+/// always yielding a single `MessageDTO` via `message`.
+public struct MessageWriteResponse: Decodable, Sendable, Equatable {
+    public let message: MessageDTO
+
+    public init(message: MessageDTO) {
+        self.message = message
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case data
+        case crossPosts
+    }
+
+    public init(from decoder: Decoder) throws {
+        // A wrapped body has a `data` object; a flat body does not (MessageDTO
+        // has no `data` field). `decodeIfPresent` returns nil for the flat case,
+        // routing us to the flat fallback below.
+        if let container = try? decoder.container(keyedBy: CodingKeys.self),
+           let wrapped = try container.decodeIfPresent(MessageDTO.self, forKey: .data) {
+            let crossPosts = try container.decodeIfPresent(
+                [CrossPostResultDTO].self, forKey: .crossPosts
+            )
+            self.message = wrapped.mergingCrossPosts(crossPosts)
+        } else {
+            // Flat shape — decode the message straight off the top level.
+            self.message = try MessageDTO(from: decoder)
+        }
+    }
+}
+
 // MARK: - CreateMessageRequest
 
 /// Request body for `POST /api/messages` and `PUT /api/messages/[id]`.
@@ -242,13 +333,13 @@ public struct CreateMessageRequest: Encodable, Sendable, Equatable {
     public let crossPostToLinkedIn: Bool?
     /// Cross-post fan-out to X/Twitter (G7).
     ///
-    /// UNVERIFIED — the exact request field name could NOT be confirmed against
-    /// the live `POST /api/messages` (the test account has no linked X identity
-    /// and OpenAPI doesn't model the request body). `crossPostToTwitter` is
-    /// pattern-matched to the confirmed `crossPostToBluesky` /
-    /// `crossPostToLinkedIn` naming (high confidence). Confirm once an account
-    /// with a linked X identity is available; the OAuth provider slug is
-    /// `twitter`, verified live 2026-07-31 via `GET /api/auth/twitter/status`.
+    /// VERIFIED live 2026-08-17: sending `crossPostToTwitter: true` on
+    /// `POST /api/messages` published a real post to the linked X account and the
+    /// response reported it under `crossPosts` as
+    /// `{ "platform": "twitter", "status": "ok", "externalUrl": "https://twitter.com/…/status/…" }`.
+    /// So the request field is `crossPostToTwitter` (not `crossPostToX`) and the
+    /// stable per-platform result value is `"twitter"`. The OAuth provider slug is
+    /// likewise `twitter` (`GET /api/auth/twitter/status`).
     public let crossPostToTwitter: Bool?
 
     public init(
