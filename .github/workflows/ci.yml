@@ -21,8 +21,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Pin to the local toolchain: Xcode 16.2 / Swift 6.0.3.
-  XCODE_VERSION: "16.2"
+  # Pin to the current local toolchain (Swift 6.3.x / Xcode 26.x). Xcode 16.2
+  # (Swift 6.0.3) is no longer viable: the Textual 0.5.0 dependency and our
+  # Swift 6 region-isolation code only compile on Swift 6.1+. macos-15 ships
+  # 26.3, so pin that.
+  XCODE_VERSION: "26.3"
 
 jobs:
   packages:
@@ -35,10 +38,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # macos-15 images ship Xcode 16.x; select 16.2 explicitly so the Swift
-      # version matches local dev. Fallback if 16.2 is ever dropped from the
-      # image: relax to "16" (latest 16.x) or pin via
-      # `sudo xcode-select -s /Applications/Xcode_16.2.app`.
+      # macos-15 images ship several Xcode 26.x builds; select one explicitly
+      # so the Swift version matches local dev. Fallback if 26.3 is ever dropped
+      # from the image: relax to "26" (latest 26.x) or pin via
+      # `sudo xcode-select -s /Applications/Xcode_26.3.app`.
       - name: Select Xcode ${{ env.XCODE_VERSION }}
         uses: maxim-lobanov/setup-xcode@v1
         with:

@@ -146,7 +146,21 @@ Reconciliations and additive niceties. The client already works around each; the
 
 <a id="p1-h2-github-issue-update-comment-routes"></a>
 **P1-H2 · GitHub issue UPDATE + COMMENT route location** *(NEW 2026-08-17 — the specific blocker for G4 close/reopen/label/assignee editing).* Unlinked route-surface probing established the issue **list/create** routes are flat (`GET`/`POST /api/github/issues?repo={owner/repo}`; `OPTIONS`→`Allow: GET, HEAD, OPTIONS, POST`) and the client is now fixed to use them. But the **update** and **comment** routes could not be found: `PATCH`/`PUT /api/github/issues` → 405; every nested/flat single-issue candidate (`/api/github/repos/{repo}/issues/{n}`, `/api/github/issues/{n}`, `/api/github/issues/{n}/comments`, `/api/github/issues/comments`, `/api/github/comments`) → 404.
-> **PROMPT:** Two `/api/github/*` issue routes can't be located from the client. Document the exact **method + path + query/body** for: (1) **editing an existing issue** — changing `state` (close/reopen), `labels`, `assignees`, `title`, `body` — given `POST /api/github/issues?repo={owner/repo}` creates and `OPTIONS` on that path allows only `GET, HEAD, OPTIONS, POST` (so update is a different route/verb; where, and is `number` a path segment, query param, or body field?); and (2) **commenting on an issue** (no `…/comments` route currently resolves). Include the success-response JSON for both, and confirm whether the create/update responses wrap the issue under a `data`/`issue` key or return it bare.
+> **PROMPT (ready-to-paste):**
+> You are working on the InterlinedList API backend (base URL `https://interlinedlist.com`). The macOS client integrates the GitHub issue routes under `/api/github/*`, but **two** operations point at routes that return 404/405 live, so issue **editing** and **commenting** are broken end-to-end. I mapped the route surface by probing with a Bearer token for an account whose GitHub identity is **not** linked — so every route that *exists* returns `400 {"error":"GitHub account not linked"}`, and every route that is *missing* returns the Next.js HTML 404. Please locate/confirm the two missing routes and document them.
+>
+> **Already verified — do not change, just don't regress:**
+> - List issues: `GET /api/github/issues?repo={owner}/{repo}[&state=open|closed|all]` → 400 not-linked (exists). `OPTIONS` on it → `Allow: GET, HEAD, OPTIONS, POST`.
+> - Create issue: `POST /api/github/issues?repo={owner}/{repo}` → `400 {"error":"title is required"}` (exists; `title` required in the JSON body; optional `body`, `labels: string[]`, `assignees: string[]`).
+> - `GET /api/github/repos/{owner}/{repo}/assignees`, `…/labels`, `…/next-issue-number` → all 400 not-linked (exist; nested form).
+>
+> **Gap 1 — edit an existing issue (close/reopen, labels, assignees, title, body).** The client calls `PATCH /api/github/repos/{owner}/{repo}/issues/{number}` → **404**. The flat collection rejects the verb: `PATCH` / `PUT /api/github/issues?repo=…&number=…` → **405** (its `Allow` excludes PATCH/PUT). These also 404: `/api/github/issues/{number}`, `/api/github/repos/{owner}/{repo}/issues/{number}`. **Document the exact METHOD + PATH for editing an issue, and where the issue `number` goes (path segment / query param / body field).** Accepted body fields expected: `state` (`"open"`|`"closed"`), `labels: string[]`, `assignees: string[]`, `title`, `body` (partial updates — only the sent fields change). Include the success-response JSON.
+>
+> **Gap 2 — comment on an issue.** The client calls `POST /api/github/repos/{owner}/{repo}/issues/{number}/comments` → **404**. These also 404: `/api/github/issues/{number}/comments`, `/api/github/issues/comments`, `/api/github/comments`. **Document the METHOD + PATH + body** (expected `{"body":"…"}`) and the success-response JSON.
+>
+> **For every issue response (create / update / comment):** state whether the object is returned **bare** or **wrapped** — e.g. `{"issue":{…}}`, `{"data":{…}}`, `{"comment":{…}}`. (Context: `POST /api/messages` recently began wrapping its result under `data` with side-data at the top level, which broke the client's flat decode — flag it here if GitHub issues do the same.)
+>
+> **Deliverable:** for each of the 4 issue ops (list, create, update, comment): a `METHOD PATH` line, the query/body schema, one example request + response JSON, the Bearer-auth + linked-identity precondition, and the exact unlinked-400 body.
 
 ### 2d. Upstream-blocked / deferred (confirm demand before building)
 
