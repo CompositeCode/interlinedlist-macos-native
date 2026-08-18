@@ -336,13 +336,75 @@ final class MessagesEndpointTests: XCTestCase {
 
     func test_givenValidPost_whenCreateSent_thenReturnsCreatedMessage() async throws {
         let (client, transport) = makeClient()
+        // Flat body (older shape) — the tolerant `MessageWriteResponse` decoder
+        // must still surface it via `.message`.
         await transport.enqueue(.json(messageJSON, status: 201))
 
         let created = try await client.send(Messages.create(CreateMessageRequest(content: "hi")))
-        XCTAssertEqual(created.id, "m1")
+        XCTAssertEqual(created.message.id, "m1")
         let received = await transport.received
         XCTAssertEqual(received[0].httpMethod, "POST")
         XCTAssertEqual(received[0].value(forHTTPHeaderField: "Content-Type"), "application/json")
+    }
+
+    /// Regression for the 2026-08-17 create-response drift: the live
+    /// `POST /api/messages` wraps the message under `data` and reports cross-post
+    /// results in a sibling top-level `crossPosts` array. Decoding a bare
+    /// `MessageDTO` from this body throws `keyNotFound("id")`; `MessageWriteResponse`
+    /// must unwrap `data` and fold the top-level `crossPosts` into `.message`.
+    func test_givenWrappedCreateEnvelope_whenCreateSent_thenUnwrapsDataAndCrossPosts() async throws {
+        // Verbatim live envelope (values trimmed) captured from the G7 probe.
+        let wrapped = #"""
+        {
+          "message": "Message created successfully",
+          "data": {
+            "id": "e05a5a59", "content": "hi", "publiclyVisible": true, "userId": "u1",
+            "parentId": null, "linkMetadata": null, "imageUrls": null, "videoUrls": null,
+            "crossPostUrls": [
+              { "platform": "twitter", "url": "https://twitter.com/interlinedlist/status/2089503115397550440" }
+            ],
+            "scheduledAt": null, "tags": null,
+            "createdAt": "2026-08-18T00:02:17.826Z", "updatedAt": "2026-08-18T00:02:17.826Z",
+            "digCount": 0, "pushCount": 0, "pushedMessageId": null,
+            "user": { "id": "u1", "username": "messenger", "displayName": "Messenger", "avatar": null },
+            "pushedMessage": null, "dugByMe": false
+          },
+          "crossPostResults": [
+            { "providerId": "da5c6ac1", "instanceName": "Twitter", "success": true }
+          ],
+          "crossPosts": [
+            { "platform": "twitter", "status": "ok",
+              "externalUrl": "https://twitter.com/interlinedlist/status/2089503115397550440" }
+          ]
+        }
+        """#
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(wrapped, status: 201))
+
+        let created = try await client.send(Messages.create(CreateMessageRequest(content: "hi")))
+
+        // The message is unwrapped from `data`…
+        XCTAssertEqual(created.message.id, "e05a5a59")
+        XCTAssertEqual(created.message.content, "hi")
+        // …and the top-level cross-post results are folded onto the message.
+        let crossPosts = try XCTUnwrap(created.message.crossPosts)
+        XCTAssertEqual(crossPosts.count, 1)
+        XCTAssertEqual(crossPosts.first?.platform, "twitter")
+        XCTAssertEqual(crossPosts.first?.status, "ok")
+        XCTAssertEqual(
+            crossPosts.first?.externalUrl,
+            "https://twitter.com/interlinedlist/status/2089503115397550440"
+        )
+    }
+
+    /// The wrapped envelope's top-level `crossPosts` is what carries the parsed
+    /// per-platform results; a bare `MessageDTO` decode of the same body fails,
+    /// which is exactly the bug `MessageWriteResponse` fixes.
+    func test_givenWrappedCreateEnvelope_whenDecodedAsBareMessageDTO_thenThrows() {
+        let wrapped = #"{ "message": "ok", "data": { "id": "x" }, "crossPosts": [] }"#
+        XCTAssertThrowsError(
+            try JSONCoders.makeDecoder().decode(MessageDTO.self, from: Data(wrapped.utf8))
+        )
     }
 
     func test_givenServerRejectsPost_whenCreateSent_thenThrowsBadRequest() async throws {

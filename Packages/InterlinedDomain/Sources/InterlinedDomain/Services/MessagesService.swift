@@ -254,32 +254,37 @@ public final class MessagesService: MessagesServicing {
 
     // MARK: - M6 media limits (PLAN.md §8)
     //
-    // Hard-coded per PLAN.md §8 ("Media size limits — 1.4 MB image / 3 MB
-    // video"). The image limits are sourced from `ImagePrep` (the prep
-    // pipeline is the authority for the image budget); the video limit lives
-    // here because the client cannot transcode video and so just validates the
-    // budget before upload.
-    //
-    // TODO(backend ask P2.5): the API does not expose these limits in a
-    // machine-readable form today. Backend ask P2.5 proposes a `/api/limits`
-    // (or `customerStatus`-embedded) document so the client reads the budget
-    // instead of hard-coding it; when that lands these constants become a
-    // fallback default and the live value wins.
+    // These constants are now the **fallback default** only. `GET /api/limits`
+    // shipped (work-consolidation.md G14), and the G14 *tail* wires it through:
+    // when a `ContentLimitsProviding` is injected, `uploadImage` / `uploadVideo`
+    // enforce the live server ceilings and these statics apply only when no
+    // provider is present or the fetch fails. The values below still mirror the
+    // live defaults so behavior is unchanged in the fallback path.
 
-    /// Maximum image bytes accepted by the API. Sourced from `ImagePrep`'s
-    /// own budget so the two never drift (PLAN.md §8 — ≤ 1.4 MB image).
+    /// Fallback maximum image bytes. Sourced from `ImagePrep`'s own budget so
+    /// the two never drift (PLAN.md §8 — ≤ 1.4 MB image). Superseded per-call by
+    /// the live `ContentLimits.imageMaxBytes` when a provider is injected.
     public static let maxImageBytes: Int = ImagePrep.maxBytes
 
-    /// Maximum image longest-edge pixels. Sourced from `ImagePrep` (≤ 1200 px).
+    /// Fallback maximum image longest-edge pixels. Sourced from `ImagePrep`
+    /// (≤ 1200 px). Superseded per-call by live `ContentLimits.imageMaxPixels`.
     public static let maxImageLongestEdgePixels = ImagePrep.maxLongestEdgePixels
 
-    /// Maximum video bytes accepted by the API (PLAN.md §8 — ≤ 3 MB video).
-    /// The client cannot transcode video, so this is a hard pre-upload gate.
+    /// Fallback maximum video bytes (PLAN.md §8 — ≤ 3 MB video). The client
+    /// cannot transcode video, so this is a hard pre-upload gate; superseded
+    /// per-call by live `ContentLimits.videoMaxBytes` when a provider is injected.
     public static let maxVideoBytes: Int = 3 * 1_024 * 1_024
 
     private let api: APIClientProtocol
     private let store: MessageStore?
     private let decoder: JSONDecoder
+
+    /// Optional source of server-authoritative content limits (work-consolidation.md
+    /// G14 tail). When present, `uploadImage` / `uploadVideo` enforce the live
+    /// `GET /api/limits` ceilings instead of the built-in constants; when `nil`
+    /// (tests, older call sites) the static `maxImageBytes` / `maxVideoBytes`
+    /// defaults apply.
+    private let contentLimits: ContentLimitsProviding?
 
     /// The entitlement source consulted by every M6 gated write path. Held as
     /// a `@Sendable` provider closure rather than a stored snapshot so gating is
@@ -314,13 +319,15 @@ public final class MessagesService: MessagesServicing {
         api: APIClientProtocol,
         store: MessageStore? = nil,
         decoder: JSONDecoder = JSONCoders.makeDecoder(),
-        entitlements: EntitlementsService = EntitlementsService(customerStatus: .free)
+        entitlements: EntitlementsService = EntitlementsService(customerStatus: .free),
+        contentLimits: ContentLimitsProviding? = nil
     ) {
         self.init(
             api: api,
             store: store,
             decoder: decoder,
-            entitlementsProvider: { entitlements }
+            entitlementsProvider: { entitlements },
+            contentLimits: contentLimits
         )
     }
 
@@ -341,12 +348,14 @@ public final class MessagesService: MessagesServicing {
         api: APIClientProtocol,
         store: MessageStore? = nil,
         decoder: JSONDecoder = JSONCoders.makeDecoder(),
-        entitlementsProvider: @escaping @Sendable () -> EntitlementsService
+        entitlementsProvider: @escaping @Sendable () -> EntitlementsService,
+        contentLimits: ContentLimitsProviding? = nil
     ) {
         self.api = api
         self.store = store
         self.decoder = decoder
         self.entitlementsProvider = entitlementsProvider
+        self.contentLimits = contentLimits
     }
 
     // MARK: Timeline
@@ -448,7 +457,7 @@ public final class MessagesService: MessagesServicing {
             parentId: parentId,
             pushedMessageId: pushedMessageId
         )
-        let dto = try await api.send(Messages.create(request))
+        let dto = try await api.send(Messages.create(request)).message
         let message = Message(from: dto)
         await store?.upsert([message])
         return message
@@ -494,7 +503,7 @@ public final class MessagesService: MessagesServicing {
             publiclyVisible: visibility.isPubliclyVisible,
             tags: tags.isEmpty ? nil : tags
         )
-        let dto = try await api.send(Messages.update(id: messageId, request))
+        let dto = try await api.send(Messages.update(id: messageId, request)).message
         let message = Message(from: dto)
         await store?.upsert([message])
         return message
@@ -597,7 +606,7 @@ public final class MessagesService: MessagesServicing {
             crossPostToLinkedIn: crossPostToLinkedIn ? true : nil,
             crossPostToTwitter: crossPostToTwitter ? true : nil
         )
-        let dto = try await api.send(Messages.create(request))
+        let dto = try await api.send(Messages.create(request)).message
         let message = Message(from: dto)
         // A scheduled post is not yet on the timeline; only cache published
         // posts so the by-id cache never serves a not-yet-public message as
@@ -635,10 +644,14 @@ public final class MessagesService: MessagesServicing {
     public func uploadImage(_ data: Data) async throws -> String {
         // Gate before the (potentially expensive) prep step and the upload.
         try requireEntitlement(.mediaAttachments)
-        // `ImagePrep` resizes + recompresses to the API limits. An image that
+        // Prefer the live `GET /api/limits` ceilings (work-consolidation.md G14
+        // tail); `ContentLimits.default` (== the built-in `ImagePrep` constants)
+        // when no provider is injected or the fetch fails.
+        let limits = await contentLimits?.limits() ?? .default
+        // `ImagePrep` resizes + recompresses to those limits. An image that
         // still cannot fit re-throws `ImagePrepError.tooLargeAfterAllAttempts`
         // unchanged (it is the precise, actionable failure for the UI).
-        let prepared = try ImagePrep.prepare(data)
+        let prepared = try ImagePrep.prepare(data, limits: limits.imagePrepLimits)
         let response = try await api.send(
             Messages.uploadImage(prepared.data, contentType: prepared.format.mimeType)
         )
@@ -648,10 +661,13 @@ public final class MessagesService: MessagesServicing {
     public func uploadVideo(_ data: Data, contentType: String) async throws -> String {
         // Gate before the budget check and the upload.
         try requireEntitlement(.mediaAttachments)
-        // The client cannot transcode video; enforce the hard byte budget
-        // up front so we never ship bytes the server will reject (PLAN.md §8).
-        guard data.count <= Self.maxVideoBytes else {
-            throw MessagesError.mediaTooLarge(byteCount: data.count, limit: Self.maxVideoBytes)
+        // The client cannot transcode video; enforce the hard byte budget up
+        // front so we never ship bytes the server will reject (PLAN.md §8).
+        // Prefer the live `GET /api/limits` video ceiling (G14 tail), falling
+        // back to the static `maxVideoBytes` when no provider is injected.
+        let videoLimit = await (contentLimits?.limits().videoMaxBytes) ?? Self.maxVideoBytes
+        guard data.count <= videoLimit else {
+            throw MessagesError.mediaTooLarge(byteCount: data.count, limit: videoLimit)
         }
         let response = try await api.send(Messages.uploadVideo(data, contentType: contentType))
         return response.url
@@ -670,7 +686,7 @@ public final class MessagesService: MessagesServicing {
             tags: existing.tags.isEmpty ? nil : existing.tags,
             scheduledAt: newDate
         )
-        let dto = try await api.send(Messages.update(id: messageId, request))
+        let dto = try await api.send(Messages.update(id: messageId, request)).message
         let updated = Message(from: dto)
         return updated
     }

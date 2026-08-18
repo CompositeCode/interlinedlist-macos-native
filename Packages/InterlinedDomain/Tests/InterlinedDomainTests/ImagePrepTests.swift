@@ -153,6 +153,49 @@ final class ImagePrepTests: XCTestCase {
         }
     }
 
+    // MARK: - Server-driven limits (G14 tail)
+
+    func test_defaultLimits_matchStaticConstants() {
+        // The built-in fallback must equal the historical hard-coded ceilings so
+        // behavior is unchanged when no live limits are supplied.
+        XCTAssertEqual(ImagePrep.Limits.default.maxBytes, ImagePrep.maxBytes)
+        XCTAssertEqual(ImagePrep.Limits.default.maxLongestEdgePixels, ImagePrep.maxLongestEdgePixels)
+    }
+
+    func test_givenTighterPixelCeiling_whenPrepared_thenResizesToTheCustomEdge() throws {
+        // A 1000×500 image is UNDER the default 1200px cap → no resize by default…
+        let raw = makeSmoothPNG(width: 1000, height: 500)
+        let defaultPrepared = try ImagePrep.prepare(raw)
+        XCTAssertFalse(defaultPrepared.wasResized, "1000px is under the 1200px default cap")
+
+        // …but a tighter server-driven ceiling of 600px forces a resize to 600×300,
+        // proving the pixel budget is now driven by the passed limits.
+        let tight = ImagePrep.Limits(maxBytes: ImagePrep.maxBytes, maxLongestEdgePixels: 600)
+        let prepared = try ImagePrep.prepare(raw, limits: tight)
+        XCTAssertTrue(prepared.wasResized)
+        XCTAssertEqual(max(prepared.dimensions.width, prepared.dimensions.height), 600)
+        XCTAssertLessThanOrEqual(prepared.byteCount, tight.maxBytes)
+    }
+
+    func test_givenTighterByteBudget_whenPrepared_thenEnforcesTheCustomMaxBytes() throws {
+        // A noisy 1200×1200 image sails under the default 1.4 MB budget, but a
+        // tight server-driven budget must force harder compression (or a
+        // documented tooLarge failure) — either outcome proves the byte budget
+        // is server-driven rather than the static constant.
+        let raw = makeNoisyPNG(width: 1200, height: 1200)
+        let tight = ImagePrep.Limits(maxBytes: 200_000, maxLongestEdgePixels: ImagePrep.maxLongestEdgePixels)
+        do {
+            let prepared = try ImagePrep.prepare(raw, limits: tight)
+            XCTAssertLessThanOrEqual(
+                prepared.byteCount, tight.maxBytes,
+                "output must fit the custom budget the default (1.4 MB) would never enforce here"
+            )
+        } catch ImagePrepError.tooLargeAfterAllAttempts {
+            // Acceptable: the custom budget was tight enough that even q0.5 didn't
+            // fit — still proves the tighter budget drove the pipeline.
+        }
+    }
+
     // MARK: - Invalid input
 
     func test_givenNonImageBytes_whenPrepared_thenThrowsUndecodable() {

@@ -25,6 +25,55 @@ final class ListRowsViewModel {
     enum ViewMode: Sendable, Equatable, Hashable {
         case table
         case cards
+        /// Schema-entity view (work-consolidation.md §1b ERD, scoped 2026-08-16):
+        /// a single entity box describing the list's own schema — its fields,
+        /// types, `select` option sets, and nullability — rather than its rows.
+        /// The buildable, data-backed interpretation of the ERD ask; a true
+        /// cross-list *relationship* diagram stays backend-blocked on P2-G.
+        case entity
+    }
+
+    /// A single schema field projected for the entity view. A display-oriented
+    /// projection of `SchemaField` so the view stays dumb and the formatting is
+    /// unit-testable.
+    struct SchemaEntityField: Identifiable, Equatable, Sendable {
+        let name: String
+        /// Bare DSL type token, e.g. `"text"`, `"select"`.
+        let typeToken: String
+        /// Ordered `select` option set; empty for non-option types.
+        let options: [String]
+        /// `false` = declared NOT NULL (required); `true` = nullable (optional);
+        /// `nil` = the DSL did not state it.
+        let nullable: Bool?
+
+        var id: String { name }
+
+        /// `"select (low | med | high)"` for option types, else just the token.
+        var typeDescription: String {
+            options.isEmpty ? typeToken : "\(typeToken) (\(options.joined(separator: " | ")))"
+        }
+
+        /// A short requirement badge, or `nil` when the DSL left it unstated.
+        var requirementLabel: String? {
+            switch nullable {
+            case .some(false): return "required"
+            case .some(true): return "optional"
+            case .none: return nil
+            }
+        }
+    }
+
+    /// The list's schema projected as entity fields for the schema-entity view.
+    /// Empty when the list has no declared schema (the view shows a hint).
+    var entityFields: [SchemaEntityField] {
+        schema.fields.map { field in
+            SchemaEntityField(
+                name: field.name,
+                typeToken: field.type.dslToken,
+                options: field.type.carriesOptions ? (field.enumValues ?? []) : [],
+                nullable: field.nullable
+            )
+        }
     }
 
     // MARK: - Configuration

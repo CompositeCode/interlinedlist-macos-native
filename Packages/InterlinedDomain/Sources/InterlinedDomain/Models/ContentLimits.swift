@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 import InterlinedKit
 
 /// Server-authoritative upload + message limits (work-consolidation.md G14) —
@@ -47,6 +48,17 @@ public struct ContentLimits: Sendable, Equatable {
 }
 
 public extension ContentLimits {
+
+    /// The image size ceilings projected into the `ImagePrep` pipeline's own
+    /// limit type (work-consolidation.md G14 tail) — so the pre-upload prep is
+    /// driven by the live `GET /api/limits` values instead of `ImagePrep`'s
+    /// hard-coded constants.
+    var imagePrepLimits: ImagePrep.Limits {
+        ImagePrep.Limits(
+            maxBytes: imageMaxBytes,
+            maxLongestEdgePixels: CGFloat(imageMaxPixels)
+        )
+    }
 
     /// Maps a decoded `LimitsDTO`, falling back to `default` for any field the
     /// server omits so a partial payload never yields a zero (and therefore
