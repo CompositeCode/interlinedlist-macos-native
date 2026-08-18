@@ -85,7 +85,7 @@ public actor SwiftDataMessageStore: MessageStore {
 
         // Hydrate by id, preserving order. A single fetch over the id-set
         // is cheaper than N point fetches, then we reorder in memory.
-        let records = fetchRecords(byIDs: ids, context: context)
+        let records = fetchRecords(byIDs: ids)
         let recordsByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
         var messages: [Message] = []
         messages.reserveCapacity(ids.count)
@@ -99,7 +99,7 @@ public actor SwiftDataMessageStore: MessageStore {
             var original: Message?
             if let originalID = record.pushedMessageID {
                 original = recordsByID[originalID]?.toMessage(repostLookup: { _ in nil })
-                    ?? byIDMessage(id: originalID, context: context)
+                    ?? byIDMessage(id: originalID)
             }
             messages.append(record.toMessage(repostLookup: { _ in original }))
         }
@@ -113,7 +113,7 @@ public actor SwiftDataMessageStore: MessageStore {
         // 1) Upsert message records so by-id reads stay consistent with the
         //    timeline slice (matches InMemoryMessageStore.replaceTimeline,
         //    which writes to both indexes).
-        mergeUpsert(messages, context: context)
+        mergeUpsert(messages)
 
         // 2) Replace the page record for this (scope, tag) key.
         do {
@@ -134,13 +134,12 @@ public actor SwiftDataMessageStore: MessageStore {
     }
 
     public func cachedMessage(id: String) async -> Message? {
-        let context = self.context
-        return byIDMessage(id: id, context: context)
+        byIDMessage(id: id)
     }
 
     public func upsert(_ messages: [Message]) async {
         let context = self.context
-        mergeUpsert(messages, context: context)
+        mergeUpsert(messages)
         do {
             try context.save()
         } catch {
@@ -167,7 +166,7 @@ public actor SwiftDataMessageStore: MessageStore {
             for record in records {
                 var original: Message?
                 if let originalID = record.pushedMessageID {
-                    original = byIDMessage(id: originalID, context: context)
+                    original = byIDMessage(id: originalID)
                 }
                 messages.append(record.toMessage(repostLookup: { _ in original }))
             }
@@ -246,8 +245,12 @@ public actor SwiftDataMessageStore: MessageStore {
         }
     }
 
-    private func fetchRecords(byIDs ids: [String], context: ModelContext) -> [MessageRecord] {
+    private func fetchRecords(byIDs ids: [String]) -> [MessageRecord] {
         guard !ids.isEmpty else { return [] }
+        // Read the actor-isolated context directly rather than receiving it as
+        // a parameter — passing a non-Sendable `ModelContext` as an argument
+        // trips Swift 6 region isolation ("sending 'context'").
+        let context = self.context
         let idSet = Set(ids)
         do {
             let descriptor = FetchDescriptor<MessageRecord>(
@@ -262,7 +265,8 @@ public actor SwiftDataMessageStore: MessageStore {
         }
     }
 
-    private func byIDMessage(id: String, context: ModelContext) -> Message? {
+    private func byIDMessage(id: String) -> Message? {
+        let context = self.context
         do {
             let descriptor = FetchDescriptor<MessageRecord>(
                 predicate: #Predicate { record in record.id == id }
@@ -275,7 +279,7 @@ public actor SwiftDataMessageStore: MessageStore {
             // isolation rejects capturing it there).
             var original: Message?
             if let originalID = record.pushedMessageID {
-                original = byIDMessage(id: originalID, context: context)
+                original = byIDMessage(id: originalID)
             }
             return record.toMessage(repostLookup: { _ in original })
         } catch {
@@ -287,7 +291,8 @@ public actor SwiftDataMessageStore: MessageStore {
     /// Insert-or-update by id, without saving. Caller decides when to
     /// `save()`. SwiftData on macOS 14 lacks a declarative upsert, so we
     /// fetch by id and mutate when present.
-    private func mergeUpsert(_ messages: [Message], context: ModelContext) {
+    private func mergeUpsert(_ messages: [Message]) {
+        let context = self.context
         for message in messages {
             let id = message.id
             do {
