@@ -5,6 +5,8 @@ description: Create and maintain InterlinedList documentation split across engin
 
 # InterlinedList Documentation Engineer Skill
 
+> **Verification is pivotal — validate before you report done.** Documentation claims are code claims. Run the gate in `./assets/docs-quality-checklist.md` (shipped-only, Help Book parity, `hiutil` reindex, no `<script>`, `plutil -lint`, working links, coverage-matrix totals) and report the results. Never fake an index, a link check, or a matrix number.
+
 ## Use When
 - Auditing or restructuring project documentation
 - Writing architecture or API integration documentation for engineers

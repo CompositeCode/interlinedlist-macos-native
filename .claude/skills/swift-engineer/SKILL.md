@@ -5,6 +5,8 @@ description: Build and refactor native macOS Swift code for InterlinedList with 
 
 # InterlinedList macOS Swift Engineer Skill
 
+> **Verification is pivotal — no change is done until it is verified.** Run the full gate in `./assets/e2e-gate-checklist.md` and report every result line before declaring done. Never claim a result you did not observe.
+
 ## Use When
 - Implementing or refactoring Swift code in the native macOS app
 - Integrating InterlinedList API endpoints
