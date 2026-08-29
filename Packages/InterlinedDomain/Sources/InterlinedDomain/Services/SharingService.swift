@@ -41,6 +41,21 @@ public protocol SharingServicing: Sendable {
     func revokeDocumentShareLink(documentId: String, token: String) async throws -> Bool
     func resolveDocumentShare(token: String) async throws -> ResolvedShare
     func claimDocumentShare(token: String) async throws -> ShareClaim
+
+    // Document collaborators (per-person access)
+    func documentCollaborators(documentId: String) async throws -> [Collaborator]
+    func searchDocumentCollaborators(documentId: String, query: String) async throws -> [CollaboratorCandidate]
+    func addDocumentCollaborator(documentId: String, userId: String, role: ShareRole, notify: Bool) async throws
+    func setDocumentCollaboratorRole(documentId: String, userId: String, role: ShareRole, notify: Bool) async throws
+    func removeDocumentCollaborator(documentId: String, userId: String) async throws -> Bool
+
+    // Email invites (documents + lists)
+    func documentInvites(documentId: String) async throws -> [ShareInvite]
+    func createDocumentInvite(documentId: String, email: String, role: ShareRole, expiresAt: Date?) async throws -> SentInvite
+    func revokeDocumentInvite(documentId: String, token: String) async throws -> Bool
+    func listInvites(listId: String) async throws -> [ShareInvite]
+    func createListInvite(listId: String, email: String, role: ShareRole, expiresAt: Date?) async throws -> SentInvite
+    func revokeListInvite(listId: String, token: String) async throws -> Bool
 }
 
 public extension SharingServicing {
@@ -123,5 +138,74 @@ public final class SharingService: SharingServicing {
     public func claimDocumentShare(token: String) async throws -> ShareClaim {
         let dto = try await api.send(Sharing.claimDocumentShare(token: token))
         return ShareClaim(resourceId: dto.documentId, role: dto.role.flatMap(ShareRole.init(rawValue:)))
+    }
+
+    // MARK: Document collaborators
+
+    public func documentCollaborators(documentId: String) async throws -> [Collaborator] {
+        let dto = try await api.send(Sharing.documentCollaborators(documentId: documentId))
+        return dto.collaborators.map(Collaborator.init(from:))
+    }
+
+    public func searchDocumentCollaborators(documentId: String, query: String) async throws -> [CollaboratorCandidate] {
+        let dto = try await api.send(Sharing.searchDocumentCollaborators(documentId: documentId, query: query))
+        return dto.users.map(CollaboratorCandidate.init(from:))
+    }
+
+    public func addDocumentCollaborator(documentId: String, userId: String, role: ShareRole, notify: Bool) async throws {
+        guard entitlements.isSubscriber else { throw SharingError.subscriberRequired }
+        _ = try await api.send(
+            Sharing.addDocumentCollaborator(documentId: documentId, AddCollaboratorRequest(userId: userId, role: role.rawValue, notify: notify))
+        )
+    }
+
+    public func setDocumentCollaboratorRole(documentId: String, userId: String, role: ShareRole, notify: Bool) async throws {
+        guard entitlements.isSubscriber else { throw SharingError.subscriberRequired }
+        _ = try await api.send(
+            Sharing.setDocumentCollaboratorRole(documentId: documentId, userId: userId, SetCollaboratorRoleRequest(role: role.rawValue, notify: notify))
+        )
+    }
+
+    public func removeDocumentCollaborator(documentId: String, userId: String) async throws -> Bool {
+        let dto = try await api.send(Sharing.removeDocumentCollaborator(documentId: documentId, userId: userId))
+        return dto.removed ?? true
+    }
+
+    // MARK: Email invites (documents + lists)
+
+    public func documentInvites(documentId: String) async throws -> [ShareInvite] {
+        let dto = try await api.send(Sharing.documentInvites(documentId: documentId))
+        return dto.invites.map(ShareInvite.init(from:))
+    }
+
+    public func createDocumentInvite(documentId: String, email: String, role: ShareRole, expiresAt: Date?) async throws -> SentInvite {
+        guard entitlements.isSubscriber else { throw SharingError.subscriberRequired }
+        let dto = try await api.send(
+            Sharing.createDocumentInvite(documentId: documentId, CreateInviteRequest(email: email, role: role.rawValue, expiresAt: expiresAt))
+        )
+        return SentInvite(from: dto)
+    }
+
+    public func revokeDocumentInvite(documentId: String, token: String) async throws -> Bool {
+        let dto = try await api.send(Sharing.revokeDocumentInvite(documentId: documentId, token: token))
+        return dto.revoked ?? true
+    }
+
+    public func listInvites(listId: String) async throws -> [ShareInvite] {
+        let dto = try await api.send(Sharing.listInvites(listId: listId))
+        return dto.invites.map(ShareInvite.init(from:))
+    }
+
+    public func createListInvite(listId: String, email: String, role: ShareRole, expiresAt: Date?) async throws -> SentInvite {
+        guard entitlements.isSubscriber else { throw SharingError.subscriberRequired }
+        let dto = try await api.send(
+            Sharing.createListInvite(listId: listId, CreateInviteRequest(email: email, role: role.rawValue, expiresAt: expiresAt))
+        )
+        return SentInvite(from: dto)
+    }
+
+    public func revokeListInvite(listId: String, token: String) async throws -> Bool {
+        let dto = try await api.send(Sharing.revokeListInvite(listId: listId, token: token))
+        return dto.revoked ?? true
     }
 }
