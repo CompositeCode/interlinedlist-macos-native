@@ -28,6 +28,8 @@ struct OwnedListsRootView: View {
     @State private var showsSchemaEditor: Bool = false
     @State private var showsWatchers: Bool = false
     @State private var showsShareLinks: Bool = false
+    @State private var showsInvites: Bool = false
+    @State private var showsVisibility: Bool = false
     @State private var showsConnections: Bool = false
     @State private var showsIssues: Bool = false
     @State private var listIDPendingDelete: String?
@@ -165,6 +167,22 @@ struct OwnedListsRootView: View {
                 .help("Create and manage shareable links for this list")
 
                 Button {
+                    showsInvites = true
+                } label: {
+                    Label("Invite by Email", systemImage: "envelope")
+                }
+                .disabled(viewModel.selectedListID == nil)
+                .help("Invite people to this list by email")
+
+                Button {
+                    showsVisibility = true
+                } label: {
+                    Label("Make Public", systemImage: "globe")
+                }
+                .disabled(viewModel.selectedListID == nil)
+                .help("Control whether anyone with the link can view this list")
+
+                Button {
                     showsConnections = true
                 } label: {
                     Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
@@ -201,6 +219,20 @@ struct OwnedListsRootView: View {
         .sheet(isPresented: $showsShareLinks) {
             if let environment, let listId = viewModel.selectedListID {
                 ShareLinksView(target: .list(id: listId), environment: environment)
+            }
+        }
+        .sheet(isPresented: $showsInvites) {
+            if let environment, let listId = viewModel.selectedListID {
+                InvitesView(target: .list(id: listId), environment: environment)
+            }
+        }
+        .sheet(isPresented: $showsVisibility) {
+            if let environment, let list = viewModel.selectedList {
+                VisibilityView(
+                    target: .list(id: list.id),
+                    environment: environment,
+                    initialIsPublic: list.visibility.isPubliclyVisible
+                )
             }
         }
         .sheet(isPresented: $showsConnections) {

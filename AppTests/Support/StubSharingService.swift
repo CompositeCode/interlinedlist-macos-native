@@ -28,6 +28,21 @@ struct RecordedSharingCall: Sendable, Equatable {
         case revokeDocumentLink(documentId: String, token: String)
         case resolveDocument(token: String)
         case claimDocument(token: String)
+
+        // Document collaborators
+        case documentCollaborators(documentId: String)
+        case searchCollaborators(documentId: String, query: String)
+        case addCollaborator(documentId: String, userId: String, role: ShareRole, notify: Bool)
+        case setCollaboratorRole(documentId: String, userId: String, role: ShareRole, notify: Bool)
+        case removeCollaborator(documentId: String, userId: String)
+
+        // Email invites (documents + lists)
+        case documentInvites(documentId: String)
+        case createDocumentInvite(documentId: String, email: String, role: ShareRole, expiresAt: Date?)
+        case revokeDocumentInvite(documentId: String, token: String)
+        case listInvites(listId: String)
+        case createListInvite(listId: String, email: String, role: ShareRole, expiresAt: Date?)
+        case revokeListInvite(listId: String, token: String)
     }
     let kind: Kind
 }
@@ -40,6 +55,18 @@ actor StubSharingService: SharingServicing {
     private var revokeOutcomes: [Result<Bool, Error>] = []
     private var resolveOutcomes: [Result<ResolvedShare, Error>] = []
     private var claimOutcomes: [Result<ShareClaim, Error>] = []
+
+    // Collaborators.
+    private var collaboratorsOutcomes: [Result<[Collaborator], Error>] = []
+    private var candidatesOutcomes: [Result<[CollaboratorCandidate], Error>] = []
+    private var addCollaboratorOutcomes: [Result<Void, Error>] = []
+    private var setRoleOutcomes: [Result<Void, Error>] = []
+    private var removeCollaboratorOutcomes: [Result<Bool, Error>] = []
+
+    // Email invites (shared across list/document halves, like the link queues).
+    private var invitesOutcomes: [Result<[ShareInvite], Error>] = []
+    private var createInviteOutcomes: [Result<SentInvite, Error>] = []
+    private var revokeInviteOutcomes: [Result<Bool, Error>] = []
 
     private(set) var recorded: [RecordedSharingCall] = []
 
@@ -59,6 +86,30 @@ actor StubSharingService: SharingServicing {
 
     func enqueueClaim(success value: ShareClaim) { claimOutcomes.append(.success(value)) }
     func enqueueClaim(failure error: Error) { claimOutcomes.append(.failure(error)) }
+
+    func enqueueCollaborators(success value: [Collaborator]) { collaboratorsOutcomes.append(.success(value)) }
+    func enqueueCollaborators(failure error: Error) { collaboratorsOutcomes.append(.failure(error)) }
+
+    func enqueueCandidates(success value: [CollaboratorCandidate]) { candidatesOutcomes.append(.success(value)) }
+    func enqueueCandidates(failure error: Error) { candidatesOutcomes.append(.failure(error)) }
+
+    func enqueueAddCollaboratorSuccess() { addCollaboratorOutcomes.append(.success(())) }
+    func enqueueAddCollaborator(failure error: Error) { addCollaboratorOutcomes.append(.failure(error)) }
+
+    func enqueueSetRoleSuccess() { setRoleOutcomes.append(.success(())) }
+    func enqueueSetRole(failure error: Error) { setRoleOutcomes.append(.failure(error)) }
+
+    func enqueueRemoveCollaborator(success value: Bool) { removeCollaboratorOutcomes.append(.success(value)) }
+    func enqueueRemoveCollaborator(failure error: Error) { removeCollaboratorOutcomes.append(.failure(error)) }
+
+    func enqueueInvites(success value: [ShareInvite]) { invitesOutcomes.append(.success(value)) }
+    func enqueueInvites(failure error: Error) { invitesOutcomes.append(.failure(error)) }
+
+    func enqueueCreateInvite(success value: SentInvite) { createInviteOutcomes.append(.success(value)) }
+    func enqueueCreateInvite(failure error: Error) { createInviteOutcomes.append(.failure(error)) }
+
+    func enqueueRevokeInvite(success value: Bool) { revokeInviteOutcomes.append(.success(value)) }
+    func enqueueRevokeInvite(failure error: Error) { revokeInviteOutcomes.append(.failure(error)) }
 
     // MARK: SharingServicing — Lists
 
@@ -112,6 +163,65 @@ actor StubSharingService: SharingServicing {
     func claimDocumentShare(token: String) async throws -> ShareClaim {
         recorded.append(.init(kind: .claimDocument(token: token)))
         return try take(&claimOutcomes, label: "claimDocumentShare")
+    }
+
+    // MARK: SharingServicing — Document collaborators
+
+    func documentCollaborators(documentId: String) async throws -> [Collaborator] {
+        recorded.append(.init(kind: .documentCollaborators(documentId: documentId)))
+        return try take(&collaboratorsOutcomes, label: "documentCollaborators")
+    }
+
+    func searchDocumentCollaborators(documentId: String, query: String) async throws -> [CollaboratorCandidate] {
+        recorded.append(.init(kind: .searchCollaborators(documentId: documentId, query: query)))
+        return try take(&candidatesOutcomes, label: "searchDocumentCollaborators")
+    }
+
+    func addDocumentCollaborator(documentId: String, userId: String, role: ShareRole, notify: Bool) async throws {
+        recorded.append(.init(kind: .addCollaborator(documentId: documentId, userId: userId, role: role, notify: notify)))
+        try take(&addCollaboratorOutcomes, label: "addDocumentCollaborator")
+    }
+
+    func setDocumentCollaboratorRole(documentId: String, userId: String, role: ShareRole, notify: Bool) async throws {
+        recorded.append(.init(kind: .setCollaboratorRole(documentId: documentId, userId: userId, role: role, notify: notify)))
+        try take(&setRoleOutcomes, label: "setDocumentCollaboratorRole")
+    }
+
+    func removeDocumentCollaborator(documentId: String, userId: String) async throws -> Bool {
+        recorded.append(.init(kind: .removeCollaborator(documentId: documentId, userId: userId)))
+        return try take(&removeCollaboratorOutcomes, label: "removeDocumentCollaborator")
+    }
+
+    // MARK: SharingServicing — Email invites (documents + lists)
+
+    func documentInvites(documentId: String) async throws -> [ShareInvite] {
+        recorded.append(.init(kind: .documentInvites(documentId: documentId)))
+        return try take(&invitesOutcomes, label: "documentInvites")
+    }
+
+    func createDocumentInvite(documentId: String, email: String, role: ShareRole, expiresAt: Date?) async throws -> SentInvite {
+        recorded.append(.init(kind: .createDocumentInvite(documentId: documentId, email: email, role: role, expiresAt: expiresAt)))
+        return try take(&createInviteOutcomes, label: "createDocumentInvite")
+    }
+
+    func revokeDocumentInvite(documentId: String, token: String) async throws -> Bool {
+        recorded.append(.init(kind: .revokeDocumentInvite(documentId: documentId, token: token)))
+        return try take(&revokeInviteOutcomes, label: "revokeDocumentInvite")
+    }
+
+    func listInvites(listId: String) async throws -> [ShareInvite] {
+        recorded.append(.init(kind: .listInvites(listId: listId)))
+        return try take(&invitesOutcomes, label: "listInvites")
+    }
+
+    func createListInvite(listId: String, email: String, role: ShareRole, expiresAt: Date?) async throws -> SentInvite {
+        recorded.append(.init(kind: .createListInvite(listId: listId, email: email, role: role, expiresAt: expiresAt)))
+        return try take(&createInviteOutcomes, label: "createListInvite")
+    }
+
+    func revokeListInvite(listId: String, token: String) async throws -> Bool {
+        recorded.append(.init(kind: .revokeListInvite(listId: listId, token: token)))
+        return try take(&revokeInviteOutcomes, label: "revokeListInvite")
     }
 
     // MARK: - Queue plumbing
