@@ -73,6 +73,9 @@ struct MessageRowView: View {
             if !renderablePreviews.isEmpty {
                 linkPreviews
             }
+            if !message.crossPostLocations.isEmpty {
+                crossPostLinks
+            }
             if !message.tags.isEmpty {
                 tagChips
             }
@@ -153,6 +156,39 @@ struct MessageRowView: View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(renderablePreviews) { preview in
                 LinkPreviewCardView(preview: preview)
+            }
+        }
+    }
+
+    /// Links to the external copies a cross-posted message landed on
+    /// (`message.crossPostLocations`, projected from the server's
+    /// `crossPostUrls`). Rendered as a wrapping run of tappable pills — each a
+    /// SwiftUI `Link`, so a tap opens the destination via the system URL handler
+    /// with no AppKit involvement (App target SwiftUI-only constraint). The
+    /// "should this show?" gate lives on the message (non-empty locations); the
+    /// view stays passive. Mirrors the `tagChips` chip idiom for visual parity.
+    private var crossPostLinks: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                Label("Also on", systemImage: "arrow.up.forward.app")
+                    .labelStyle(.titleAndIcon)
+                    .font(.ilMono(9))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+
+                ForEach(message.crossPostLocations) { location in
+                    Link(destination: location.url) {
+                        Text(location.displayName)
+                            .font(.ilMono(9))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(ILColor.primary.opacity(0.15), in: Capsule())
+                            .foregroundStyle(Color.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("View this post on \(location.displayName)")
+                    .accessibilityHint("Opens the cross-posted copy in your browser")
+                }
             }
         }
     }
@@ -327,6 +363,10 @@ struct MessageRowView: View {
         parts.append(message.text)
         if !message.tags.isEmpty {
             parts.append("Tags: \(message.tags.joined(separator: ", "))")
+        }
+        if !message.crossPostLocations.isEmpty {
+            let names = message.crossPostLocations.map(\.displayName).joined(separator: ", ")
+            parts.append("Also cross-posted to \(names)")
         }
         parts.append("\(message.digCount) digs")
         return parts.joined(separator: ". ")

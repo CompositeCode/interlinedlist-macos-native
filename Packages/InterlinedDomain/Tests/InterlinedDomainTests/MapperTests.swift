@@ -184,7 +184,8 @@ final class MapperTests: XCTestCase {
         digCount: Int = 3,
         dugByMe: Bool = false,
         pushedMessage: PushedMessageBox? = nil,
-        linkMetadata: LinkMetadataDTO? = nil
+        linkMetadata: LinkMetadataDTO? = nil,
+        crossPostUrls: [CrossPostURLDTO]? = nil
     ) -> MessageDTO {
         MessageDTO(
             id: id,
@@ -192,6 +193,7 @@ final class MapperTests: XCTestCase {
             publiclyVisible: publiclyVisible,
             userId: "u1",
             linkMetadata: linkMetadata,
+            crossPostUrls: crossPostUrls,
             tags: tags,
             createdAt: date,
             updatedAt: date,
@@ -286,6 +288,84 @@ final class MapperTests: XCTestCase {
         } else {
             XCTFail("Expected .unknown, got \(result.status)")
         }
+    }
+
+    // MARK: - CrossPostLocation mapper (crossPostUrls → Message.crossPostLocations)
+
+    // Happy path: the message's own `crossPostUrls` map to `crossPostLocations`
+    // links the row can open, in order, with friendly platform labels.
+    func test_givenMessageWithCrossPostUrls_whenMapped_thenCarriesCrossPostLocations() throws {
+        // Given — a message cross-posted to X and Bluesky.
+        let dto = makeMessageDTO(crossPostUrls: [
+            CrossPostURLDTO(url: "https://twitter.com/il/status/1", platform: "twitter"),
+            CrossPostURLDTO(url: "https://bsky.app/profile/il/post/2", platform: "bluesky")
+        ])
+
+        // When
+        let message = Message(from: dto)
+
+        // Then — both locations survive, in order, with usable URLs + labels.
+        XCTAssertEqual(message.crossPostLocations.count, 2)
+        XCTAssertEqual(message.crossPostLocations[0].url, URL(string: "https://twitter.com/il/status/1"))
+        XCTAssertEqual(message.crossPostLocations[0].displayName, "X")        // "twitter" → "X"
+        XCTAssertEqual(message.crossPostLocations[1].displayName, "Bluesky")
+    }
+
+    // A Mastodon-style entry with an `instanceName` prefers that name over the
+    // generic platform label so the chip reads as the specific instance.
+    func test_givenCrossPostWithInstanceName_whenMapped_thenInstanceNameWins() throws {
+        // Given
+        let dto = makeMessageDTO(crossPostUrls: [
+            CrossPostURLDTO(
+                url: "https://mastodon.social/@ada/3",
+                platform: "mastodon",
+                instanceName: "mastodon.social"
+            )
+        ])
+
+        // When
+        let location = try XCTUnwrap(Message(from: dto).crossPostLocations.first)
+
+        // Then
+        XCTAssertEqual(location.displayName, "mastodon.social")
+    }
+
+    // Invalid input: an entry whose `url` will not parse is dropped by the
+    // mapper's `compactMap`, while a sibling valid entry survives.
+    func test_givenMessageWithUnparseableCrossPostURL_whenMapped_thenThatEntryIsDropped() throws {
+        // Given — an empty-string URL cannot form a `URL`; a valid sibling can.
+        let dto = makeMessageDTO(crossPostUrls: [
+            CrossPostURLDTO(url: "", platform: "twitter"),
+            CrossPostURLDTO(url: "https://bsky.app/ok", platform: "bluesky")
+        ])
+
+        // When
+        let message = Message(from: dto)
+
+        // Then — only the parseable entry survives.
+        XCTAssertEqual(message.crossPostLocations.count, 1)
+        XCTAssertEqual(message.crossPostLocations.first?.url, URL(string: "https://bsky.app/ok"))
+    }
+
+    // Empty / boundary: no `crossPostUrls` at all collapses to an empty array
+    // (never `nil`), matching the `crossPostResults` / `linkPreviews` default so
+    // the row simply omits the "Also on" section.
+    func test_givenMessageWithNoCrossPostUrls_whenMapped_thenCrossPostLocationsAreEmpty() {
+        // Given / When
+        let message = Message(from: makeMessageDTO(crossPostUrls: nil))
+
+        // Then
+        XCTAssertEqual(message.crossPostLocations, [])
+    }
+
+    // An unrecognised platform slug falls back to a capitalized label rather than
+    // being dropped — the client stays forward-compatible with new platforms.
+    func test_givenUnknownCrossPostPlatform_whenLabelled_thenFallsBackToCapitalized() {
+        // Given
+        let location = CrossPostLocation(url: URL(string: "https://example.com/x")!, platform: "nostr")
+
+        // Then
+        XCTAssertEqual(location.displayName, "Nostr")
     }
 
     // MARK: - LinkPreview mapper (feature-gaps §1.5)

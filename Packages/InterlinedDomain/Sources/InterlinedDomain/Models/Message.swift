@@ -46,7 +46,27 @@ public struct Message: Sendable, Equatable, Identifiable {
     /// Per-platform cross-post outcomes attached to a published message.
     /// Empty when the message was not cross-posted or when the server did not
     /// return cross-post data for this response.
+    ///
+    /// NOTE: this is a **write-time** projection — it maps from the create /
+    /// update response's sibling `crossPosts` array (status + error, used by the
+    /// post-publish `CrossPostResultsSheet`). A message read back from the
+    /// timeline does not carry it; use `crossPostLocations` for the persisted
+    /// "where did this land" links shown on every row.
     public let crossPostResults: [CrossPostResult]
+
+    /// The persisted places a published message was cross-posted to, projected
+    /// from the message's own `crossPostUrls` (e.g. the X/Bluesky/Mastodon
+    /// permalinks). Unlike `crossPostResults`, these travel with the message on
+    /// **reads**, so the timeline / detail rows can link out to each copy.
+    /// Empty when the message was not cross-posted.
+    ///
+    /// SCOPE DECISION (mirrors `linkPreviews`): cross-post locations are treated
+    /// as a fetch-time / UI concern and are **not** persisted in SwiftData
+    /// (`MessageRecord`). They are re-derived from the DTO on every load,
+    /// refreshing naturally on the next fetch. This deliberately avoids a
+    /// SwiftData schema migration; the trade-off is that the links are absent
+    /// when a row is rendered purely from the local cache before a refresh.
+    public let crossPostLocations: [CrossPostLocation]
 
     /// Server-rendered rich link previews for URLs found in the body
     /// (feature-gaps §1.5). Empty when the message contains no links or the
@@ -76,6 +96,7 @@ public struct Message: Sendable, Equatable, Identifiable {
         repost: Repost? = nil,
         scheduledAt: Date? = nil,
         crossPostResults: [CrossPostResult] = [],
+        crossPostLocations: [CrossPostLocation] = [],
         linkPreviews: [LinkPreview] = []
     ) {
         self.id = id
@@ -93,6 +114,7 @@ public struct Message: Sendable, Equatable, Identifiable {
         self.repost = repost
         self.scheduledAt = scheduledAt
         self.crossPostResults = crossPostResults
+        self.crossPostLocations = crossPostLocations
         self.linkPreviews = linkPreviews
     }
 }
@@ -138,6 +160,58 @@ public struct CrossPostResult: Sendable, Equatable {
         self.providerId = providerId
         self.status = status
         self.externalURL = externalURL
+    }
+}
+
+// MARK: - CrossPostLocation
+
+/// A persisted destination a published message was cross-posted to — the
+/// permalink of the copy that landed on an external platform (X, Bluesky,
+/// Mastodon, LinkedIn, …).
+///
+/// Maps from `CrossPostURLDTO` (the message's own `crossPostUrls`). The wire
+/// `url` string is coerced to a `URL` during mapping and entries whose `url`
+/// will not parse are dropped, so a `CrossPostLocation` always carries a usable
+/// link the UI can open. Distinct from `CrossPostResult`, which models the
+/// write-time fan-out *outcome* (status / error); this models the durable
+/// "where it landed" link shown on every row that reads the message back.
+public struct CrossPostLocation: Sendable, Equatable, Identifiable {
+    /// The permalink to the cross-posted copy. Doubles as the stable identity
+    /// for `ForEach`.
+    public let url: URL
+    /// The platform slug the server attached (e.g. "twitter", "bluesky",
+    /// "mastodon"). Kept raw so the client stays forward-compatible; see
+    /// `displayName` for the human-facing label.
+    public let platform: String
+    /// The specific instance/account name when the server supplied one (e.g. a
+    /// Mastodon instance). Preferred over the platform label in the UI.
+    public let instanceName: String?
+
+    public var id: URL { url }
+
+    public init(url: URL, platform: String, instanceName: String? = nil) {
+        self.url = url
+        self.platform = platform
+        self.instanceName = instanceName
+    }
+
+    /// Human-facing label for the destination chip. Prefers a specific instance
+    /// name when the server supplied one, otherwise a friendly name for the
+    /// platforms the client recognises, falling back to the capitalized raw
+    /// slug so an unknown-but-new platform still reads sensibly.
+    public var displayName: String {
+        if let instanceName = instanceName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !instanceName.isEmpty {
+            return instanceName
+        }
+        switch platform.lowercased() {
+        case "twitter", "x": return "X"
+        case "bluesky":      return "Bluesky"
+        case "mastodon":     return "Mastodon"
+        case "linkedin":     return "LinkedIn"
+        case "threads":      return "Threads"
+        default:             return platform.capitalized
+        }
     }
 }
 
