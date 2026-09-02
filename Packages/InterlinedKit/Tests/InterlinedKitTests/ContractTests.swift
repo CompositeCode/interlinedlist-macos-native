@@ -109,4 +109,50 @@ final class ContractTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(page.pagination.total, 0)
         XCTAssertEqual(page.pagination.limit, 3)
     }
+
+    /// Direct-message thread contract (work-consolidation.md G1). The DM
+    /// composer's enabled state in `DMThreadView` is gated entirely on the
+    /// thread response's `isMutual` / `isBlocked` fields (both optional in the
+    /// DTO, defaulting to `false` when absent). A server- or DTO-side drift
+    /// that dropped or renamed either field would silently gray the composer
+    /// for genuine mutual followers — the exact symptom this test guards.
+    ///
+    /// It signs in, reads the mutual-follower recipient set, and for the first
+    /// recipient asserts `GET /api/dm/thread/{username}` returns HTTP 200 and
+    /// decodes with the mutuality fields present and coherent. Skips when the
+    /// account has no recipients (a fresh account is legitimate). Never logs
+    /// the token, usernames, or message bodies.
+    func test_givenLiveCredentials_whenFetchingDMThread_thenMutualityFieldsDecode() async throws {
+        guard let credentials = credentialsFromEnvironment() else {
+            throw XCTSkip("Live credentials not set — skipping contract test.")
+        }
+
+        let store = InMemoryTokenStore()
+        let (client, service) = makeLiveStack(tokenStore: store)
+        _ = try await service.signIn(
+            email: credentials.email,
+            password: credentials.password
+        )
+
+        // The users this account may DM (mutual followers, not blocked). An
+        // empty set is valid — there is then no thread to assert about.
+        let recipients = try await client.send(DirectMessages.recipients())
+        guard let target = recipients.recipients.first else {
+            throw XCTSkip("Test account has no mutual-follower recipients — no thread to probe.")
+        }
+
+        // A recipient surfaced by /recipients must resolve to a mutual,
+        // non-blocked thread with a populated `otherUser`. These three fields
+        // drive the composer's enabled state; asserting they decode true is the
+        // drift alarm for the "grayed composer for a mutual" symptom. Any
+        // non-2xx would throw an `APIError` from `send`, failing the test.
+        let thread = try await client.send(DirectMessages.thread(username: target.username))
+        XCTAssertEqual(thread.isMutual, true, "a recipient from /recipients must decode as mutual")
+        XCTAssertEqual(thread.isBlocked, false, "a recipient from /recipients must decode as not-blocked")
+        XCTAssertEqual(
+            thread.otherUser?.username,
+            target.username,
+            "thread otherUser must match the requested username"
+        )
+    }
 }
