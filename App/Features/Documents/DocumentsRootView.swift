@@ -43,6 +43,16 @@ struct DocumentsRootView: View {
     /// editor (work-consolidation.md G3).
     @State private var isShareLinksPresented = false
 
+    /// Drives the "Document Access & Permissions" (per-person collaborators)
+    /// panel for the open document (work-consolidation.md G3).
+    @State private var isCollaboratorsPresented = false
+
+    /// Drives the "Invite by email" panel for the open document.
+    @State private var isInvitesPresented = false
+
+    /// Drives the "Make Public" visibility panel for the open document.
+    @State private var isVisibilityPresented = false
+
     var body: some View {
         Group {
             if let environment, let folderTree, let documentsList, let editor, let syncStatus {
@@ -159,6 +169,30 @@ struct DocumentsRootView: View {
                 .help("Create and manage shareable links for this document")
 
                 Button {
+                    isCollaboratorsPresented = true
+                } label: {
+                    Label("People", systemImage: "person.2.badge.gearshape")
+                }
+                .disabled(editor.document == nil)
+                .help("Manage who has direct access to this document")
+
+                Button {
+                    isInvitesPresented = true
+                } label: {
+                    Label("Invite by Email", systemImage: "envelope")
+                }
+                .disabled(editor.document == nil)
+                .help("Invite people to this document by email")
+
+                Button {
+                    isVisibilityPresented = true
+                } label: {
+                    Label("Make Public", systemImage: "globe")
+                }
+                .disabled(editor.document == nil)
+                .help("Control whether anyone with the link can view this document")
+
+                Button {
                     editor.exportMarkdown()
                 } label: {
                     Label("Export as Markdown", systemImage: "arrow.down.doc")
@@ -189,6 +223,25 @@ struct DocumentsRootView: View {
         .sheet(isPresented: $isShareLinksPresented) {
             if let documentID = editor.document?.id {
                 ShareLinksView(target: .document(id: documentID), environment: environment)
+            }
+        }
+        .sheet(isPresented: $isCollaboratorsPresented) {
+            if let documentID = editor.document?.id {
+                DocumentCollaboratorsView(documentId: documentID, environment: environment)
+            }
+        }
+        .sheet(isPresented: $isInvitesPresented) {
+            if let documentID = editor.document?.id {
+                InvitesView(target: .document(id: documentID), environment: environment)
+            }
+        }
+        .sheet(isPresented: $isVisibilityPresented) {
+            if let document = editor.document {
+                VisibilityView(
+                    target: .document(id: document.id),
+                    environment: environment,
+                    initialIsPublic: document.isPublic
+                )
             }
         }
         .fileExporter(

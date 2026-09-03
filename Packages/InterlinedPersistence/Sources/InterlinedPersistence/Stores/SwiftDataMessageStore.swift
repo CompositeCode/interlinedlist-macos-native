@@ -85,17 +85,25 @@ public actor SwiftDataMessageStore: MessageStore {
 
         // Hydrate by id, preserving order. A single fetch over the id-set
         // is cheaper than N point fetches, then we reorder in memory.
-        let records = fetchRecords(byIDs: ids, context: context)
+        let records = fetchRecords(byIDs: ids)
         let recordsByID = Dictionary(uniqueKeysWithValues: records.map { ($0.id, $0) })
-        return ids.compactMap { id in
-            recordsByID[id]?.toMessage { originalID in
-                // Cheap repost re-hydration: look up the original message in
-                // the same fetched batch first, then fall back to the by-id
-                // index for off-page reposts.
-                recordsByID[originalID]?.toMessage(repostLookup: { _ in nil })
-                    ?? self.byIDMessage(id: originalID, context: context)
+        var messages: [Message] = []
+        messages.reserveCapacity(ids.count)
+        for id in ids {
+            guard let record = recordsByID[id] else { continue }
+            // Cheap repost re-hydration: look up the original message in the
+            // same fetched batch first, then fall back to the by-id index for
+            // off-page reposts. Resolve eagerly to a `Message` value so the
+            // actor-isolated `ModelContext` never crosses into the mapping
+            // closure — Swift 6 region isolation rejects capturing it there.
+            var original: Message?
+            if let originalID = record.pushedMessageID {
+                original = recordsByID[originalID]?.toMessage(repostLookup: { _ in nil })
+                    ?? byIDMessage(id: originalID)
             }
+            messages.append(record.toMessage(repostLookup: { _ in original }))
         }
+        return messages
     }
 
     public func replaceTimeline(_ messages: [Message], scope: TimelineScope, tag: String?) async {
@@ -105,7 +113,7 @@ public actor SwiftDataMessageStore: MessageStore {
         // 1) Upsert message records so by-id reads stay consistent with the
         //    timeline slice (matches InMemoryMessageStore.replaceTimeline,
         //    which writes to both indexes).
-        mergeUpsert(messages, context: context)
+        mergeUpsert(messages)
 
         // 2) Replace the page record for this (scope, tag) key.
         do {
@@ -126,13 +134,12 @@ public actor SwiftDataMessageStore: MessageStore {
     }
 
     public func cachedMessage(id: String) async -> Message? {
-        let context = self.context
-        return byIDMessage(id: id, context: context)
+        byIDMessage(id: id)
     }
 
     public func upsert(_ messages: [Message]) async {
         let context = self.context
-        mergeUpsert(messages, context: context)
+        mergeUpsert(messages)
         do {
             try context.save()
         } catch {
@@ -151,11 +158,19 @@ public actor SwiftDataMessageStore: MessageStore {
             )
             let records = try context.fetch(descriptor)
             // Re-hydrate any repost target from the by-id index (best-effort).
-            return records.map { record in
-                record.toMessage { originalID in
-                    self.byIDMessage(id: originalID, context: context)
+            // Resolve eagerly to a `Message` value so the actor-isolated
+            // `ModelContext` never crosses into the mapping closure (Swift 6
+            // region isolation rejects capturing it there).
+            var messages: [Message] = []
+            messages.reserveCapacity(records.count)
+            for record in records {
+                var original: Message?
+                if let originalID = record.pushedMessageID {
+                    original = byIDMessage(id: originalID)
                 }
+                messages.append(record.toMessage(repostLookup: { _ in original }))
             }
+            return messages
         } catch {
             logger.error("cachedScheduled fetch failed: \(error.localizedDescription, privacy: .public)")
             return []
@@ -230,8 +245,12 @@ public actor SwiftDataMessageStore: MessageStore {
         }
     }
 
-    private func fetchRecords(byIDs ids: [String], context: ModelContext) -> [MessageRecord] {
+    private func fetchRecords(byIDs ids: [String]) -> [MessageRecord] {
         guard !ids.isEmpty else { return [] }
+        // Read the actor-isolated context directly rather than receiving it as
+        // a parameter — passing a non-Sendable `ModelContext` as an argument
+        // trips Swift 6 region isolation ("sending 'context'").
+        let context = self.context
         let idSet = Set(ids)
         do {
             let descriptor = FetchDescriptor<MessageRecord>(
@@ -246,17 +265,23 @@ public actor SwiftDataMessageStore: MessageStore {
         }
     }
 
-    private func byIDMessage(id: String, context: ModelContext) -> Message? {
+    private func byIDMessage(id: String) -> Message? {
+        let context = self.context
         do {
             let descriptor = FetchDescriptor<MessageRecord>(
                 predicate: #Predicate { record in record.id == id }
             )
             guard let record = try context.fetch(descriptor).first else { return nil }
-            return record.toMessage { originalID in
-                // Single-hop lookup for the repost target. If it isn't in
-                // the cache we drop it — best-effort per the protocol.
-                self.byIDMessage(id: originalID, context: context).map { $0 }
+            // Single-hop lookup for the repost target, resolved eagerly to a
+            // `Message` value. If it isn't in the cache we drop it — best-effort
+            // per the protocol. Eager resolution keeps the actor-isolated
+            // `ModelContext` out of the mapping closure (Swift 6 region
+            // isolation rejects capturing it there).
+            var original: Message?
+            if let originalID = record.pushedMessageID {
+                original = byIDMessage(id: originalID)
             }
+            return record.toMessage(repostLookup: { _ in original })
         } catch {
             logger.error("cachedMessage fetch failed: \(error.localizedDescription, privacy: .public)")
             return nil
@@ -266,7 +291,8 @@ public actor SwiftDataMessageStore: MessageStore {
     /// Insert-or-update by id, without saving. Caller decides when to
     /// `save()`. SwiftData on macOS 14 lacks a declarative upsert, so we
     /// fetch by id and mutate when present.
-    private func mergeUpsert(_ messages: [Message], context: ModelContext) {
+    private func mergeUpsert(_ messages: [Message]) {
+        let context = self.context
         for message in messages {
             let id = message.id
             do {

@@ -111,4 +111,148 @@ final class SharingEndpointTests: XCTestCase {
 
         XCTAssertTrue(response.shareLinks.isEmpty)
     }
+
+    // MARK: - Collaborators — builder shapes
+
+    func test_givenCollaboratorBuilders_whenConstructed_thenUseExpectedMethodPath() {
+        XCTAssertEqual(Sharing.documentCollaborators(documentId: "d1").path, "/api/documents/d1/collaborators")
+        XCTAssertEqual(Sharing.documentCollaborators(documentId: "d1").method, .get)
+        XCTAssertEqual(Sharing.addDocumentCollaborator(documentId: "d1", AddCollaboratorRequest(userId: "u2", role: "watcher", notify: true)).method, .post)
+        let setRole = Sharing.setDocumentCollaboratorRole(documentId: "d1", userId: "u2", SetCollaboratorRoleRequest(role: "manager", notify: false))
+        XCTAssertEqual(setRole.method, .put)
+        XCTAssertEqual(setRole.path, "/api/documents/d1/collaborators/u2")
+        let remove = Sharing.removeDocumentCollaborator(documentId: "d1", userId: "u2")
+        XCTAssertEqual(remove.method, .delete)
+        XCTAssertEqual(remove.path, "/api/documents/d1/collaborators/u2")
+    }
+
+    func test_givenCollaboratorSearch_whenConstructed_thenSendsBothSearchAndQParams() {
+        let req = Sharing.searchDocumentCollaborators(documentId: "d1", query: "ann")
+        XCTAssertEqual(req.path, "/api/documents/d1/collaborators/users")
+        XCTAssertTrue(req.query.contains(.string("search", "ann")))
+        XCTAssertTrue(req.query.contains(.string("q", "ann")))
+    }
+
+    // MARK: - Collaborators — happy path
+
+    func test_givenAddBody_whenAddingCollaborator_thenEncodesFieldsAndDecodesSuccess() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"{"collaborating":true}"#))
+
+        let response = try await client.send(
+            Sharing.addDocumentCollaborator(documentId: "d1", AddCollaboratorRequest(userId: "u2", role: "collaborator", notify: true))
+        )
+
+        XCTAssertEqual(response.collaborating, true)
+        let received = await transport.received
+        let json = try JSONSerialization.jsonObject(with: XCTUnwrap(received[0].httpBody)) as? [String: Any]
+        XCTAssertEqual(json?["userId"] as? String, "u2")
+        XCTAssertEqual(json?["role"] as? String, "collaborator")
+        XCTAssertEqual(json?["notify"] as? Bool, true)
+    }
+
+    func test_givenNestedUser_whenListingCollaborators_thenDecodesUser() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"""
+        {"collaborators":[{"id":"c1","userId":"u2","role":"manager","createdAt":"2026-07-31T23:07:24.019Z",
+          "user":{"id":"u2","username":"ann","displayName":"Ann Lee","email":"ann@x.io","avatar":null}}]}
+        """#))
+
+        let response = try await client.send(Sharing.documentCollaborators(documentId: "d1"))
+
+        XCTAssertEqual(response.collaborators.first?.userId, "u2")
+        XCTAssertEqual(response.collaborators.first?.role, "manager")
+        XCTAssertEqual(response.collaborators.first?.user?.username, "ann")
+    }
+
+    func test_givenFlatUserFields_whenListingCollaborators_thenTolerantlyDecodes() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"{"collaborators":[{"userId":"u3","role":"watcher","username":"bo","displayName":"Bo"}]}"#))
+
+        let response = try await client.send(Sharing.documentCollaborators(documentId: "d1"))
+
+        XCTAssertEqual(response.collaborators.first?.username, "bo")
+        XCTAssertNil(response.collaborators.first?.user)
+    }
+
+    func test_givenCandidates_whenSearching_thenDecodesUsers() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"{"users":[{"id":"u2","username":"ann","displayName":"Ann","email":"ann@x.io","avatar":null}],"total":1}"#))
+
+        let response = try await client.send(Sharing.searchDocumentCollaborators(documentId: "d1", query: "ann"))
+
+        XCTAssertEqual(response.users.map(\.username), ["ann"])
+        XCTAssertEqual(response.total, 1)
+    }
+
+    // MARK: - Invites — builder shapes + happy path
+
+    func test_givenInviteBuilders_whenConstructed_thenUseExpectedMethodPath() {
+        XCTAssertEqual(Sharing.documentInvites(documentId: "d1").path, "/api/documents/d1/invites")
+        XCTAssertEqual(Sharing.listInvites(listId: "l1").path, "/api/lists/l1/invites")
+        XCTAssertEqual(Sharing.createListInvite(listId: "l1", CreateInviteRequest(email: "a@x.io", role: "watcher")).method, .post)
+        XCTAssertEqual(Sharing.revokeDocumentInvite(documentId: "d1", token: "t9").method, .delete)
+        XCTAssertEqual(Sharing.revokeDocumentInvite(documentId: "d1", token: "t9").path, "/api/documents/d1/invites/t9")
+    }
+
+    func test_givenInviteBody_whenCreating_thenEncodesEmailAndDecodesUrl() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"{"email":"a@x.io","role":"collaborator","expiresAt":null,"url":"https://x/lists/invite/tok"}"#, status: 201))
+
+        let response = try await client.send(
+            Sharing.createDocumentInvite(documentId: "d1", CreateInviteRequest(email: "a@x.io", role: "collaborator"))
+        )
+
+        XCTAssertEqual(response.email, "a@x.io")
+        XCTAssertEqual(response.url, "https://x/lists/invite/tok")
+        let received = await transport.received
+        let json = try JSONSerialization.jsonObject(with: XCTUnwrap(received[0].httpBody)) as? [String: Any]
+        XCTAssertEqual(json?["email"] as? String, "a@x.io")
+        XCTAssertEqual(json?["role"] as? String, "collaborator")
+    }
+
+    func test_givenInvitesBody_whenListing_thenDecodesRows() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"""
+        {"invites":[{"token":"tok","email":"a@x.io","role":"watcher","expiresAt":null,"accepted":false,
+          "createdAt":"2026-08-28T10:30:00.000Z"}]}
+        """#))
+
+        let response = try await client.send(Sharing.listInvites(listId: "l1"))
+
+        XCTAssertEqual(response.invites.first?.email, "a@x.io")
+        XCTAssertEqual(response.invites.first?.accepted, false)
+    }
+
+    // MARK: - Invites — failure + boundary
+
+    func test_givenForbidden_whenCreatingInvite_thenThrowsForbidden() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"{"error":"Subscribe to invite people to lists."}"#, status: 403))
+
+        do {
+            _ = try await client.send(Sharing.createListInvite(listId: "l1", CreateInviteRequest(email: "a@x.io", role: "watcher")))
+            XCTFail("Expected forbidden")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .forbidden(serverMessage: "Subscribe to invite people to lists."))
+        }
+    }
+
+    func test_givenNoInvites_whenListing_thenReturnsEmpty() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"{"invites":[]}"#))
+
+        let response = try await client.send(Sharing.documentInvites(documentId: "d1"))
+
+        XCTAssertTrue(response.invites.isEmpty)
+    }
+
+    func test_givenNoCollaborators_whenListing_thenReturnsEmpty() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"{"collaborators":[]}"#))
+
+        let response = try await client.send(Sharing.documentCollaborators(documentId: "d1"))
+
+        XCTAssertTrue(response.collaborators.isEmpty)
+    }
 }

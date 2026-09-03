@@ -41,8 +41,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # Pin to the same toolchain used by ci.yml: Xcode 16.2 / Swift 6.0.3.
-  XCODE_VERSION: "16.2"
+  # Pin to the same toolchain used by ci.yml: Xcode 26.3 / Swift 6.3.x.
+  XCODE_VERSION: "26.3"
 
 jobs:
   release:
@@ -52,7 +52,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
       - name: Select Xcode ${{ env.XCODE_VERSION }}
         uses: maxim-lobanov/setup-xcode@v1

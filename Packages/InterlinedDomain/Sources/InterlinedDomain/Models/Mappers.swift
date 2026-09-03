@@ -67,6 +67,12 @@ extension Message {
             },
             scheduledAt: dto.scheduledAt,
             crossPostResults: (dto.crossPosts ?? []).map(CrossPostResult.init(from:)),
+            // The persisted cross-post destinations carried on the message
+            // itself (`crossPostUrls`). `compactMap` drops entries whose `url`
+            // string will not parse, so a `CrossPostLocation` always has a
+            // usable link. Not persisted in SwiftData — re-derived from the DTO
+            // on every load (see Message.crossPostLocations).
+            crossPostLocations: (dto.crossPostUrls ?? []).compactMap(CrossPostLocation.init(from:)),
             // feature-gaps §1.5: thread server-rendered link previews through.
             // `compactMap` drops entries whose `url` string will not parse so a
             // `LinkPreview` always carries a usable `URL`. Not persisted in
@@ -107,6 +113,21 @@ extension CrossPostResult {
             status: status,
             externalURL: dto.externalUrl.flatMap(URL.init(string:))
         )
+    }
+}
+
+extension CrossPostLocation {
+    /// Maps a single persisted cross-post destination from the message's
+    /// `crossPostUrls`.
+    ///
+    /// Returns `nil` when the wire `url` string will not parse, so the caller's
+    /// `compactMap` drops it — a `CrossPostLocation` is only ever constructed
+    /// with a usable `URL`. `instanceName` is threaded through so a Mastodon
+    /// instance (or similar) can label the chip more precisely than the bare
+    /// platform slug.
+    public init?(from dto: CrossPostURLDTO) {
+        guard let url = URL(string: dto.url) else { return nil }
+        self.init(url: url, platform: dto.platform, instanceName: dto.instanceName)
     }
 }
 

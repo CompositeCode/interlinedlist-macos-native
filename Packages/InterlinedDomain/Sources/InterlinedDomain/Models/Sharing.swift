@@ -146,3 +146,153 @@ public struct ShareClaim: Sendable, Equatable {
         self.role = role
     }
 }
+
+// MARK: - Collaborator
+
+/// A person granted per-person access to a document (the list analogue is a
+/// watcher). Surfaced in the sharing dialog's "Users with access" section.
+public struct Collaborator: Sendable, Equatable, Hashable, Identifiable {
+    public let userId: String
+    public let role: ShareRole
+    public let username: String?
+    public let displayName: String?
+    public let avatar: URL?
+    public let createdAt: Date?
+
+    public var id: String { userId }
+
+    /// Best available human label: display name, then `username`, then a fallback.
+    public var displayLabel: String {
+        if let displayName, !displayName.isEmpty { return displayName }
+        if let username, !username.isEmpty { return username }
+        return "User"
+    }
+
+    public init(userId: String, role: ShareRole, username: String? = nil, displayName: String? = nil, avatar: URL? = nil, createdAt: Date? = nil) {
+        self.userId = userId
+        self.role = role
+        self.username = username
+        self.displayName = displayName
+        self.avatar = avatar
+        self.createdAt = createdAt
+    }
+}
+
+extension Collaborator {
+    /// Maps either the nested-`user` shape or the flat-field shape (see the ⚠️
+    /// note on `CollaboratorDTO`).
+    public init(from dto: CollaboratorDTO) {
+        self.init(
+            userId: dto.userId,
+            role: ShareRole(rawValue: dto.role) ?? .watcher,
+            username: dto.user?.username ?? dto.username,
+            displayName: dto.user?.displayName ?? dto.displayName,
+            avatar: (dto.user?.avatar ?? dto.avatar).flatMap(URL.init(string:)),
+            createdAt: dto.createdAt
+        )
+    }
+}
+
+// MARK: - CollaboratorCandidate
+
+/// A user surfaced by the collaborator search, eligible to be granted access.
+public struct CollaboratorCandidate: Sendable, Equatable, Hashable, Identifiable {
+    public let id: String
+    public let username: String?
+    public let displayName: String?
+    public let email: String?
+    public let avatar: URL?
+
+    public var displayLabel: String {
+        if let displayName, !displayName.isEmpty { return displayName }
+        if let username, !username.isEmpty { return username }
+        return email ?? "User"
+    }
+
+    public init(id: String, username: String? = nil, displayName: String? = nil, email: String? = nil, avatar: URL? = nil) {
+        self.id = id
+        self.username = username
+        self.displayName = displayName
+        self.email = email
+        self.avatar = avatar
+    }
+}
+
+extension CollaboratorCandidate {
+    public init(from dto: CollaboratorUserDTO) {
+        self.init(
+            id: dto.id,
+            username: dto.username,
+            displayName: dto.displayName,
+            email: dto.email,
+            avatar: dto.avatar.flatMap(URL.init(string:))
+        )
+    }
+}
+
+// MARK: - ShareInvite
+
+/// A pending or accepted email invite for a list or document — the sharing
+/// dialog's "Invite by email" section.
+public struct ShareInvite: Sendable, Equatable, Hashable, Identifiable {
+    public let token: String
+    public let email: String
+    public let role: ShareRole
+    public let expiresAt: Date?
+    public let accepted: Bool
+    public let createdAt: Date?
+
+    public var id: String { token }
+
+    public init(token: String, email: String, role: ShareRole, expiresAt: Date? = nil, accepted: Bool = false, createdAt: Date? = nil) {
+        self.token = token
+        self.email = email
+        self.role = role
+        self.expiresAt = expiresAt
+        self.accepted = accepted
+        self.createdAt = createdAt
+    }
+}
+
+extension ShareInvite {
+    public init(from dto: ShareInviteDTO) {
+        self.init(
+            token: dto.token,
+            email: dto.email,
+            role: ShareRole(rawValue: dto.role) ?? .watcher,
+            expiresAt: dto.expiresAt,
+            accepted: dto.accepted ?? false,
+            createdAt: dto.createdAt
+        )
+    }
+}
+
+// MARK: - SentInvite
+
+/// The immediate result of sending an email invite — carries the claim `url`
+/// so the UI can offer to copy it. The full pending-invite row appears on the
+/// next `…Invites` list fetch.
+public struct SentInvite: Sendable, Equatable {
+    public let email: String
+    public let role: ShareRole
+    public let expiresAt: Date?
+    public let url: URL?
+
+    public init(email: String, role: ShareRole, expiresAt: Date? = nil, url: URL? = nil) {
+        self.email = email
+        self.role = role
+        self.expiresAt = expiresAt
+        self.url = url
+    }
+}
+
+extension SentInvite {
+    public init(from dto: CreateInviteResponse) {
+        self.init(
+            email: dto.email,
+            role: ShareRole(rawValue: dto.role) ?? .watcher,
+            expiresAt: dto.expiresAt,
+            url: dto.url.flatMap(URL.init(string:))
+        )
+    }
+}
