@@ -120,6 +120,22 @@ public struct ListRowDTO: Codable, Sendable, Equatable, Identifiable {
     public let id: String
     public let listId: String?
     public let rowData: [String: ListJSONValue]
+    /// The row's origin marker when the row was synced from an external source
+    /// rather than authored in-app (e.g. `"github"`). `nil` for native rows.
+    ///
+    /// A list becomes "GitHub-backed" at the row level — the live API attaches
+    /// `source`/`githubRepo` to synced rows (see `work-consolidation.md` P3-C:
+    /// "rows carry `source`/`githubRepo` live") while a stable **list-level**
+    /// `githubSource` object on create/read is still unconfirmed upstream. Both
+    /// fields are optional so a native row (and every existing fixture) decodes
+    /// unchanged; a row that carries them lets the client recognise the backing
+    /// and route row-creation to the GitHub issue flow instead of a native row.
+    public let source: String?
+    /// The `"owner/repo"` slug a GitHub-synced row belongs to. `nil` for native
+    /// rows. Paired with `source`; either may appear alone depending on the
+    /// route, so the client treats a non-nil `githubRepo` as the authoritative
+    /// backing signal.
+    public let githubRepo: String?
     public let createdAt: Date?
     public let updatedAt: Date?
 
@@ -127,12 +143,16 @@ public struct ListRowDTO: Codable, Sendable, Equatable, Identifiable {
         id: String,
         listId: String? = nil,
         rowData: [String: ListJSONValue],
+        source: String? = nil,
+        githubRepo: String? = nil,
         createdAt: Date? = nil,
         updatedAt: Date? = nil
     ) {
         self.id = id
         self.listId = listId
         self.rowData = rowData
+        self.source = source
+        self.githubRepo = githubRepo
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
