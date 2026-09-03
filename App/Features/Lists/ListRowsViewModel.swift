@@ -119,6 +119,28 @@ final class ListRowsViewModel {
         return rows.first { $0.id == selectedRowID }
     }
 
+    // MARK: - GitHub-backing (derived from rows)
+
+    /// Whether this list is GitHub-backed, derived from its loaded rows. True
+    /// when any loaded row is GitHub-synced.
+    ///
+    /// Detection is row-level on purpose: there is no stable list-level
+    /// `githubSource` on the wire yet (work-consolidation.md P3-C), but synced
+    /// rows carry `source`/`githubRepo`. The trade-off is that a GitHub-backed
+    /// list with **no rows loaded yet** (empty, or before the first page
+    /// arrives) reads as not-backed until a synced row appears — acceptable
+    /// because there is no earlier signal to key off.
+    var isGitHubBacked: Bool {
+        rows.contains(where: \.isGitHubBacked)
+    }
+
+    /// The `"owner/repo"` slug this list syncs from, taken from the first
+    /// GitHub-synced row that names one. `nil` for a plain list (or a backed
+    /// list whose rows haven't loaded). Drives the issue-browser route.
+    var gitHubRepo: String? {
+        rows.lazy.compactMap(\.githubRepo).first
+    }
+
     // MARK: - Init
 
     init(lists: ListsServicing, eventBus: ListsEventBus, listId: String) {
@@ -175,7 +197,14 @@ final class ListRowsViewModel {
 
     /// Adds a new empty row. Optimistic-insert with a placeholder id,
     /// then replace with the server's row.
+    ///
+    /// No-op on a GitHub-backed list: its rows sync from GitHub issues, so a
+    /// native empty-row create doesn't belong there and would create an orphan
+    /// the next sync discards. The rows-pane toolbar routes such lists to the
+    /// issue composer instead; this guard is defence-in-depth for any other
+    /// caller (menu command, keyboard shortcut).
     func addRow() async {
+        guard !isGitHubBacked else { return }
         let placeholderID = "tmp-" + UUID().uuidString
         let snapshot = rows
         let optimistic = ListRow(id: placeholderID, listID: listId, fields: [:])

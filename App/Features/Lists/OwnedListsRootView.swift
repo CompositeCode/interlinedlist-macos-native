@@ -194,7 +194,11 @@ struct OwnedListsRootView: View {
                 } label: {
                     Label("Issues", systemImage: "ladybug")
                 }
-                .disabled(viewModel.selectedListGitHubRepo == nil)
+                // Prefer the row-derived repo (the authoritative backing signal
+                // today) over the list-level field, which stays nil until the
+                // backend surfaces `githubSource` on lists (P3-C). This is what
+                // finally makes the already-built issue browser reachable.
+                .disabled((rowsViewModel?.gitHubRepo ?? viewModel.selectedListGitHubRepo) == nil)
                 .help("Browse and create GitHub issues for this list")
             }
         }
@@ -245,7 +249,7 @@ struct OwnedListsRootView: View {
             }
         }
         .sheet(isPresented: $showsIssues) {
-            if let environment, let repo = viewModel.selectedListGitHubRepo {
+            if let environment, let repo = rowsViewModel?.gitHubRepo ?? viewModel.selectedListGitHubRepo {
                 GitHubIssuesView(repo: repo, environment: environment)
             }
         }
