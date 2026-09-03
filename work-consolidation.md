@@ -2,9 +2,9 @@
 
 **Single source of truth for remaining work, in execution order.** This file consolidates and replaces six older docs (see [Provenance](#provenance)): the parity gap lists, the backend-blocker index + paste-ready prompts, the Document Sync Agent plan, and the v1 release checklist.
 
-- **Consolidated:** 2026-08-15 · **Branch:** `dev` · **Bundle:** `com.interlinedlist.macos` · **Team:** `BJA9558E4B`
+- **Consolidated:** 2026-08-15 · **Last synced to code:** 2026-09-02 · **Branch:** `dev` (⚠️ `main` is behind at the 2026-08-17 state — 30 commits back; catch it up before a release cut) · **Bundle:** `com.interlinedlist.macos` · **Team:** `BJA9558E4B`
 - **Structure:** [§1 Immediate work (do now)](#1-immediate-work--unblocked-do-now) → [§2 Blocked work (backend / spike-first)](#2-blocked-work--backend-gated-or-spike-first) → [§3 Final work (release & App Store)](#3-final-work--release--app-store)
-- **Test baseline (all green, 2026-08-16):** SyncAgent **53** · InterlinedKit **286** · InterlinedDomain **590** · InterlinedPersistence ~**135** · App target **566** (`xcodebuild test … CODE_SIGNING_ALLOWED=NO`). Packages run under plain `swift test`; the App test target needs the signing override on this machine.
+- **Test baseline (all green, re-run 2026-09-02):** SyncAgent **53** · InterlinedKit **317** · InterlinedDomain **628** · InterlinedPersistence **135** · App target **`** TEST SUCCEEDED **`** (≈611 tests, static count). Packages verified this session under plain `swift test`; the App target ran green under `xcodebuild test … CODE_SIGNING_ALLOWED=NO` (the signing override is still required on this machine). *(Prior 2026-08-16 baseline was Kit 286 / Domain 590 / App 566; growth is from G4 GitHub issues, sharing collaborators/invites/visibility, and timeline cross-post links.)*
 - **Distribution model:** notarized **`.pkg`** (+ `.dmg`) is the **current** ship path (closed-source private repo, no `LICENSE`). Mac App Store is a **later** path on a separate branch. Billing is handled by the web app — the native app has **no** in-app-purchase surface; it only *reads* `customerStatus` to gate subscriber features.
 
 ---
@@ -14,7 +14,7 @@
 The July web-parity batch (`feature/web-parity-batch-2026-07`) merged into `dev`. Shipped with services + App UI + tests:
 
 - **Messaging & safety:** Direct Messages (folders/threads/read-state/unread badge/image attachments) · Moderation (block/mute/report + Settings ▸ Blocked & Muted).
-- **Collaboration:** Share Links & resolve/claim for lists + documents (`interlinedlist://…/shared/{token}`) · Search (messages/lists/documents) · List Folders (cycle-safe tree).
+- **Collaboration:** Share Links & resolve/claim for lists + documents (`interlinedlist://…/shared/{token}`) · **per-person document collaborators, email invites (lists + documents), and a make-public visibility toggle** (PR #13, merged 2026-09-02) · Search (messages/lists/documents) · List Folders (cycle-safe tree).
 - **Reach & content:** X/Twitter cross-post (⚠️ field name unverified — see [§1](#g7-verify-x-twitter-cross-post-field-name)) · server document templates · rich public profiles (`GET /api/users/{username}`) · schema DSL `select`/`markdown` · cards + real-`Table` grid list views · Markdown export (lists) + CSV export.
 - **Auth:** native OAuth identity linking (`POST /api/auth/{provider}/link` + `interlinedlist://oauth/callback` + `ASWebAuthenticationSession`) — directly unblocks GitHub/X linking.
 - **Settings storage (2026-08-16):** server-synced account **Preferences** — the backend now accepts `POST /api/user/update` (previously 405). `UserSettings` domain model + mapper, `UserService.settings()`/`updateSettings()`, and a Settings ▸ **Preferences** pane (public-by-default, advanced post options, link previews, posts-per-page, private account) with change-gated Save. 9 tests. *Deferred:* `theme` and `viewingPreference` (valid value sets unconfirmed; PATCH omits them so they're never clobbered).
@@ -22,16 +22,25 @@ The July web-parity batch (`feature/web-parity-batch-2026-07`) merged into `dev`
 
 Milestones **M0–M7** feature work is complete; post-milestone items NW-1…NW-6, S1/S3/S4, B8 are done.
 
+**Merged since this doc was consolidated (2026-08-18 → 2026-09-02):**
+- **G4 · GitHub issue integration** (PR #12, merged 2026-08-18) — Kit + Domain client + the full App UI (issue browser in GitHub-backed lists, "create issue from a message", close/reopen + label/assignee editing). Client-complete; only the issue **update** and **comment** routes stay backend-blocked (see [§1 · G4](#g4-github-issue-integration) / [§2 · P1-H2](#p1-h2-github-issue-update-comment-routes)). Also in PR #12: G7 verify, G14 tail, ERD schema-entity view, timeline New Message button, G11a LinkedIn target, force-directed connections layout, Preferences pane, per-item Markdown export.
+- **Sharing collaborators / invites / visibility** (PR #13, merged 2026-09-02) — extends the G3 sharing group: per-person document collaborators (search/add/set-role/remove), email invites for lists **and** documents, and a make-public visibility toggle. Full stack (Kit `SharingEndpoint`/`SharingDTO`, Domain `Sharing` models + `SharingService`, App `DocumentCollaborators*`/`Invites*`/`Visibility*` views + VMs) with Kit/Domain/App tests. Create paths are subscriber-gated.
+- **Timeline cross-post destination links** (PR #14, merged 2026-09-02) — a message row links out to where it was cross-posted (Bluesky/Mastodon/X/LinkedIn external URLs) via the Domain `Message` cross-post projection + mappers.
+
+**Where we are now:** §1 (client-side parity) is effectively **exhausted** — every unblocked gap is built and merged; only tiny follow-ups remain (the G14 `ImagePrep` size-ceiling tail, and G4's two backend-blocked routes). The remaining levers are **§2** (backend-gated — nothing more buildable from the client until the backend moves; the one high-impact item is [P1-G](#p1-g-following-feed)) and **§3** (release engineering — the PKG/DMG ship path in [§3a](#3a-notarized-pkgdmg-release--the-current-ship-path), which is now the critical path to shipping). **Next phase: release engineering.**
+
 ---
 
 ## 1. Immediate work — unblocked, do now
 
 Everything here is client-side and buildable today (the backend already exists or none is needed). Ordered by value.
 
+> **Status 2026-09-02 — §1 is effectively done.** Every item below is built and merged to `dev`. The only open threads are (a) the small **G14** `ImagePrep` size-ceiling follow-up, and (b) **G4**'s issue **update**/**comment** routes, which are backend-blocked ([P1-H2](#p1-h2-github-issue-update-comment-routes)) — not a client gap. No further client-only parity work remains; pick up **§3 release** next.
+
 ### 1a. Parity features buildable now
 
 <a id="g4-github-issue-integration"></a>
-**G4 · GitHub issue integration** *(largest buildable parity gap; backend live)*
+**G4 · GitHub issue integration** — ✅ **App UI shipped (PR #12, merged 2026-08-18).** The Kit + Domain client and the full App UI (issue browser in GitHub-backed lists, "create issue from a message", close/reopen + label/assignee editing) are built and merged. **Remaining:** the issue **update** and **comment** routes 404/405 live and are pointed at documented-but-unverified paths pending backend confirmation ([P1-H2](#p1-h2-github-issue-update-comment-routes)); success-response envelopes still need a linked test account to exercise. Original scope note below for context.
 The `/api/github/*` routes are deployed (`GET /api/github/repos` → 400 "GitHub account not linked" — the route exists; 400 is just the unlinked state), and native OAuth linking already ships, so linking is no longer a blocker. Build the issue-write client: `GitHubEndpoint` (`repos`, `issues(repo:state:)`, `createIssue`, `updateIssue` PATCH labels/assignees, `comment`, `assignees`, `labels`, `nextIssueNumber`) → `GitHubService` (requires a linked identity; if unlinked, deep-link the existing native OAuth flow) → App ("Create issue from message" overflow action + issue browse/create/comment inside GitHub-backed lists + inline "Link GitHub" CTA). **Verify-first:** link the test account's GitHub identity once and observe the live request/response shapes before finalizing the decode paths (backend shape docs are requested in [§2 · P1-H](#p1-h-github-issue-shapes) but you can proceed by observation). **Size M.**
 
 > **Verify pass — route surface DONE, success shapes still need a linked account (2026-08-17).** The success-body decode can't be exercised (test account still unlinked: `GET /api/github/repos` → 400 "not linked"; linking needs the interactive OAuth flow). BUT unlinked route-surface probing found the client's **issue paths were structurally wrong** — G4 would have 404'd on every issue op regardless of linking:
