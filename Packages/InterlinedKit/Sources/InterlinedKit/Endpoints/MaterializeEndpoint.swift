@@ -11,14 +11,11 @@ import Foundation
 ///   unavailable"` / `"Document is unavailable"`, which confirms the ref shape
 ///   parses and that nothing is created on the failure path.
 ///
-/// ⚠️ **KNOWN UNRESOLVED — the `listConfig.fields` descriptor.** Every shape
-/// tried (`{key}`, `{key,type}`, `{key,label,type}`, `{name,type}`, bare
-/// strings) is rejected with the same `400 "Invalid list schema: Field at index
-/// 0 must have a 'key' property (string)"` — including payloads that plainly
-/// carry a string `key`. The message therefore does not describe the check that
-/// is failing, and no client-side guess has satisfied it. Until it is resolved
-/// (capture the web app's own successful request, or a backend answer), only the
-/// `.doc` target should be considered usable; `.list` and `.both` will fail.
+/// The `listConfig.fields` descriptor uses `propertyKey` / `propertyName` /
+/// `propertyType` / `sourceKey` — **not** the `key`/`label`/`type` shape the rest
+/// of the schema API uses, and not what the route's own error message implies.
+/// See `MaterializeField`; it was captured from the web app's real request after
+/// every guessed shape was rejected.
 public enum Materialize {
 
     /// `POST /api/materialize` — create a list and/or a document from a source.

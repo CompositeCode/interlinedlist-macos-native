@@ -43,6 +43,9 @@ final class MaterializeEndpointTests: XCTestCase {
         XCTAssertEqual(MaterializeTarget.allCases.map(\.rawValue), ["list", "doc", "both"])
         XCTAssertEqual(MaterializeListStyle.allCases.map(\.rawValue), ["bulleted", "numbered"])
         XCTAssertEqual(MaterializeRowDataStyle.allCases.map(\.rawValue), ["table", "inline", "paragraph"])
+        XCTAssertEqual(MaterializeFieldType.allCases.map(\.rawValue),
+                       ["text", "textarea", "number", "date", "datetime", "boolean",
+                        "select", "multiselect", "email", "url", "tel", "priority"])
     }
 
     // MARK: - Happy path
@@ -59,7 +62,7 @@ final class MaterializeEndpointTests: XCTestCase {
 
         for (source, expected) in cases {
             let (client, transport) = makeClient()
-            await transport.enqueue(.json(#"{"documentId":"d-new"}"#, status: 201))
+            await transport.enqueue(.json(#"{"document":{"id":"d-new","title":"Doc"}}"#, status: 201))
 
             _ = try await client.send(Materialize.create(MaterializeRequest(
                 target: .doc, source: source, docConfig: MaterializeDocConfig(title: "Doc")
@@ -80,14 +83,14 @@ final class MaterializeEndpointTests: XCTestCase {
 
     func test_givenBothTarget_whenSent_thenEncodesListAndDocConfigs() async throws {
         let (client, transport) = makeClient()
-        await transport.enqueue(.json(#"{"listId":"l-new","documentId":"d-new"}"#, status: 201))
+        await transport.enqueue(.json(#"{"list":{"id":"l-new","title":"From messages"},"document":{"id":"d-new","title":"From messages"}}"#, status: 201))
 
         let response = try await client.send(Materialize.create(MaterializeRequest(
             target: .both,
             source: .messages(ids: ["m1"]),
             listConfig: MaterializeListConfig(
                 title: "From messages", description: "desc", isPublic: true,
-                fields: [MaterializeField(key: "content", label: "Content", type: "text")],
+                fields: [MaterializeField(propertyKey: "content", propertyName: "Content", propertyType: .textarea)],
                 includeData: true
             ),
             docConfig: MaterializeDocConfig(
@@ -102,12 +105,18 @@ final class MaterializeEndpointTests: XCTestCase {
         XCTAssertEqual(list["title"] as? String, "From messages")
         XCTAssertEqual(list["isPublic"] as? Bool, true)
         XCTAssertEqual(list["includeData"] as? Bool, true)
-        XCTAssertEqual((list["fields"] as? [[String: Any]])?.first?["key"] as? String, "content")
+        let field = try XCTUnwrap((list["fields"] as? [[String: Any]])?.first)
+        XCTAssertEqual(field["propertyKey"] as? String, "content")
+        XCTAssertEqual(field["propertyName"] as? String, "Content")
+        XCTAssertEqual(field["propertyType"] as? String, "textarea")
+        XCTAssertEqual(field["sourceKey"] as? String, "content", "sourceKey defaults to propertyKey")
         let doc = try XCTUnwrap(json["docConfig"] as? [String: Any])
         XCTAssertEqual(doc["listStyle"] as? String, "numbered")
         XCTAssertEqual(doc["rowDataStyle"] as? String, "inline")
         XCTAssertEqual(doc["relativePath"] as? String, "notes/")
-        XCTAssertEqual(response.listId, "l-new")
+        XCTAssertEqual(response.list?.id, "l-new")
+        XCTAssertEqual(response.list?.title, "From messages")
+        XCTAssertEqual(response.listId, "l-new", "the nested id is surfaced flat for callers")
         XCTAssertEqual(response.documentId, "d-new")
     }
 
@@ -121,6 +130,46 @@ final class MaterializeEndpointTests: XCTestCase {
 
         let json = try await sentJSON(transport)
         XCTAssertNil(json["listConfig"], "An absent listConfig must not serialize as null")
+    }
+
+    /// Pinned to the payload captured from the web app on 2026-09-05. If this
+    /// drifts, Create-from silently stops matching the only shape the server
+    /// accepts — the route's error message will not tell you why.
+    func test_givenTheDefaultMessageColumns_whenEncoded_thenMatchesTheWebAppsPayloadExactly() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"{"listId":"l-new"}"#, status: 201))
+
+        _ = try await client.send(Materialize.create(MaterializeRequest(
+            target: .list,
+            source: .messages(ids: ["ba1e50cc-4aaf-48c4-b138-6945f6a5a876"]),
+            listConfig: MaterializeListConfig(
+                title: "Message by @adron",
+                isPublic: false,
+                fields: [
+                    MaterializeField(propertyKey: "content", propertyName: "Content", propertyType: .textarea),
+                    MaterializeField(propertyKey: "author", propertyName: "Author", propertyType: .text),
+                    MaterializeField(propertyKey: "posted", propertyName: "Posted", propertyType: .text),
+                    MaterializeField(propertyKey: "links", propertyName: "Links", propertyType: .textarea),
+                    MaterializeField(propertyKey: "tags", propertyName: "Tags", propertyType: .text)
+                ],
+                includeData: true
+            )
+        )))
+
+        let json = try await sentJSON(transport)
+        let list = try XCTUnwrap(json["listConfig"] as? [String: Any])
+        let fields = try XCTUnwrap(list["fields"] as? [[String: Any]])
+        XCTAssertEqual(fields.count, 5)
+        XCTAssertEqual(fields.map { $0["propertyKey"] as? String },
+                       ["content", "author", "posted", "links", "tags"])
+        XCTAssertEqual(fields.map { $0["propertyName"] as? String },
+                       ["Content", "Author", "Posted", "Links", "Tags"])
+        XCTAssertEqual(fields.map { $0["propertyType"] as? String },
+                       ["textarea", "text", "text", "textarea", "text"])
+        XCTAssertEqual(fields.map { $0["sourceKey"] as? String },
+                       ["content", "author", "posted", "links", "tags"])
+        XCTAssertEqual(list["includeData"] as? Bool, true)
+        XCTAssertEqual(list["isPublic"] as? Bool, false)
     }
 
     // MARK: - Invalid input
@@ -160,6 +209,22 @@ final class MaterializeEndpointTests: XCTestCase {
     }
 
     // MARK: - Empty / boundary
+
+    /// The live 201 nests the created object; a flat `listId` must still decode
+    /// so a later server-side flattening does not break the client.
+    func test_givenFlatIdResponse_whenDecoded_thenStillSurfacesTheId() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"{"listId":"l-flat"}"#, status: 201))
+
+        let response = try await client.send(Materialize.create(MaterializeRequest(
+            target: .list, source: .messages(ids: ["m1"]),
+            listConfig: MaterializeListConfig(
+                title: "T", fields: [MaterializeField(propertyKey: "content", propertyName: "Content")])
+        )))
+
+        XCTAssertEqual(response.listId, "l-flat")
+        XCTAssertNil(response.list)
+    }
 
     func test_givenEmptyResponseBody_whenDecoded_thenEveryIdIsNil() async throws {
         let (client, transport) = makeClient()

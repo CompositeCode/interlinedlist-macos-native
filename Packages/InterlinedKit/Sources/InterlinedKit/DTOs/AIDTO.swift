@@ -159,50 +159,106 @@ public struct AISuggestRequest: Encodable, Sendable, Equatable {
     }
 }
 
-/// `POST /api/ai/suggest` response — `{ artifact }`. The artifact is a preview:
-/// nothing is persisted until the same artifact is posted back to
-/// `POST /api/ai/generate`.
+/// `POST /api/ai/suggest` response. Captured live 2026-09-05 — the body is a
+/// full envelope, not the bare `{ artifact }` the web client destructures:
+///
+/// ```json
+/// { "ok": true, "feature": "writing_assist",
+///   "artifact": { "kind": "message", "content": "…" },
+///   "usage": { "inputTokens": 128, "outputTokens": 25, "model": "claude-sonnet-5" },
+///   "quota": { "usedToday": 1, "dailyLimit": 50 } }
+/// ```
+///
+/// `usage` and `quota` are worth surfacing: the user is spending their own
+/// provider key, so "3 of 50 today · claude-sonnet-5" belongs in the preview
+/// sheet rather than being discarded.
 public struct AISuggestResponse: Decodable, Sendable, Equatable {
+    public let ok: Bool?
+    public let feature: String?
     public let artifact: AIArtifactDTO?
+    public let usage: AIUsageDTO?
+    public let quota: AIStatusDTO.QuotaDTO?
 
-    public init(artifact: AIArtifactDTO? = nil) {
+    public init(
+        ok: Bool? = nil,
+        feature: String? = nil,
+        artifact: AIArtifactDTO? = nil,
+        usage: AIUsageDTO? = nil,
+        quota: AIStatusDTO.QuotaDTO? = nil
+    ) {
+        self.ok = ok
+        self.feature = feature
         self.artifact = artifact
+        self.usage = usage
+        self.quota = quota
     }
 }
 
-/// The polymorphic preview artifact. One decoder covers every feature because
-/// the server discriminates by `kind` only for `writingAssist`; the other
-/// features return their own top-level members. Every field is optional and the
-/// raw JSON is retained so an artifact can be replayed to `/api/ai/generate`
-/// byte-for-byte even if this client does not model one of its members.
+/// Token spend + model for one AI call, as reported by `suggest`.
+public struct AIUsageDTO: Decodable, Sendable, Equatable {
+    public let inputTokens: Int?
+    public let outputTokens: Int?
+    public let model: String?
+
+    public init(inputTokens: Int? = nil, outputTokens: Int? = nil, model: String? = nil) {
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.model = model
+    }
+}
+
+/// The polymorphic preview artifact. Every member is optional and the raw JSON
+/// is retained, so an artifact round-trips to `POST /api/ai/generate` verbatim
+/// even where this client has not modelled a member.
 ///
-/// Per feature (captured from the web client's rendering code):
-/// - `writingAssist` → `kind: "text"` + `content`, `kind: "thread"` + `parts`,
-///   or `kind: "tags"` + `tags`.
-/// - `messageSeries` → `items[].content`.
-/// - `articleSeries` → `documents[].title`.
-/// - `poweredDocument` → `title`, `outline`, `markdown`.
-/// - `poweredTemplate` → **unverified**; the members below are the modelled
-///   guess and unknown members survive in `raw`.
+/// Shapes captured live 2026-09-05, one `suggest` call per feature. Note the
+/// `kind` values are **not** what the web client's code implied — a rewrite
+/// answers `kind: "message"`, not `"text"`:
+///
+/// | feature | artifact |
+/// | --- | --- |
+/// | `writing_assist` (rewrite/tighten/expand/grammar) | `kind:"message"`, `content` |
+/// | `writing_assist` (tags) | `kind:"tags"`, `tags[]` |
+/// | `writing_assist` (thread) | `kind:"thread"`, `parts[]` — *inferred, not yet exercised* |
+/// | `message_series` | `kind:"message_series"`, `listTitle`, `items[{order,content,crossPostTargets[]}]` |
+/// | `article_series` | *unverified — the provider rejected the one probe with `502 provider_error`* |
+/// | `powered_template` | `kind:"list"`, `title`, `description`, `dsl{name,description,fields[]}`, `rows[]` |
+/// | `powered_document` | `kind:"document"`, `title`, `markdown`, `outline[]`, `isPublic` |
 public struct AIArtifactDTO: Codable, Sendable, Equatable {
     public let kind: String?
     public let content: String?
     public let parts: [String]?
     public let tags: [String]?
+    public let title: String?
+    public let description: String?
+    public let listTitle: String?
     public let items: [SeriesItemDTO]?
     public let documents: [SeriesDocumentDTO]?
-    public let title: String?
     public let outline: [String]?
     public let markdown: String?
+    public let isPublic: Bool?
+    /// `powered_template` only — the drafted list schema.
+    public let dsl: ListDSLDTO?
+    /// `powered_template` only — starter rows keyed by the `dsl` field keys.
+    public let rows: [[String: AIJSONValue]]?
     /// The artifact exactly as the server sent it, so `generate` can echo it back
     /// without lossy round-tripping through the modelled members.
     public let raw: AIJSONValue?
 
+    /// One part of a message series.
     public struct SeriesItemDTO: Codable, Sendable, Equatable {
+        public let order: Int?
         public let content: String?
-        public init(content: String? = nil) { self.content = content }
+        public let crossPostTargets: [String]?
+
+        public init(order: Int? = nil, content: String? = nil, crossPostTargets: [String]? = nil) {
+            self.order = order
+            self.content = content
+            self.crossPostTargets = crossPostTargets
+        }
     }
 
+    /// One document of an article series.
     public struct SeriesDocumentDTO: Codable, Sendable, Equatable {
         public let title: String?
         public let markdown: String?
@@ -212,8 +268,46 @@ public struct AIArtifactDTO: Codable, Sendable, Equatable {
         }
     }
 
+    /// The drafted list schema a `powered_template` artifact carries. The field
+    /// descriptor here — `{key, type, label, required, displayOrder}` — is the
+    /// platform's own schema-field shape.
+    public struct ListDSLDTO: Codable, Sendable, Equatable {
+        public let name: String?
+        public let description: String?
+        public let fields: [FieldDTO]?
+
+        public init(name: String? = nil, description: String? = nil, fields: [FieldDTO]? = nil) {
+            self.name = name
+            self.description = description
+            self.fields = fields
+        }
+
+        public struct FieldDTO: Codable, Sendable, Equatable {
+            public let key: String?
+            public let type: String?
+            public let label: String?
+            public let required: Bool?
+            public let displayOrder: Int?
+
+            public init(
+                key: String? = nil,
+                type: String? = nil,
+                label: String? = nil,
+                required: Bool? = nil,
+                displayOrder: Int? = nil
+            ) {
+                self.key = key
+                self.type = type
+                self.label = label
+                self.required = required
+                self.displayOrder = displayOrder
+            }
+        }
+    }
+
     private enum CodingKeys: String, CodingKey {
-        case kind, content, parts, tags, items, documents, title, outline, markdown
+        case kind, content, parts, tags, title, description, listTitle
+        case items, documents, outline, markdown, isPublic, dsl, rows
     }
 
     public init(
@@ -221,22 +315,32 @@ public struct AIArtifactDTO: Codable, Sendable, Equatable {
         content: String? = nil,
         parts: [String]? = nil,
         tags: [String]? = nil,
+        title: String? = nil,
+        description: String? = nil,
+        listTitle: String? = nil,
         items: [SeriesItemDTO]? = nil,
         documents: [SeriesDocumentDTO]? = nil,
-        title: String? = nil,
         outline: [String]? = nil,
         markdown: String? = nil,
+        isPublic: Bool? = nil,
+        dsl: ListDSLDTO? = nil,
+        rows: [[String: AIJSONValue]]? = nil,
         raw: AIJSONValue? = nil
     ) {
         self.kind = kind
         self.content = content
         self.parts = parts
         self.tags = tags
+        self.title = title
+        self.description = description
+        self.listTitle = listTitle
         self.items = items
         self.documents = documents
-        self.title = title
         self.outline = outline
         self.markdown = markdown
+        self.isPublic = isPublic
+        self.dsl = dsl
+        self.rows = rows
         self.raw = raw
     }
 
@@ -246,11 +350,16 @@ public struct AIArtifactDTO: Codable, Sendable, Equatable {
         content = try c.decodeIfPresent(String.self, forKey: .content)
         parts = try c.decodeIfPresent([String].self, forKey: .parts)
         tags = try c.decodeIfPresent([String].self, forKey: .tags)
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        listTitle = try c.decodeIfPresent(String.self, forKey: .listTitle)
         items = try c.decodeIfPresent([SeriesItemDTO].self, forKey: .items)
         documents = try c.decodeIfPresent([SeriesDocumentDTO].self, forKey: .documents)
-        title = try c.decodeIfPresent(String.self, forKey: .title)
         outline = try c.decodeIfPresent([String].self, forKey: .outline)
         markdown = try c.decodeIfPresent(String.self, forKey: .markdown)
+        isPublic = try c.decodeIfPresent(Bool.self, forKey: .isPublic)
+        dsl = try c.decodeIfPresent(ListDSLDTO.self, forKey: .dsl)
+        rows = try c.decodeIfPresent([[String: AIJSONValue]].self, forKey: .rows)
         // Capture the whole object so `generate` can echo it verbatim.
         raw = try? AIJSONValue(from: decoder)
     }
@@ -267,11 +376,16 @@ public struct AIArtifactDTO: Codable, Sendable, Equatable {
         try c.encodeIfPresent(content, forKey: .content)
         try c.encodeIfPresent(parts, forKey: .parts)
         try c.encodeIfPresent(tags, forKey: .tags)
+        try c.encodeIfPresent(title, forKey: .title)
+        try c.encodeIfPresent(description, forKey: .description)
+        try c.encodeIfPresent(listTitle, forKey: .listTitle)
         try c.encodeIfPresent(items, forKey: .items)
         try c.encodeIfPresent(documents, forKey: .documents)
-        try c.encodeIfPresent(title, forKey: .title)
         try c.encodeIfPresent(outline, forKey: .outline)
         try c.encodeIfPresent(markdown, forKey: .markdown)
+        try c.encodeIfPresent(isPublic, forKey: .isPublic)
+        try c.encodeIfPresent(dsl, forKey: .dsl)
+        try c.encodeIfPresent(rows, forKey: .rows)
     }
 }
 

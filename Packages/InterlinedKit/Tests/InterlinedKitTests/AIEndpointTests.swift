@@ -84,33 +84,89 @@ final class AIEndpointTests: XCTestCase {
         XCTAssertEqual((json?["context"] as? [String: Any])?["action"] as? String, "tighten")
     }
 
-    func test_givenEachArtifactKind_whenDecoded_thenExposesItsOwnPayload() async throws {
+    /// Fixtures below are trimmed copies of real 2026-09-05 `suggest` responses,
+    /// one call per feature, so a server-side rename fails here rather than
+    /// silently nil-ing out in the preview sheet.
+    func test_givenEachLiveArtifact_whenDecoded_thenExposesItsOwnPayload() async throws {
         let (client, transport) = makeClient()
 
-        await transport.enqueue(.json(#"{"artifact":{"kind":"tags","tags":["swift","macos"]}}"#))
-        let tags = try await client.send(AI.suggest(AISuggestRequest(feature: .writingAssist, input: "x")))
-        XCTAssertEqual(tags.artifact?.kind, "tags")
-        XCTAssertEqual(tags.artifact?.tags, ["swift", "macos"])
-
-        await transport.enqueue(.json(#"{"artifact":{"kind":"thread","parts":["one","two"]}}"#))
-        let thread = try await client.send(AI.suggest(AISuggestRequest(feature: .writingAssist, input: "x")))
-        XCTAssertEqual(thread.artifact?.parts, ["one", "two"])
-
-        await transport.enqueue(.json(#"{"artifact":{"items":[{"content":"part 1"},{"content":"part 2"}]}}"#))
-        let series = try await client.send(AI.suggest(AISuggestRequest(feature: .messageSeries, input: "x")))
-        XCTAssertEqual(series.artifact?.items?.compactMap(\.content), ["part 1", "part 2"])
-
-        await transport.enqueue(.json(#"{"artifact":{"documents":[{"title":"Part one"}]}}"#))
-        let articles = try await client.send(AI.suggest(AISuggestRequest(feature: .articleSeries, input: "x")))
-        XCTAssertEqual(articles.artifact?.documents?.compactMap(\.title), ["Part one"])
-
+        // writing_assist / tighten — note kind is "message", not "text".
         await transport.enqueue(.json(#"""
-        {"artifact":{"title":"On Swift","outline":["Intro","Body"],"markdown":"# On Swift"}}
+        { "ok": true, "feature": "writing_assist",
+          "artifact": { "kind": "message", "content": "This draft could be shortened." },
+          "usage": { "inputTokens": 128, "outputTokens": 25, "model": "claude-sonnet-5" },
+          "quota": { "usedToday": 1, "dailyLimit": 50 } }
+        """#))
+        let rewrite = try await client.send(AI.suggest(AISuggestRequest(
+            feature: .writingAssist, input: "x", context: .writing(.tighten))))
+        XCTAssertEqual(rewrite.ok, true)
+        XCTAssertEqual(rewrite.artifact?.kind, "message")
+        XCTAssertEqual(rewrite.artifact?.content, "This draft could be shortened.")
+        XCTAssertEqual(rewrite.usage?.model, "claude-sonnet-5")
+        XCTAssertEqual(rewrite.usage?.outputTokens, 25)
+        XCTAssertEqual(rewrite.quota?.usedToday, 1)
+        XCTAssertEqual(rewrite.quota?.dailyLimit, 50)
+
+        // writing_assist / tags
+        await transport.enqueue(.json(#"""
+        { "ok": true, "artifact": { "kind": "tags", "tags": ["SwiftUI", "macOS"] } }
+        """#))
+        let tags = try await client.send(AI.suggest(AISuggestRequest(
+            feature: .writingAssist, input: "x", context: .writing(.tags))))
+        XCTAssertEqual(tags.artifact?.tags, ["SwiftUI", "macOS"])
+
+        // message_series
+        await transport.enqueue(.json(#"""
+        { "ok": true, "artifact": { "kind": "message_series", "listTitle": "Shipping",
+          "items": [ { "order": 1, "content": "First", "crossPostTargets": ["bluesky"] },
+                     { "order": 2, "content": "Second", "crossPostTargets": [] } ] } }
+        """#))
+        let series = try await client.send(AI.suggest(AISuggestRequest(
+            feature: .messageSeries, input: "x", context: .series(channels: ["Bluesky"]))))
+        XCTAssertEqual(series.artifact?.listTitle, "Shipping")
+        XCTAssertEqual(series.artifact?.items?.compactMap(\.order), [1, 2])
+        XCTAssertEqual(series.artifact?.items?.first?.crossPostTargets, ["bluesky"])
+
+        // powered_template — the drafted schema plus starter rows
+        await transport.enqueue(.json(#"""
+        { "ok": true, "artifact": { "kind": "list", "title": "Talks", "description": "CFPs",
+          "dsl": { "name": "Talks", "description": "CFPs",
+                   "fields": [ { "key": "event", "type": "text", "label": "Event Name",
+                                 "required": true, "displayOrder": 0 } ] },
+          "rows": [ { "event": "PyCon US", "status": "Submitted" } ] } }
+        """#))
+        let template = try await client.send(AI.suggest(AISuggestRequest(feature: .poweredTemplate, input: "x")))
+        XCTAssertEqual(template.artifact?.kind, "list")
+        let field = try XCTUnwrap(template.artifact?.dsl?.fields?.first)
+        XCTAssertEqual(field.key, "event")
+        XCTAssertEqual(field.label, "Event Name")
+        XCTAssertEqual(field.required, true)
+        XCTAssertEqual(field.displayOrder, 0)
+        XCTAssertEqual(template.artifact?.rows?.first?["event"], .string("PyCon US"))
+
+        // powered_document
+        await transport.enqueue(.json(#"""
+        { "ok": true, "artifact": { "kind": "document", "title": "Contracts",
+          "markdown": "# Contracts", "outline": ["Intro", "Body"], "isPublic": false } }
         """#))
         let doc = try await client.send(AI.suggest(AISuggestRequest(feature: .poweredDocument, input: "x")))
-        XCTAssertEqual(doc.artifact?.title, "On Swift")
+        XCTAssertEqual(doc.artifact?.title, "Contracts")
         XCTAssertEqual(doc.artifact?.outline, ["Intro", "Body"])
-        XCTAssertEqual(doc.artifact?.markdown, "# On Swift")
+        XCTAssertEqual(doc.artifact?.isPublic, false)
+    }
+
+    func test_givenProviderRejection_whenSuggestSent_thenSurfacesProviderError() async throws {
+        let (client, transport) = makeClient()
+        // Observed live on an article_series probe: the provider itself refused.
+        await transport.enqueue(.json(#"{"error":"The AI provider rejected the request.","code":"provider_error"}"#, status: 502))
+
+        do {
+            _ = try await client.send(AI.suggest(AISuggestRequest(feature: .articleSeries, input: "x")))
+            XCTFail("Expected a thrown APIError")
+        } catch APIError.httpStatus(let code, let serverMessage) {
+            XCTAssertEqual(code, 502)
+            XCTAssertEqual(serverMessage, "The AI provider rejected the request.")
+        }
     }
 
     func test_givenArtifactWithUnmodelledMembers_whenEchoedToGenerate_thenRoundTripsVerbatim() async throws {
@@ -119,7 +175,7 @@ final class AIEndpointTests: XCTestCase {
         // survive the suggest -> generate round-trip, or a confirmed artifact would
         // be silently downgraded on the way back to the server.
         await transport.enqueue(.json(#"""
-        {"artifact":{"title":"Doc","markdown":"# Doc","tone":"wry","sourceIds":["a","b"]}}
+        {"ok":true,"artifact":{"title":"Doc","markdown":"# Doc","tone":"wry","sourceIds":["a","b"]}}
         """#))
         let suggested = try await client.send(AI.suggest(AISuggestRequest(feature: .poweredDocument, input: "x")))
         let artifact = try XCTUnwrap(suggested.artifact)

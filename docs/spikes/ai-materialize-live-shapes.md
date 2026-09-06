@@ -33,23 +33,40 @@ Mapped by probing `POST /api/ai/suggest` with `{"feature": "…"}` and **no `inp
 
 Everything else tried (`list_template`, `powered_list`, `ai_list`, `list_from_prompt`, `list_schema`, `list_assist`, `list_builder`, `list_starter`, `schema_suggest`) is rejected — the enum is exactly these five.
 
-## AI — `POST /api/ai/suggest` → `{ artifact }`
+## AI — `POST /api/ai/suggest` → the full envelope
 
-Request: `{ feature, input, context? }`. `suggest` **previews only**; nothing persists until the artifact is posted back to `generate`.
+Request: `{ feature, input, context? }`. `suggest` **previews only**; nothing persists until the artifact is posted back to `generate`. The response is a full envelope, not the bare `{artifact}` the web client destructures:
 
-| feature | `context` | artifact members |
+```json
+{ "ok": true, "feature": "writing_assist",
+  "artifact": { "kind": "message", "content": "…" },
+  "usage": { "inputTokens": 128, "outputTokens": 25, "model": "claude-sonnet-5" },
+  "quota": { "usedToday": 1, "dailyLimit": 50 } }
+```
+
+`usage` and `quota` are worth surfacing — the user is spending their own provider key.
+
+### Artifacts, captured one live call per feature (2026-09-05)
+
+| feature | `context` | artifact |
 | --- | --- | --- |
-| `writing_assist` | `{ action }` | `kind:"text"` + `content` · `kind:"thread"` + `parts[]` · `kind:"tags"` + `tags[]` |
-| `message_series` | `{ channels: ["Bluesky", …] }` | `items[].content` |
-| `article_series` | — | `documents[].title` |
-| `powered_document` | `{ mode }` (+ `listId` / `documentId` / `url`) | `title`, `outline`, `markdown` |
-| `powered_template` | **unverified** | **unverified** |
+| `writing_assist` rewrite/tighten/expand/grammar | `{ action }` | `kind:"message"`, `content` |
+| `writing_assist` tags | `{ action:"tags" }` | `kind:"tags"`, `tags[]` |
+| `writing_assist` thread | `{ action:"thread" }` | `kind:"thread"`, `parts[]` — **inferred from the web client, not exercised** |
+| `message_series` | `{ channels:["Bluesky"] }` | `kind:"message_series"`, `listTitle`, `items[{order, content, crossPostTargets[]}]` |
+| `article_series` | — | **unverified** — the one probe returned `502 {"error":"The AI provider rejected the request.","code":"provider_error"}` |
+| `powered_template` | — | `kind:"list"`, `title`, `description`, `dsl{name, description, fields[{key,type,label,required,displayOrder}]}`, `rows[{…}]` |
+| `powered_document` | `{ mode }` (+ `listId`/`documentId`/`url`) | `kind:"document"`, `title`, `markdown`, `outline[]`, `isPublic` |
+
+> **`kind` is not what the web client's code implied.** A rewrite answers `kind:"message"`, not `"text"` — the web app only tests for `"tags"` and `"thread"` and treats everything else as prose, so the real value never appears in its source. Anything inferred from that `else` branch is a guess; this table is what the server actually sent.
 
 `writing_assist` actions, with the web client's labels: `rewrite` "Rewrite" · `tighten` "Tighten to fit" · `expand` "Expand" · `grammar` "Fix grammar" · `thread` "Split into thread" · `tags` "Suggest tags".
 
 `powered_document` modes: `article` (topic) · `from_list` (+`listId`) · `from_article` (+`documentId`) · `research_url` (+`url`).
 
 Client-side gates the web app applies before calling: **2 words** minimum for the assistant, **10 words** for a series. Series parts are sized to the smallest selected cross-post limit — Bluesky 300, Mastodon 500, LinkedIn 3000, X/Twitter 280.
+
+**Cost of this mapping:** 6 `suggest` calls out of a 50/day quota. No `generate` calls were made, so the `created` envelope is still only known from the web client's reads.
 
 ## AI — `POST /api/ai/generate` → `{ created }`
 
@@ -71,20 +88,36 @@ Request: `{ target, source, listConfig?, docConfig? }`.
 
 Source refs were confirmed by sending well-formed refs with unknown ids: `404 "One or more messages are unavailable"` and `404 "Document is unavailable"` prove the shape parsed **and** that nothing was created.
 
-### ⚠️ Unresolved — `listConfig.fields` is rejected no matter what
+### `listConfig.fields` — resolved by capturing the web app's own request
 
-Every descriptor tried returns the identical `400`:
+Every guessed descriptor (`{key}`, `{key,type}`, `{key,label,type}`, `{key,name,type,nullable}`, bare strings) was rejected with:
 
 ```
 {"error":"Invalid list schema: Field at index 0 must have a 'key' property (string)","code":"bad_request"}
 ```
 
-Tried, all with a **real** message id so validation ran past source resolution: `[{"key":"content"}]`, `[{"key":"content","type":"text"}]`, `[{"key":"content","label":"Content","type":"text"}]`, `[{"key":"content","name":"Content","type":"text","nullable":true}]`, `[{"key":"Content","type":"text"}]`, `[{"key":"content","type":"string"}]`, `["content"]`, `[{"nokey":1}]`.
+**That message is misleading** — it describes the schema the server *derives*, not the request body, so a payload carrying a string `key` is rejected for not carrying a string `key`. Chasing it is a dead end.
 
-A payload that plainly carries a string `key` is rejected for not carrying a string `key`, so **the message does not describe the check that is failing** — the validator is reading a field array from somewhere other than `listConfig.fields`, or the descriptor needs a member no guess has hit. Consequences:
+The answer came from intercepting the web app's own request: `window.fetch` was patched in a logged-in tab to log the `/api/materialize` body and return a synthetic error **instead of** performing the call, so the real payload was captured with nothing created. The descriptor is:
 
-- **`target: "doc"` is usable. `target: "list"` and `"both"` are not**, until this is resolved.
-- Two ways to resolve it, in order of cost: **(a)** capture the web app's own successful request from a logged-in browser session (the payload is only assembled on submit, so it needs a real Create click, or a breakpoint on `fetch`); **(b)** ask the backend for the `listConfig.fields` contract — this is a new §2 backend ask if (a) fails.
+```json
+{ "propertyKey": "content", "propertyName": "Content",
+  "propertyType": "textarea", "sourceKey": "content" }
+```
+
+— not `key`/`label`/`type`. `sourceKey` names the source attribute the column is filled from; the web app sets it equal to `propertyKey` for every default column.
+
+`propertyType` values, from the column editor's `<select>`: `text` · `textarea` · `number` · `date` · `datetime` · `boolean` · `select` · `multiselect` · `email` · `url` · `tel` · `priority`.
+
+The default columns for a **message** source are Content (`textarea`), Author (`text`), Posted (`text`), Links (`textarea`), Tags (`text`).
+
+**Verified end to end 2026-09-05:** one real create against the test account with this shape returned `201` and the list was deleted immediately after.
+
+```json
+{"list":{"id":"8fad7ffb-…","title":"Recon verify (auto-deleted)"}}
+```
+
+Note the created object is **nested** under `list` — not a flat `listId`. `MaterializeResponse` decodes both and surfaces a flat `listId`/`documentId` either way.
 
 ## Reproducing
 

@@ -68,10 +68,6 @@ public enum MaterializeListStyle: String, Encodable, Sendable, Equatable, CaseIt
 }
 
 /// The `listConfig` half of the request — present when the target is `.list` or `.both`.
-///
-/// ⚠️ **`fields` is UNRESOLVED — see the note on `Materialize.create`.** The live
-/// route rejects every field descriptor tried so far, including ones that carry
-/// the `key` string its own error message asks for.
 public struct MaterializeListConfig: Encodable, Sendable, Equatable {
     public let title: String
     public let description: String?
@@ -95,16 +91,55 @@ public struct MaterializeListConfig: Encodable, Sendable, Equatable {
 }
 
 /// One column of the list a materialize call will create.
+///
+/// The member names are **not** the schema-field names used elsewhere in the
+/// API (`key`/`label`/`type`). Captured 2026-09-05 from the web app's own
+/// request: this route wants `propertyKey`/`propertyName`/`propertyType`, plus
+/// `sourceKey` naming the source attribute the column is filled from.
+///
+/// The server's rejection message for a wrong shape is actively misleading —
+/// it says a field "must have a 'key' property (string)" even when the payload
+/// carries one — because it describes the *derived* internal schema, not the
+/// request body. Do not chase that message; match this shape.
 public struct MaterializeField: Encodable, Sendable, Equatable {
-    public let key: String
-    public let label: String?
-    public let type: String?
+    /// Column key on the created list, e.g. `"content"`.
+    public let propertyKey: String
+    /// Human-readable column name, e.g. `"Content"`.
+    public let propertyName: String
+    /// One of `MaterializeFieldType`, sent as its raw value.
+    public let propertyType: MaterializeFieldType
+    /// The source attribute this column is filled from. Defaults to `propertyKey`,
+    /// which is what the web app sends for every default column.
+    public let sourceKey: String
 
-    public init(key: String, label: String? = nil, type: String? = nil) {
-        self.key = key
-        self.label = label
-        self.type = type
+    public init(
+        propertyKey: String,
+        propertyName: String,
+        propertyType: MaterializeFieldType = .text,
+        sourceKey: String? = nil
+    ) {
+        self.propertyKey = propertyKey
+        self.propertyName = propertyName
+        self.propertyType = propertyType
+        self.sourceKey = sourceKey ?? propertyKey
     }
+}
+
+/// Column types the Create-from column editor offers, in its own order.
+/// Captured 2026-09-05 from the modal's type `<select>`.
+public enum MaterializeFieldType: String, Encodable, Sendable, Equatable, CaseIterable {
+    case text
+    case textarea
+    case number
+    case date
+    case datetime
+    case boolean
+    case select
+    case multiselect
+    case email
+    case url
+    case tel
+    case priority
 }
 
 /// The `docConfig` half of the request — present when the target is `.doc` or `.both`.
@@ -150,23 +185,54 @@ public struct MaterializeRequest: Encodable, Sendable, Equatable {
     }
 }
 
-/// `POST /api/materialize` response. Members are optional because which ones
-/// come back depends on the target; the ids are what the UI navigates to.
+/// `POST /api/materialize` response. Shape verified live 2026-09-05 by a real
+/// create (since deleted): a list target answers `201`
+/// `{"list":{"id":"…","title":"…"}}` — the created object is **nested**, not a
+/// flat `listId`. The doc/both shapes are modelled the same way and tolerate a
+/// flat form too, so a server that flattens later still decodes.
 public struct MaterializeResponse: Decodable, Sendable, Equatable {
+    public let list: CreatedDTO?
+    public let document: CreatedDTO?
+
+    /// The created list's id, whether the server nested it or sent it flat.
     public let listId: String?
+    /// The created document's id, whether the server nested it or sent it flat.
     public let documentId: String?
-    public let listUrl: String?
-    public let documentUrl: String?
+
+    public struct CreatedDTO: Decodable, Sendable, Equatable {
+        public let id: String?
+        public let title: String?
+
+        public init(id: String? = nil, title: String? = nil) {
+            self.id = id
+            self.title = title
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case list, document, listId, documentId
+    }
 
     public init(
+        list: CreatedDTO? = nil,
+        document: CreatedDTO? = nil,
         listId: String? = nil,
-        documentId: String? = nil,
-        listUrl: String? = nil,
-        documentUrl: String? = nil
+        documentId: String? = nil
     ) {
-        self.listId = listId
-        self.documentId = documentId
-        self.listUrl = listUrl
-        self.documentUrl = documentUrl
+        self.list = list
+        self.document = document
+        self.listId = listId ?? list?.id
+        self.documentId = documentId ?? document?.id
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let list = try c.decodeIfPresent(CreatedDTO.self, forKey: .list)
+        let document = try c.decodeIfPresent(CreatedDTO.self, forKey: .document)
+        self.list = list
+        self.document = document
+        // Prefer the nested id the live route returns; fall back to a flat one.
+        self.listId = try c.decodeIfPresent(String.self, forKey: .listId) ?? list?.id
+        self.documentId = try c.decodeIfPresent(String.self, forKey: .documentId) ?? document?.id
     }
 }
