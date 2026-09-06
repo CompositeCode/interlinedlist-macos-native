@@ -27,7 +27,7 @@ Milestones **M0–M7** feature work is complete; post-milestone items NW-1…NW-
 - **Sharing collaborators / invites / visibility** (PR #13, merged 2026-09-02) — extends the G3 sharing group: per-person document collaborators (search/add/set-role/remove), email invites for lists **and** documents, and a make-public visibility toggle. Full stack (Kit `SharingEndpoint`/`SharingDTO`, Domain `Sharing` models + `SharingService`, App `DocumentCollaborators*`/`Invites*`/`Visibility*` views + VMs) with Kit/Domain/App tests. Create paths are subscriber-gated.
 - **Timeline cross-post destination links** (PR #14, merged 2026-09-02) — a message row links out to where it was cross-posted (Bluesky/Mastodon/X/LinkedIn external URLs) via the Domain `Message` cross-post projection + mappers.
 
-**Where we are now:** §1 (client-side parity) is effectively **exhausted** — every unblocked gap is built and merged; only tiny follow-ups remain (the G14 `ImagePrep` size-ceiling tail, and G4's two backend-blocked routes). The remaining levers are **§2** (backend-gated — nothing more buildable from the client until the backend moves; the one high-impact item is [P1-G](#p1-g-following-feed)) and **§3** (release engineering — the PKG/DMG ship path in [§3a](#3a-notarized-pkgdmg-release--the-current-ship-path), which is now the critical path to shipping). **Next phase: release engineering.**
+**Where we are now:** §1 (client-side parity) is effectively **exhausted** — every unblocked gap is built and merged; the one remaining thread is G4's two backend-blocked routes (the G14 `ImagePrep` tail previously listed here was verified already done on 2026-09-05). The remaining levers are **§2** (backend-gated — nothing more buildable from the client until the backend moves; the one high-impact item is [P1-G](#p1-g-following-feed)) and **§3** (release engineering — the PKG/DMG ship path in [§3a](#3a-notarized-pkgdmg-release--the-current-ship-path), which is now the critical path to shipping). **Next phase: release engineering.**
 
 ---
 
@@ -35,7 +35,7 @@ Milestones **M0–M7** feature work is complete; post-milestone items NW-1…NW-
 
 Everything here is client-side and buildable today (the backend already exists or none is needed). Ordered by value.
 
-> **Status 2026-09-02 — §1 is effectively done.** Every item below is built and merged to `dev`. The only open threads are (a) the small **G14** `ImagePrep` size-ceiling follow-up, and (b) **G4**'s issue **update**/**comment** routes, which are backend-blocked ([P1-H2](#p1-h2-github-issue-update-comment-routes)) — not a client gap. No further client-only parity work remains; pick up **§3 release** next.
+> **Status 2026-09-05 — §1 is DONE.** Every item below is built and merged to `dev`. The G14 `ImagePrep` size-ceiling tail listed here on 2026-09-02 was found already implemented when the docs were reconciled on 2026-09-05 (see G14 below) — the sole remaining thread is **G4**'s issue **update**/**comment** routes, which are backend-blocked ([P1-H2](#p1-h2-github-issue-update-comment-routes)) and not a client gap. **No client-only parity work remains; §3 release is the critical path.**
 
 ### 1a. Parity features buildable now
 
@@ -65,7 +65,7 @@ The `/api/github/*` routes are deployed (`GET /api/github/repos` → 400 "GitHub
 
 **G11a · LinkedIn posting target** — ✅ **Target-aware toggle shipped 2026-08-15.** `LinkedInService` is now wired into `AppEnvironment`; enabling the composer's LinkedIn cross-post toggle fetches `postingTargets()` and shows **which destination the post publishes to** ("Posting as …"), rolls the toggle back with a connect hint when the account has no LinkedIn target, and surfaces the org-scope-missing note — all mirroring the Bluesky/Mastodon readiness pattern and reusing the verified `crossPostToLinkedIn` request path. 6 composer tests. **Deferred (needs a verified wire shape):** a true multi-*target selector* and the `POST /api/linkedin/sync-pages` refresh both wait on a confirmed per-target request field; LinkedIn **org** pages are upstream-blocked (G11b).
 
-**G14 · `/api/limits` composer validation** — ✅ **Message-length validation shipped 2026-08-15.** New Kit `Limits` endpoint + `LimitsDTO`; domain `ContentLimits` model + `ContentLimitsService` (fetch with `ContentLimits.default` fallback); wired into the composer as a live character counter + publish gate (over-limit disables Post, turns the counter/border red). 13 tests (4 Kit + 4 Domain + 5 App). **Remaining follow-up (smaller):** feed the same `ContentLimits` into `ImagePrep` so the image/video *size* ceilings are server-driven too — today `ImagePrep` keeps the matching hard-coded constants (which equal the live values).
+**G14 · `/api/limits` composer validation** — ✅ **Message-length validation shipped 2026-08-15.** New Kit `Limits` endpoint + `LimitsDTO`; domain `ContentLimits` model + `ContentLimitsService` (fetch with `ContentLimits.default` fallback); wired into the composer as a live character counter + publish gate (over-limit disables Post, turns the counter/border red). 13 tests (4 Kit + 4 Domain + 5 App). **Tail follow-up — ✅ DONE (verified 2026-09-05).** The `ImagePrep` size ceilings are server-driven: `ContentLimits.imagePrepLimits` projects the live values into `ImagePrep.Limits`, and both upload paths consume it — `MessagesService.uploadImage` (`MessagesService.swift:650-654`) and `DocumentsService.uploadImage` (`DocumentsService.swift:297-300`) each resolve `await contentLimits?.limits() ?? .default` and pass `limits.imagePrepLimits` into `ImagePrep.prepare`. The hard-coded `ImagePrep.maxBytes` / `maxLongestEdgePixels` constants remain only as the `.default` fallback for when no provider is injected or the fetch fails. **G14 is fully closed.**
 
 ### 1b. Client-side follow-ups & polish (no backend)
 
@@ -247,6 +247,10 @@ Removing Sparkle breaks the PKG/DMG channel, so App Store work happens on a sepa
 ---
 
 ## Provenance
+
+> **Docs reconciliation 2026-09-05.** `docs/api-coverage.md` was walked row-by-row against the shipped code after its 2026-07-31 re-baseline rows were found never to have been rescored — **56 of 83 scoreable new rows were already shipped but still marked ☐/☐**. That pass also corrected eight endpoint paths the matrix had transcribed from OpenAPI rather than from the live-verified client (six Moderation, two GitHub), added six shipped `/invites` endpoints the matrix omitted entirely, rescored the removed G6 List Folders rows as non-targets, and recomputed the totals: the matrix is **187 rows**, not the "151 (~150)" previously carried here and in `docs/api-coverage.md`. **Any note in this file or elsewhere citing a "~151-endpoint API surface" is stale by that amount.** Details in footnote 14 of `docs/api-coverage.md`.
+
+
 
 This file consolidates and replaces the following, now removed (recoverable via git history):
 
