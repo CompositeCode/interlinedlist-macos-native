@@ -15,8 +15,8 @@
 // throws `SharingError.subscriberRequired` before any HTTP when the account
 // is not a subscriber. This view model catches that specific case and
 // raises `showSubscriberUpsell` instead of surfacing a raw error, so the
-// view can present an upsell rather than an error banner (mirrors
-// `ListFoldersViewModel`). Every other failure flows into `error`.
+// view can present an upsell rather than an error banner (the shared
+// subscriber-gate upsell pattern). Every other failure flows into `error`.
 //
 // Optimistic revoke: revoking prunes the link from the rendered list
 // immediately, calls the service, and restores the snapshot on failure
