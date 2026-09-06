@@ -202,25 +202,8 @@ final class AppEnvironment: ObservableObject {
     /// without a refetch.
     let directMessagesEventBus: DirectMessagesEventBus
 
-    /// Live list-folders surface (work-consolidation.md G6). Folders are
-    /// subscriber-gated on create, so the service is rebuilt on each
-    /// access with the current account's entitlements — mirroring
-    /// `liveEntitlements`, so a mid-session subscription change re-gates
-    /// folder creation without stale state. The read / rename / move /
-    /// delete paths are ungated and unaffected.
-    var listFolders: ListFoldersServicing {
-        ListFoldersService(
-            api: listFoldersAPI,
-            entitlements: EntitlementsService(user: currentUserStore.currentUser)
-        )
-    }
-
-    /// The shared kit-layer API client retained so `listFolders` can
-    /// rebuild the folders service with live entitlements on each access.
-    private let listFoldersAPI: APIClientProtocol
-
     /// Live share-links surface (work-consolidation.md G3). Creating a link is
-    /// subscriber-gated, so — exactly like `listFolders` — the service is
+    /// subscriber-gated, so the service is
     /// rebuilt on each access with the current account's entitlements, so a
     /// mid-session subscription change re-gates link creation without stale
     /// state. The list / resolve / revoke / claim paths are ungated and
@@ -272,7 +255,6 @@ final class AppEnvironment: ObservableObject {
         github: GitHubServicing,
         directMessages: DirectMessagesServicing,
         directMessagesEventBus: DirectMessagesEventBus,
-        listFoldersAPI: APIClientProtocol,
         sharingAPI: APIClientProtocol,
         shareBaseURL: URL
     ) {
@@ -302,7 +284,6 @@ final class AppEnvironment: ObservableObject {
         self.github = github
         self.directMessages = directMessages
         self.directMessagesEventBus = directMessagesEventBus
-        self.listFoldersAPI = listFoldersAPI
         self.sharingAPI = sharingAPI
         self.shareBaseURL = shareBaseURL
     }
@@ -448,15 +429,11 @@ final class AppEnvironment: ObservableObject {
         // decision-0001 session-only allowlist (`/api/exports/*`), already
         // routed by the shared `authTransport`.
         let exportsService = ExportsService(api: api)
-        // Web-parity batch (work-consolidation.md G5 / G2 / G6). All three reuse the
+        // Web-parity batch (work-consolidation.md G5 / G2). Both reuse the
         // same kit-layer `APIClient` like `lists` / `social` do — their
         // endpoints are already routed by the shared `authTransport`.
         //   • Search — full-text over messages / lists / documents (G5).
         //   • Moderation — blocks / mutes / reports (G2).
-        //   • List folders — the API client is retained on the environment
-        //     so `listFolders` can rebuild the service with live
-        //     entitlements per access (folders are subscriber-gated on
-        //     create, G6).
         let search = SearchService(api: api)
         let moderation = ModerationService(api: api)
         // (Content limits are constructed near the top so the media-upload
@@ -505,7 +482,6 @@ final class AppEnvironment: ObservableObject {
             github: github,
             directMessages: directMessages,
             directMessagesEventBus: directMessagesEventBus,
-            listFoldersAPI: api,
             // Share Links (work-consolidation.md G3) reuse the same kit-layer
             // `APIClient`; the API client is retained on the environment so
             // `sharing` can rebuild the service with live entitlements per

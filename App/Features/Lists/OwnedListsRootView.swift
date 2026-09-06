@@ -281,10 +281,6 @@ struct OwnedListsRootView: View {
             get: { viewModel.selectedListID },
             set: { viewModel.select(id: $0) }
         )) {
-            // Web-parity (work-consolidation.md G6) — folder tree above the lists.
-            // Self-contained section that owns its own folders view model.
-            ListFoldersSectionView()
-
             Section("Lists") {
             if viewModel.lists_loaded.isEmpty, viewModel.isLoading {
                 ProgressView()

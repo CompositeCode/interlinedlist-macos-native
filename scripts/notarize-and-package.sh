@@ -29,8 +29,11 @@
 #                                   Default: NotarizationProfile
 #   NOTARIZATION_PASSWORD           Fallback app-specific password when the
 #                                   keychain profile is absent.
-#   APP_VERSION                     Override CFBundleShortVersionString read
-#                                   from Info.plist (e.g. 0.0.1).
+#   APP_VERSION                     Override the release version (e.g. 0.0.1).
+#                                   Default: MARKETING_VERSION resolved from
+#                                   the Release build settings. (Info.plist is
+#                                   NOT read directly — it stores the
+#                                   unexpanded $(MARKETING_VERSION) variable.)
 #   RELEASE_LABEL                   Optional suffix appended to filenames only
 #                                   (not to the pkg version). E.g. "alpha"
 #                                   produces InterlinedList-0.0.1-alpha.pkg.
@@ -101,10 +104,28 @@ EOF
 : "${INSTALLER_IDENTITY:?INSTALLER_IDENTITY is required (Developer ID Installer). $(usage)}"
 
 # ─── Version + artifact names ────────────────────────────────────────────────
+# `App/Resources/Info.plist` stores CFBundleShortVersionString as the build
+# variable `$(MARKETING_VERSION)`, which Xcode expands only at build time.
+# Reading that file directly (PlistBuddy) yields the literal string
+# `$(MARKETING_VERSION)` rather than a version number, which would then flow
+# into the artifact filenames and into `pkgbuild --version`. Resolve the
+# setting through xcodebuild so a real number is used.
 if [[ -z "${APP_VERSION:-}" ]]; then
-    APP_VERSION="$(/usr/libexec/PlistBuddy \
-        -c 'Print :CFBundleShortVersionString' \
-        "$ROOT_DIR/App/Resources/Info.plist")"
+    APP_VERSION="$(xcodebuild \
+        -project "$PROJECT" \
+        -scheme "$SCHEME" \
+        -configuration "$CONFIGURATION" \
+        -showBuildSettings 2>/dev/null \
+        | awk -F' = ' '/[[:space:]]MARKETING_VERSION = /{gsub(/^[ \t]+/,"",$2); print $2; exit}')"
+fi
+
+# Fail loudly rather than producing a release named after an unexpanded build
+# variable (or an empty string) — both yield unusable artifacts, and the
+# failure would otherwise surface only after a full archive + notarization.
+if [[ -z "$APP_VERSION" || "$APP_VERSION" == *'$('* ]]; then
+    echo "!! Could not resolve a release version (got: '${APP_VERSION}')." >&2
+    echo "   Pass one explicitly, e.g. APP_VERSION=0.1.0 $(basename "$0")" >&2
+    exit 1
 fi
 
 if [[ -n "$RELEASE_LABEL" ]]; then
