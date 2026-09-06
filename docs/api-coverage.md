@@ -1,6 +1,6 @@
 # API Endpoint Coverage Matrix
 
-> **Re-baselined 2026-07-31 against the live `openapi.json` (~150 endpoints).** The **original 98 rows** below cover the 2026-06-11 API surface and keep their real ☑/◐/☐ implementation-and-test state unchanged. The live API has since grown to **~150 endpoints** across whole new feature areas the app has not yet implemented; those are captured in the new **[New endpoints (2026-07-31 re-baseline)](#new-endpoints-2026-07-31-re-baseline--not-yet-implemented)** section, each starting ☐/☐ and mapped to its gap ID (G1–G14) in **[`work-consolidation.md`](../work-consolidation.md)**. This file remains the home for the per-endpoint ☑/◐ **test** matrix; the maintenance rule below still governs when a new row may flip.
+> **Re-baselined 2026-07-31 against the live `openapi.json` (~150 endpoints).** The **original 98 rows** below cover the 2026-06-11 API surface and keep their real ☑/◐/☐ implementation-and-test state unchanged. The live API has since grown to **~150 endpoints** across whole new feature areas the app has not yet implemented; those are captured in the **[New endpoints](#new-endpoints-2026-07-31-re-baseline-audited-2026-09-05)** section, mapped to their gap IDs (G1–G14) in **[`work-consolidation.md`](../work-consolidation.md)**. **That section was audited against the code on 2026-09-05** — its rows had been left at their re-baseline ☐/☐ through the whole July/August parity effort; 53 were flipped and 10 missing endpoints added. This file remains the home for the per-endpoint ☑/◐ **test** matrix; the maintenance rule below still governs when a new row may flip.
 
 **Audience:** engineering (maintainers and implementing agents).
 
@@ -116,64 +116,85 @@ This matrix exists so that full coverage of the [InterlinedList API](https://int
 
 **Original-surface totals:** 98 endpoints — Auth 12 · User 8 · Messages 11 · Lists 21 (incl. 3 public) · List Connections 3 · Documents & Sync 14 · Follow 11 · Organizations 9 · Exports 4 · Notifications 3 · Public-only 2.
 
-## New endpoints (2026-07-31 re-baseline) — not yet implemented
+## New endpoints (2026-07-31 re-baseline, audited 2026-09-05)
 
-The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-consolidation.md)) plus `GET /api/openapi.json` show the surface has grown to ~150 endpoints across new feature areas the app has never implemented. Every endpoint below is **absent** from the original 98-row matrix; each starts **Implemented ☐ / Tested ☐** and maps to the gap ID (G1–G14) in [`work-consolidation.md`](../work-consolidation.md). **Backend** column: ✅ = confirmed live & Bearer-reachable in the 2026-07-31 probe; ⚠️ = live but constrained; *per OpenAPI, unverified* = present in the spec / named in the gap plan but **not** individually hit in the read-only probe (writes were deliberately not exercised). Rows flip ◐→☑ only under the same maintenance rule (a tested App-layer view model drives them end-to-end).
+The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-consolidation.md)) plus `GET /api/openapi.json` show the surface has grown well past the original 98 rows, across feature areas the app did not implement at re-baseline time. Every endpoint below is **absent** from the original 98-row matrix and maps to the gap ID (G1–G14) in [`work-consolidation.md`](../work-consolidation.md). **Backend** column: ✅ = confirmed live & Bearer-reachable in the 2026-07-31 probe; ⚠️ = live but constrained; *per OpenAPI, unverified* = present in the spec / named in the gap plan but **not** individually hit in the read-only probe (writes were deliberately not exercised).
+
+> **Audited 2026-09-05.** These rows had all been left at their re-baseline ☐/☐ even though the July/August parity batches shipped most of them. Each row was re-checked against the code — not against the plan — and flipped on this evidence:
+> - **Implemented ☑** — a request builder exists in `Packages/InterlinedKit/Sources/InterlinedKit/Endpoints/*.swift` **and** a domain service in `Packages/InterlinedDomain` calls it. The endpoint's live *path* was compared to the row's path; six Moderation rows and two GitHub rows carried OpenAPI-derived paths the client does not use, and were corrected to the routes the client actually builds (footnotes 14 and 15).
+> - **Tested ☑ / ◐ / ☐** — counted as the number of distinct `test_*` functions in `Packages/InterlinedKit/Tests` that exercise that endpoint's builder (`ContractTests`, which needs live credentials, excluded): **☑ ≥ 3** (a builder/happy case plus failure and empty-or-invalid coverage), **◐ 1–2** (partial quartet, per footnote 4), **☐ 0**. This measures the Kit-layer quartet the *Tested* column has always described; App-layer view-model coverage is not what this column counts.
+>
+> Ten implemented endpoints had no row at all and were added: **Email invites (G3)** ×6 and **User lookup & provider status** ×4.
 
 ### Direct Messages (G1) — 11
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/dm` | Direct Messages | ✅ | G1 | List DMs by folder (inbox/sent/deleted), cursor-paginated | ☐ | ☐ |
-| `POST /api/dm` | Direct Messages | ✅ | G1 | Send a DM to a mutual follower (≤8 image attachments) | ☐ | ☐ |
+| `GET /api/dm` | Direct Messages | ✅ | G1 | List DMs by folder (inbox/sent/deleted), cursor-paginated | ☑ | ☑ |
+| `POST /api/dm` | Direct Messages | ✅ | G1 | Send a DM to a mutual follower (≤8 image attachments) | ☑ | ☑ |
 | `POST /api/dm/images/upload` | Direct Messages | ✅ | G1 | Upload an image for a DM | ☐ | ☐ |
-| `GET /api/dm/recipients` | Direct Messages | ✅ | G1 | List eligible DM recipients (mutual followers) | ☐ | ☐ |
-| `GET /api/dm/thread/{username}` | Direct Messages | ✅ | G1 | Fetch the conversation thread with a user | ☐ | ☐ |
-| `GET /api/dm/thread/{username}/updates` | Direct Messages | ✅ | G1 | Poll for new messages in a thread since a marker | ☐ | ☐ |
-| `GET /api/dm/unread-count` | Direct Messages | ✅ | G1 | Unread-DM count for the badge | ☐ | ☐ |
+| `GET /api/dm/recipients` | Direct Messages | ✅ | G1 | List eligible DM recipients (mutual followers) | ☑ | ◐ |
+| `GET /api/dm/thread/{username}` | Direct Messages | ✅ | G1 | Fetch the conversation thread with a user | ☑ | ◐ |
+| `GET /api/dm/thread/{username}/updates` | Direct Messages | ✅ | G1 | Poll for new messages in a thread since a marker | ☑ | ◐ |
+| `GET /api/dm/unread-count` | Direct Messages | ✅ | G1 | Unread-DM count for the badge | ☑ | ◐ |
 | `GET /api/dm/{id}` | Direct Messages | ✅ | G1 | Fetch a single DM | ☐ | ☐ |
-| `POST /api/dm/{id}/read` | Direct Messages | ✅ | G1 | Mark a DM read | ☐ | ☐ |
-| `POST /api/dm/{id}/restore` | Direct Messages | ✅ | G1 | Restore a trashed DM (per-side) | ☐ | ☐ |
-| `POST /api/dm/{id}/trash` | Direct Messages | ✅ | G1 | Soft-delete a DM (per-side) | ☐ | ☐ |
+| `POST /api/dm/{id}/read` | Direct Messages | ✅ | G1 | Mark a DM read | ☑ | ◐ |
+| `POST /api/dm/{id}/restore` | Direct Messages | ✅ | G1 | Restore a trashed DM (per-side) | ☑ | ◐ |
+| `POST /api/dm/{id}/trash` | Direct Messages | ✅ | G1 | Soft-delete a DM (per-side) | ☑ | ◐ |
 
 ### Moderation (G2) — 10
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/user/blocks` | Moderation | ✅ | G2 | List blocked users (paginated) | ☐ | ☐ |
-| `POST /api/user/blocks` | Moderation | per OpenAPI, unverified | G2 | Block a user | ☐ | ☐ |
-| `DELETE /api/user/blocks/{username}` | Moderation | per OpenAPI, unverified | G2 | Unblock a user | ☐ | ☐ |
-| `GET /api/user/blocks/{username}` | Moderation | per OpenAPI, unverified | G2 | Is-blocking status for a user | ☐ | ☐ |
-| `GET /api/user/mutes` | Moderation | ✅ | G2 | List muted users (paginated) | ☐ | ☐ |
-| `POST /api/user/mutes` | Moderation | per OpenAPI, unverified | G2 | Mute a user | ☐ | ☐ |
-| `DELETE /api/user/mutes/{username}` | Moderation | per OpenAPI, unverified | G2 | Unmute a user | ☐ | ☐ |
-| `GET /api/user/mutes/{username}` | Moderation | per OpenAPI, unverified | G2 | Is-muting status for a user | ☐ | ☐ |
-| `POST /api/reports/user` | Moderation | per OpenAPI, unverified | G2 | Report a user (reason + detail) | ☐ | ☐ |
-| `POST /api/reports/message` | Moderation | per OpenAPI, unverified | G2 | Report a message (reason + detail) | ☐ | ☐ |
+| `GET /api/user/blocks` | Moderation | ✅ | G2 | List blocked users (paginated) | ☑ | ☑ |
+| `POST /api/users/{username}/block`¹⁴ | Moderation | ✅ | G2 | Block a user (mutual invisibility) | ☑ | ◐ |
+| `DELETE /api/users/{username}/block`¹⁴ | Moderation | ✅ | G2 | Unblock a user | ☑ | ◐ |
+| `GET /api/user/blocks/{username}` | Moderation | per OpenAPI, unverified | G2 | Is-blocking status for a user — **not implemented**; the app derives block state from the `GET /api/user/blocks` list it already caches | ☐ | ☐ |
+| `GET /api/user/mutes` | Moderation | ✅ | G2 | List muted users (paginated) | ☑ | ◐ |
+| `POST /api/users/{username}/mute`¹⁴ | Moderation | ✅ | G2 | Mute a user | ☑ | ◐ |
+| `DELETE /api/users/{username}/mute`¹⁴ | Moderation | ✅ | G2 | Unmute a user | ☑ | ◐ |
+| `GET /api/user/mutes/{username}` | Moderation | per OpenAPI, unverified | G2 | Is-muting status for a user — **not implemented**; the app derives mute state from the `GET /api/user/mutes` list it already caches | ☐ | ☐ |
+| `POST /api/users/{username}/report`¹⁴ | Moderation | ✅ | G2 | Report a user (reason + detail) | ☑ | ◐ |
+| `POST /api/messages/{id}/report`¹⁴ | Moderation | ✅ | G2 | Report a message (reason + detail) | ☑ | ◐ |
 
 ### Share Links & Collaborators (G3) — 17
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/lists/{id}/share-links` | Share Links & Collaborators | ✅ | G3 | List a list's tokenized share links | ☐ | ☐ |
-| `POST /api/lists/{id}/share-links` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Create a share link (role + expiry, subscriber-gated) | ☐ | ☐ |
-| `DELETE /api/lists/{id}/share-links/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Revoke a list share link | ☐ | ☐ |
-| `GET /api/lists/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Resolve a shared list by token (read-only viewer) | ☐ | ☐ |
-| `POST /api/lists/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Claim a shared list link | ☐ | ☐ |
+| `GET /api/lists/{id}/share-links` | Share Links & Collaborators | ✅ | G3 | List a list's tokenized share links | ☑ | ☑ |
+| `POST /api/lists/{id}/share-links` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Create a share link (role + expiry, subscriber-gated) | ☑ | ☑ |
+| `DELETE /api/lists/{id}/share-links/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Revoke a list share link | ☑ | ☑ |
+| `GET /api/lists/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Resolve a shared list by token (read-only viewer) | ☑ | ◐ |
+| `POST /api/lists/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Claim a shared list link | ☑ | ◐ |
 | `GET /api/lists/shared/{token}/data` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Read shared-list row data by token | ☐ | ☐ |
 | `GET /api/lists/watching` | Share Links & Collaborators | ✅ | G3 | "Shared-with-me" lists the user is watching | ☐ | ☐ |
-| `GET /api/documents/{id}/share-links` | Share Links & Collaborators | ✅ | G3 | List a document's share links | ☐ | ☐ |
-| `POST /api/documents/{id}/share-links` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Create a document share link (subscriber-gated) | ☐ | ☐ |
-| `DELETE /api/documents/{id}/share-links/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Revoke a document share link | ☐ | ☐ |
-| `GET /api/documents/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Resolve a shared document by token | ☐ | ☐ |
-| `POST /api/documents/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Claim a shared document link | ☐ | ☐ |
-| `GET /api/documents/{id}/collaborators` | Share Links & Collaborators | ✅ | G3 | List per-person document collaborators (paginated) | ☐ | ☐ |
-| `POST /api/documents/{id}/collaborators` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Add a document collaborator (by @handle + role) | ☐ | ☐ |
-| `GET /api/documents/{id}/collaborators/users` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Search users for collaborator invite | ☐ | ☐ |
-| `PUT /api/documents/{id}/collaborators/{userId}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Set a collaborator's role | ☐ | ☐ |
-| `DELETE /api/documents/{id}/collaborators/{userId}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Remove a document collaborator | ☐ | ☐ |
+| `GET /api/documents/{id}/share-links` | Share Links & Collaborators | ✅ | G3 | List a document's share links | ☑ | ☑ |
+| `POST /api/documents/{id}/share-links` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Create a document share link (subscriber-gated) | ☑ | ☑ |
+| `DELETE /api/documents/{id}/share-links/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Revoke a document share link | ☑ | ☑ |
+| `GET /api/documents/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Resolve a shared document by token | ☑ | ◐ |
+| `POST /api/documents/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Claim a shared document link | ☑ | ◐ |
+| `GET /api/documents/{id}/collaborators` | Share Links & Collaborators | ✅ | G3 | List per-person document collaborators (paginated) | ☑ | ☑ |
+| `POST /api/documents/{id}/collaborators` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Add a document collaborator (by @handle + role) | ☑ | ☑ |
+| `GET /api/documents/{id}/collaborators/users` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Search users for collaborator invite | ☑ | ☑ |
+| `PUT /api/documents/{id}/collaborators/{userId}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Set a collaborator's role | ☑ | ☑ |
+| `DELETE /api/documents/{id}/collaborators/{userId}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Remove a document collaborator | ☑ | ☑ |
 
-### List Folders (G6) — 4
+### Email invites (G3) — 6
+
+> **Added by the 2026-09-05 audit.** These six endpoints ship in `SharingEndpoint` + `SharingService` (PR #13, merged 2026-09-02) but had no matrix row — the re-baseline predates them.
+
+| Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
+| --- | --- | --- | --- | --- | --- | --- |
+| `GET /api/lists/{id}/invites` | Email invites | ✅ | G3 | Pending + accepted email invites for a list | ☑ | ☑ |
+| `POST /api/lists/{id}/invites` | Email invites | ✅ | G3 | Send a list email invite (owner + subscriber) | ☑ | ☑ |
+| `DELETE /api/lists/{id}/invites/{token}` | Email invites | ✅ | G3 | Revoke a pending list invite | ☑ | ◐ |
+| `GET /api/documents/{id}/invites` | Email invites | ✅ | G3 | Pending + accepted email invites for a document | ☑ | ☑ |
+| `POST /api/documents/{id}/invites` | Email invites | ✅ | G3 | Send a document email invite (owner + subscriber) | ☑ | ☑ |
+| `DELETE /api/documents/{id}/invites/{token}` | Email invites | ✅ | G3 | Revoke a pending document invite | ☑ | ☑ |
+
+### List Folders (G6) — 4 — **feature retired, will not be implemented**
+
+> **Retired 2026-09-04.** The List Folders feature (grouping *lists* into folders) was built and then removed (`1afb89d`, merged to `dev` as PR #19); `work-consolidation.md` no longer lists it as shipped. These four rows stay ☐/☐ **permanently** — they are not a coverage gap to close. Owned-list parent/child nesting via `parentID` is a different mechanism and is unaffected. Documents folders (`/api/documents/folders*`, in the original 98 rows) are a different feature and remain implemented.
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -186,22 +207,22 @@ The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-conso
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/messages/search` | Search | ✅ | G5 | Server-side message search (`?q=`; POST → 405, search is GET) | ☐ | ☐ |
-| `GET /api/lists/search` | Search | ✅ | G5 | Server-side list search | ☐ | ☐ |
-| `GET /api/documents/search` | Search | ✅ | G5 | Server-side document search | ☐ | ☐ |
+| `GET /api/messages/search` | Search | ✅ | G5 | Server-side message search (`?q=`; POST → 405, search is GET) | ☑ | ☑ |
+| `GET /api/lists/search` | Search | ✅ | G5 | Server-side list search | ☑ | ☑ |
+| `GET /api/documents/search` | Search | ✅ | G5 | Server-side document search | ☑ | ◐ |
 
 ### GitHub (G4) — 8
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/github/repos` | GitHub | ⚠️ | G4 | List linked-account repos (400 "not linked" until OAuth link) | ☐ | ☐ |
-| `GET /api/github/issues` | GitHub | per OpenAPI, unverified | G4 | List issues for a repo | ☐ | ☐ |
-| `POST /api/github/issues` | GitHub | per OpenAPI, unverified | G4 | Create an issue | ☐ | ☐ |
-| `PATCH /api/github/issues/{owner}/{repo}/{number}` | GitHub | per OpenAPI, unverified | G4 | Edit an issue (labels / assignees / state) | ☐ | ☐ |
-| `POST /api/github/issues/{owner}/{repo}/{number}/comments` | GitHub | per OpenAPI, unverified | G4 | Comment on an issue | ☐ | ☐ |
-| `GET /api/github/repos/{owner}/{repo}/assignees` | GitHub | per OpenAPI, unverified | G4 | List assignable users for a repo | ☐ | ☐ |
-| `GET /api/github/repos/{owner}/{repo}/labels` | GitHub | per OpenAPI, unverified | G4 | List labels for a repo | ☐ | ☐ |
-| `GET /api/github/repos/{owner}/{repo}/next-issue-number` | GitHub | per OpenAPI, unverified | G4 | Next issue number for a repo | ☐ | ☐ |
+| `GET /api/github/repos` | GitHub | ⚠️ | G4 | List linked-account repos (400 "not linked" until OAuth link) | ☑ | ☑ |
+| `GET /api/github/issues` | GitHub | per OpenAPI, unverified | G4 | List issues for a repo | ☑ | ☑ |
+| `POST /api/github/issues` | GitHub | per OpenAPI, unverified | G4 | Create an issue | ☑ | ☑ |
+| `PATCH /api/github/repos/{owner}/{repo}/issues/{number}`¹⁵ | GitHub | ⚠️ 404 live | G4 | Edit an issue (labels / assignees / state) | ☑ | ◐ |
+| `POST /api/github/repos/{owner}/{repo}/issues/{number}/comments`¹⁵ | GitHub | ⚠️ 404 live | G4 | Comment on an issue | ☑ | ◐ |
+| `GET /api/github/repos/{owner}/{repo}/assignees` | GitHub | per OpenAPI, unverified | G4 | List assignable users for a repo | ☑ | ◐ |
+| `GET /api/github/repos/{owner}/{repo}/labels` | GitHub | per OpenAPI, unverified | G4 | List labels for a repo | ☑ | ◐ |
+| `GET /api/github/repos/{owner}/{repo}/next-issue-number` | GitHub | per OpenAPI, unverified | G4 | Next issue number for a repo (speculative route; the service tolerates a 404) | ☑ | ◐ |
 
 ### Push (G9) — 2
 
@@ -221,8 +242,8 @@ The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-conso
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/linkedin/targets` | LinkedIn targets | ✅ | G11a | List LinkedIn posting targets (personal target present) | ☐ | ☐ |
-| `GET /api/linkedin/posting-targets` | LinkedIn targets | ✅ | G11a | Read enabled posting targets (`enabled:true`, `orgScopeMissing:true`) | ☐ | ☐ |
+| `GET /api/linkedin/targets` | LinkedIn targets | ✅ | G11a | List LinkedIn posting targets — **builder only**: `LinkedIn.targets` is builder-tested but no service calls it (the composer uses `postingTargets()`) | ☐ | ☐ |
+| `GET /api/linkedin/posting-targets` | LinkedIn targets | ✅ | G11a | Read enabled posting targets (`enabled:true`, `orgScopeMissing:true`) | ☑ | ☑ |
 | `PUT /api/linkedin/posting-targets` | LinkedIn targets | per OpenAPI, unverified | G11a | Set enabled posting targets | ☐ | ☐ |
 | `POST /api/linkedin/sync-pages` | LinkedIn targets | per OpenAPI, unverified | G11a | Refresh available LinkedIn pages | ☐ | ☐ |
 
@@ -230,18 +251,18 @@ The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-conso
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/auth/twitter/authorize` | Twitter / X auth | per OpenAPI, unverified | G7 | Begin X/Twitter OAuth authorization | ☐ | ☐ |
+| `GET /api/auth/twitter/authorize` | Twitter / X auth | per OpenAPI, unverified | G7 | Begin X/Twitter OAuth authorization | ☑ | ☑ |
 | `GET /api/auth/twitter/callback` | Twitter / X auth | per OpenAPI, unverified | G7 | X/Twitter OAuth callback | ☐ | ☐ |
-| `GET /api/auth/twitter/status` | Twitter / X auth | ✅ | G7 | X/Twitter link status (`configured:true`) | ☐ | ☐ |
+| `GET /api/auth/twitter/status` | Twitter / X auth | ✅ | G7 | X/Twitter link status — **builder only**: `Auth.twitterStatus` is builder-tested but no service calls it | ☐ | ☐ |
 
 ### Document templates & tree (G12) — 6
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/documents/templates` | Document templates & tree | ✅ | G12 | List server-side document templates (seeded + `_templates` folder) | ☐ | ☐ |
-| `POST /api/documents/templates/seed-defaults` | Document templates & tree | per OpenAPI, unverified | G12 | Seed the default template set | ☐ | ☐ |
+| `GET /api/documents/templates` | Document templates & tree | ✅ | G12 | List server-side document templates (seeded + `_templates` folder) | ☑ | ☑ |
+| `POST /api/documents/templates/seed-defaults` | Document templates & tree | per OpenAPI, unverified | G12 | Seed the default template set | ☑ | ◐ |
 | `GET /api/documents/from-template` | Document templates & tree | per OpenAPI, unverified | G12 | Preview a new document from a template | ☐ | ☐ |
-| `POST /api/documents/from-template` | Document templates & tree | per OpenAPI, unverified | G12 | Create a document from a template | ☐ | ☐ |
+| `POST /api/documents/from-template` | Document templates & tree | per OpenAPI, unverified | G12 | Create a document from a template | ☑ | ☑ |
 | `GET /api/documents/tree` | Document templates & tree | ✅ | G12 | One-call folders + documents sidebar payload | ☐ | ☐ |
 | `POST /api/documents/folders/{id}/documents` | Document templates & tree | per OpenAPI, unverified | G12 | Create a document directly inside a folder | ☐ | ☐ |
 
@@ -256,7 +277,7 @@ The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-conso
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/limits` | Utility / limits | ✅ | G14 | Quota / media limits (drives composer validation + plan card) | ☐ | ☐ |
+| `GET /api/limits` | Utility / limits | ✅ | G14 | Quota / media limits (drives composer validation + plan card) | ☑ | ☑ |
 | `GET /api/images/proxy` | Utility / limits | per OpenAPI, unverified | G14 | Image-proxy helper (rich previews / avatars) | ☐ | ☐ |
 
 ### Multi-account (G10) — 3
@@ -271,8 +292,8 @@ The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-conso
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/users/{username}` | Public profile | ✅ | D2 (fn 8) | Direct public-profile read (now live — replaces the decision-0002 fallback) | ☐ | ☐ |
-| `POST /api/auth/{provider}/link` | Auth (OAuth) | ✅ | fn 12 | Bearer native OAuth identity-link completion (endpoint live; native flow built on this branch) | ☐ | ☐ |
+| `GET /api/users/{username}` | Public profile | ✅ | D2 (fn 8) | Direct public-profile read (now live — replaces the decision-0002 fallback) | ☑ | ☑ |
+| `POST /api/auth/{provider}/link` | Auth (OAuth) | ✅ | fn 12 | Bearer native OAuth identity-link completion (endpoint live; native flow built on this branch) | ☑ | ☑ |
 
 ### Messages & auth drift additions (D1 / D3 / new methods on existing paths) — 4
 
@@ -285,9 +306,24 @@ New HTTP methods / paths on already-listed resource families, surfaced by the re
 | `POST /api/lists/{id}/watchers` | Lists | per OpenAPI, unverified | — | Invite a watcher via POST (matrix has `PUT …/watchers/{userId}`) | ☐ | ☐ |
 | `POST /api/auth/verify-email-change` | Auth | per OpenAPI, unverified | — | Confirm a pending email-change (pairs with existing `change-email/request`) | ☐ | ☐ |
 
-**New-endpoints subtotal:** 53 rows — Direct Messages 11 · Moderation 10 · Share Links & Collaborators 17 · List Folders 4 · Search 3 · GitHub 8 · Push 2 · Stripe/Billing 2 · LinkedIn targets 4 · Twitter/X auth 3 · Document templates & tree 6 · Document presence 2 · Utility/limits 2 · Multi-account 3 · Public profile & OAuth-link (D2 / fn 12) 2 · Messages & auth drift additions 4.
+### User lookup & provider status — 4
 
-**Re-baseline grand total:** **98 original + 53 new = 151 endpoints** (~150 as reported in [`work-consolidation.md`](../work-consolidation.md)). Original 98 keep their real implementation/test state (98 implemented; 74 ☑ / 18 ◐ / 6 ☐ tested as of Wave 8); all 53 new rows start ☐ Implemented / ☐ Tested.
+> **Added by the 2026-09-05 audit.** Implemented in `UserEndpoint` / `AuthEndpoint` and consumed by `UserService`, but never carried a matrix row.
+
+| Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
+| --- | --- | --- | --- | --- | --- | --- |
+| `GET /api/users/search` | User | ✅ | — | Search users by handle (collaborator / invite pickers) | ☑ | ◐ |
+| `GET /api/users/lookup` | User | ✅ | — | Resolve a single `@handle` to a user | ☑ | ◐ |
+| `GET /api/auth/bluesky/status` | Auth (OAuth) | ✅ | NW-4 | Whether Bluesky OAuth is configured on the server | ☑ | ◐ |
+| `GET /api/auth/mastodon/status` | Auth (OAuth) | ✅ | NW-4 | Whether Mastodon OAuth is configured for an instance | ☑ | ◐ |
+
+**New-endpoints subtotal:** **93 rows** — Direct Messages 11 · Moderation 10 · Share Links & Collaborators 17 · Email invites 6 · List Folders 4 (retired) · Search 3 · GitHub 8 · Push 2 · Stripe/Billing 2 · LinkedIn targets 4 · Twitter/X auth 3 · Document templates & tree 6 · Document presence 2 · Utility/limits 2 · Multi-account 3 · Public profile & OAuth-link (D2 / fn 12) 2 · Messages & auth drift additions 4 · User lookup & provider status 4. *(The 2026-07-31 entry called this "53 rows" while its own per-area figures already summed to 83; the count was never recomputed. 83 + the 10 rows this audit added = 93.)*
+
+**New-endpoints state after the 2026-09-05 audit:** 61 of 93 Implemented ☑ · 31 Tested ☑ · 30 Tested ◐ · 30 ☐/☐ · 2 out of scope (—). Of the 30 still ☐/☐: 4 are the **retired** List Folders rows (never to be built), 9 are backend-gated (Push 2, Multi-account 3, Document presence 2, LinkedIn write/sync 2), and the rest are unbuilt client gaps (DM image upload + single-DM read, `GET /api/lists/watching`, shared-list row data, document tree, the four drift rows, `GET /api/images/proxy`, block/mute status reads).
+
+**Matrix grand total:** **98 original + 93 new = 191 rows.** Original 98 keep their implementation/test state (98 implemented; 74 ☑ / 18 ◐ / 6 ☐ tested as of Wave 8); the new section is 61 ☑ implemented / 31 ☑ + 30 ◐ tested after the 2026-09-05 audit.
+
+> **Row count ≠ live endpoint count.** 191 rows is what this matrix holds, not a census of the live API. Rows can pair with one live route more than once (the "Messages & auth drift additions" rows are new *verbs* on paths that already have rows), the retired List Folders rows describe routes the app will never call, and the last live inventory (`GET /api/openapi.json`, 2026-07-31) reported ~150 endpoints. A fresh probe is needed before any claim about total live API coverage.
 
 ## Footnotes and assumptions
 
@@ -298,12 +334,15 @@ New HTTP methods / paths on already-listed resource families, surfaced by the re
 5. `POST /api/auth/login` (cookie-session credential exchange) was deferred through Waves 1–7 (`NullSessionEstablisher` stub). **Resolved Wave 8.1 (2026-07-03):** `LiveSessionEstablisher` + `CredentialStore` + `KeychainCredentialStore` now implement the lazy `POST /api/auth/login` path; `AuthService.signIn` persists credentials to `KeychainCredentialStore` so the establisher can re-authenticate on the next `.session` call. `LiveSessionEstablisherTests` covers the full quartet (happy 200/204, no-credentials, server 401, server 500, transport failure). Row flipped to ☑/☑; this footnote is resolved.
 6. `POST /api/auth/register` ships as `AuthService.register` and is exercised by the live `ContractTests` when `INTERLINEDLIST_EMAIL` / `INTERLINEDLIST_PASSWORD` are present, but has no stubbed unit-test cases yet (only `signIn` has dedicated unit tests in `AuthServiceTests`). Tested ☐ until at least happy + invalid + failure + empty/boundary unit tests are added (likely in the onboarding-feature wave).
 7. `GET /api/user/organizations` lives in `InterlinedKit.User.organizations()` (not `Organizations.*`) because the live API path is `/api/user/organizations`, not `/api/organizations`. Planned-service column corrected from `OrgService` to `UserService¹` in Wave 1 to match the actual implementation.
-8. **~~No public profile read endpoint exists on the live API.~~ RESOLVED 2026-07-31 — the endpoint now exists.** *(Historical:* the 2026-06-21 kit-gap spike found every variation of `GET /api/users/[username]` returned 404, so `SocialService.profile(username:)` fell back — per decision [`0002-public-profile-fallback`](decisions/0002-public-profile-fallback.md) — to the embedded `{ id, username, displayName, avatar }` author object on the first message from `GET /api/user/[username]/messages`.*)* The 2026-07-31 live probe ([`work-consolidation.md`](../work-consolidation.md)) confirms `GET /api/users/{username}` now returns a **real public profile** (`/api/users/messenger` → 200). The direct-read row is added in the [New endpoints re-baseline](#new-endpoints-2026-07-31-re-baseline--not-yet-implemented) section under **Public profile & multi-account (migration D2)** at ☐/☐; migration **D2** ([`work-consolidation.md`](../work-consolidation.md)) tracks replacing the decision-0002 fallback with the direct call (keep the fallback only for pre-migration servers). When that row is implemented and view-model-tested it flips per the maintenance rule.
+8. **~~No public profile read endpoint exists on the live API.~~ RESOLVED 2026-07-31 — the endpoint now exists.** *(Historical:* the 2026-06-21 kit-gap spike found every variation of `GET /api/users/[username]` returned 404, so `SocialService.profile(username:)` fell back — per decision [`0002-public-profile-fallback`](decisions/0002-public-profile-fallback.md) — to the embedded `{ id, username, displayName, avatar }` author object on the first message from `GET /api/user/[username]/messages`.*)* The 2026-07-31 live probe ([`work-consolidation.md`](../work-consolidation.md)) confirms `GET /api/users/{username}` now returns a **real public profile** (`/api/users/messenger` → 200). The direct-read row is added in the [New endpoints re-baseline](#new-endpoints-2026-07-31-re-baseline-audited-2026-09-05) section under **Public profile & multi-account (migration D2)** at ☐/☐; migration **D2** ([`work-consolidation.md`](../work-consolidation.md)) tracks replacing the decision-0002 fallback with the direct call (keep the fallback only for pre-migration servers). When that row is implemented and view-model-tested it flips per the maintenance rule.
 9. **M3 reachable but not exercised by a tested App-layer view model this wave.** Per Wave 1 footnote 4, a row only flips ◐⁴ → ☑ when an App-layer consumer drives it end-to-end under test. Four Lists rows are wired through `ListsService` and reachable from the running app but their consuming UX was held back to a polish slice this wave: `GET /api/lists/[id]` and `PUT /api/lists/[id]` (the detail-rename / single-list-refresh paths — rename UX deferred), `GET /api/lists/[id]/data/[rowId]` (single-row hydration — `RowInspectorView` reads from the already-paginated `ListRowsViewModel.rows` array), and `GET /api/lists/[id]/watchers` (the watcher pagination envelope — `WatchersView` consumes `/users` only this wave). These rows stay ◐⁴ until the next M3 polish wave consumes them through a tested view model. The Wave 1 footnote-4 backfill rule still applies.
 10. **M4 detail-read rows reachable but not view-model-tested this wave.** Same pattern as footnote 9, applied to Documents. `GET /api/documents/[id]` and `GET /api/documents/folders/[id]` are wired through `DocumentsService.document(id:)` / `DocumentsService.folder(id:)` and reachable from the running app, but the Wave 5.3 App-layer view models (`DocumentsListViewModel`, `DocumentEditorViewModel`, `FolderTreeViewModel`) consume documents and folders from the **list** payload (`GET /api/documents`, `GET /api/documents/folders[/[id]/documents]`) and the **sync delta** payload rather than re-reading by id. The detail-read endpoints stay ◐⁴ until a polish slice consumes them through a tested view-model path (a likely candidate: a single-document deep-link / quick-look refresh, or a focused folder-rename inspector that re-hydrates from `folder(id:)`). The Wave 1 footnote-4 backfill rule still applies.
 11. **M5 follower-removal reachable but not view-model-tested this wave.** Same pattern as footnotes 9 and 10, applied to Follow. `POST /api/follow/[userId]/remove` (the "remove a user from **my** followers" action — distinct from `DELETE /api/follow/[userId]`, which unfollows someone I follow) is wired through `SocialService.removeFollower(userId:)` and reachable from the running app, but no Wave 6.3 view model exercises it through a tested path: the Followers tab in `SocialRosterRootView` displays the roster and approves/rejects pending requests, but does not yet surface a "remove this follower" action against an already-accepted follower. The row stays ◐⁴ until a polish slice (most likely a `SocialRosterRowViewModel.removeFollower` action behind a context menu on the Followers tab) consumes it. The Wave 1 footnote-4 backfill rule still applies.
-12. **OAuth `authorize` builders Implemented (Wave 7).** The five M6 OAuth rows (`GET /api/auth/{github,mastodon,bluesky,linkedin}/authorize` and `GET /api/auth/linkedin/status`) gained Kit request builders in Wave 7 (`Auth.authorize(provider:link:instance:)`, `Auth.linkedinStatus()`, the `OAuthProvider` enum, and the `LinkedInStatusResponse` DTO, with 13 builder tests), so their **Implemented** column is ☑. **UPDATE 2026-07-31 — native OAuth identity linking is now BUILT on `feature/web-parity-batch-2026-07`, so the "blocked upstream" note is resolved** ([`work-consolidation.md`](../work-consolidation.md)): `Auth.linkIdentity` → `POST /api/auth/{provider}/link`, `UserService.linkIdentityNative`, a registered `interlinedlist://oauth/callback` custom scheme, and `ASWebAuthenticationSession` now let the app complete the flow natively rather than only handing `…/authorize?link=true` to the browser. The bearer `POST /api/auth/{provider}/link` completion endpoint that footnote 12 said "does not exist" is live and consumed; the new `POST /api/auth/{provider}/link` row is added in the [New endpoints re-baseline](#new-endpoints-2026-07-31-re-baseline--not-yet-implemented) section under **Public profile & multi-account**. The five original `authorize`/`status` rows keep their historical Tested ☐ state here (their per-endpoint completion tests are backfilled with the native-linking work); flips follow the maintenance rule once a view-model test drives them end-to-end.
+12. **OAuth `authorize` builders Implemented (Wave 7).** The five M6 OAuth rows (`GET /api/auth/{github,mastodon,bluesky,linkedin}/authorize` and `GET /api/auth/linkedin/status`) gained Kit request builders in Wave 7 (`Auth.authorize(provider:link:instance:)`, `Auth.linkedinStatus()`, the `OAuthProvider` enum, and the `LinkedInStatusResponse` DTO, with 13 builder tests), so their **Implemented** column is ☑. **UPDATE 2026-07-31 — native OAuth identity linking is now BUILT on `feature/web-parity-batch-2026-07`, so the "blocked upstream" note is resolved** ([`work-consolidation.md`](../work-consolidation.md)): `Auth.linkIdentity` → `POST /api/auth/{provider}/link`, `UserService.linkIdentityNative`, a registered `interlinedlist://oauth/callback` custom scheme, and `ASWebAuthenticationSession` now let the app complete the flow natively rather than only handing `…/authorize?link=true` to the browser. The bearer `POST /api/auth/{provider}/link` completion endpoint that footnote 12 said "does not exist" is live and consumed; the new `POST /api/auth/{provider}/link` row is added in the [New endpoints re-baseline](#new-endpoints-2026-07-31-re-baseline-audited-2026-09-05) section under **Public profile & multi-account**. The five original `authorize`/`status` rows keep their historical Tested ☐ state here (their per-endpoint completion tests are backfilled with the native-linking work); flips follow the maintenance rule once a view-model test drives them end-to-end.
 13. **M6 organization-read rows reachable but not view-model-tested this wave.** Same pattern as footnotes 9, 10, and 11, applied to Organizations. Two OrgService read rows are wired and reachable but not driven by a tested App-layer view model this wave: `GET /api/organizations` (the *list-all-orgs* variant) — the Wave 7.3 Organizations UI lists the current user's orgs through `UserService.organizations()` (`GET /api/user/organizations`) instead, so the `OrgService` list-all path stays unconsumed; and `GET /api/organizations/[id]/users` (`OrgService.users(of:)`) — the member roster is rendered from `GET /api/organizations/[id]/members` (`OrgMembersViewModel`), leaving the `/users` projection unconsumed. Both rows stay ◐⁴ until a polish slice consumes them through a tested view model. The Wave 1 footnote-4 backfill rule still applies.
+
+14. **Moderation write routes: the client uses the live-documented paths, not the OpenAPI-derived ones (2026-09-05 audit).** The 2026-07-31 re-baseline listed the block/mute/report writes as `POST /api/user/blocks`, `DELETE /api/user/blocks/{username}`, `POST /api/user/mutes`, `DELETE /api/user/mutes/{username}`, `POST /api/reports/user`, and `POST /api/reports/message`. `Packages/InterlinedKit/Sources/InterlinedKit/Endpoints/ModerationEndpoint.swift` builds `POST`/`DELETE /api/users/{username}/block`, `POST`/`DELETE /api/users/{username}/mute`, `POST /api/users/{username}/report`, and `POST /api/messages/{id}/report` instead — paths verified against the live `/help/api/moderation` docs and the 2026-07-31 probe. The six rows were corrected to the implemented routes; the two **status-read** rows (`GET /api/user/blocks/{username}`, `GET /api/user/mutes/{username}`) have no builder and stay ☐ — the app derives per-user block/mute state from the two list reads it already caches. Only the *list* reads (`GET /api/user/blocks`, `GET /api/user/mutes`) were ever under the `/api/user/…` prefix, and those rows are unchanged.
+15. **GitHub issue update / comment: builders ship, routes 404 live (2026-09-05 audit).** `GitHub.updateIssue` and `GitHub.comment` are implemented, DTO-decoded, and service-wired, so their **Implemented** box is ☑ — but both routes 404 against the live API and the flat `/api/github/issues` collection rejects `PATCH`/`PUT` (405). The endpoint file carries a ⚠️ ROUTE UNVERIFIED note at each builder rather than a guess, and `work-consolidation.md` §2 · P1-H2 tracks the backend confirmation. Their row paths were also corrected from the re-baseline's `/api/github/issues/{owner}/{repo}/{number}[/comments]` to the nested `/api/github/repos/{owner}/{repo}/issues/{number}[/comments]` the client actually builds. **Implemented ☑ here means the client code exists — it does not mean the call succeeds against the live server.**
 
 ## Cross-check against PLAN.md §1 (2026-06-11)
 
@@ -313,6 +352,8 @@ New HTTP methods / paths on already-listed resource families, surfaced by the re
 - PLAN.md §4's "Session-only" list (replies, digs, follow, organizations, notifications, document CRUD) matches the live annotations. The live reference additionally marks the User group's write endpoints and Exports as Session — the M0 spike should probe these groups too.
 
 ## Update history
+
+- **2026-09-05 — New-endpoints section audited against the code.** Every row in the [New endpoints](#new-endpoints-2026-07-31-re-baseline-audited-2026-09-05) section had sat at its re-baseline ☐ Implemented / ☐ Tested since 2026-07-31, while the July and August parity batches (PRs #6, #12, #13, #14) shipped most of them — the matrix was the last artifact still describing the pre-parity state. Each row was re-derived from the repository, not from the plan: **Implemented ☑** where a builder exists in `InterlinedKit/Endpoints/*.swift` **and** an `InterlinedDomain` service calls it; **Tested** graded by counting distinct `test_*` functions in `Packages/InterlinedKit/Tests` that exercise the builder (`ContractTests` excluded — it needs live credentials): ☑ ≥ 3, ◐ 1–2, ☐ 0. **53 rows flipped**; **10 implemented endpoints that had no row at all were added** (Email invites ×6 — `GET`/`POST /api/{lists,documents}/{id}/invites` and their revokes, from PR #13; User lookup & provider status ×4 — `GET /api/users/search`, `GET /api/users/lookup`, `GET /api/auth/bluesky/status`, `GET /api/auth/mastodon/status`). **Eight row paths were corrected** where the re-baseline had copied OpenAPI paths the client does not use: six Moderation writes (footnote 14) and two GitHub issue routes (footnote 15). **List Folders (G6) marked retired** — the feature was removed 2026-09-04 (`1afb89d`, PR #19), so its 4 rows stay ☐ permanently and are not a gap. **Totals recomputed** (the checklist's "recompute, do not paste" rule): the new section holds **93 rows**, not the 53 the 2026-07-31 entry claimed — that figure never matched its own per-area breakdown, which already summed to 83. Matrix grand total **98 + 93 = 191 rows**, with a note that a row count is not a live-endpoint census. **New state:** original 98 unchanged (98 implemented; 74 ☑ / 18 ◐ / 6 ☐); new section 61 ☑ implemented, 31 Tested ☑, 30 ◐, 30 ☐/☐, 2 out of scope (two rows — `GET /api/linkedin/targets`, `GET /api/auth/twitter/status` — have builders with builder tests but no service call path, so they stay ☐ under the Implemented rule). Footnotes 14 and 15 added. No original row's marks were touched.
 
 - **2026-07-31 — Re-baseline against live `openapi.json` (~150 endpoints).** The matrix was stale at 98 endpoints (2026-06-11 surface); the live API has grown to ~150 across new feature areas. Re-baselined per [`work-consolidation.md`](../work-consolidation.md): (1) the intro banner now states the ~150-endpoint re-baseline; (2) all **98 original rows keep their real ☑/◐/☐ implementation-and-test state unchanged** (98 implemented; 74 ☑ / 18 ◐ / 6 ☐ tested); (3) a new **"New endpoints (2026-07-31 re-baseline)"** section adds **53 rows** — all ☐ Implemented / ☐ Tested — grouped by feature area and mapped to gap IDs G1–G14: Direct Messages (G1) 11, Moderation (G2) 10, Share Links & Collaborators (G3) 17, List Folders (G6) 4, Search (G5) 3, GitHub (G4) 8, Push (G9) 2, Stripe/Billing (G8) 2, LinkedIn targets (G11a) 4, Twitter/X auth (G7) 3, Document templates & tree (G12) 6, Document presence (G13) 2, Utility/limits (G14) 2, Multi-account (G10) 3, Public profile & OAuth-link (D2 / fn 12) 2, and Messages & auth drift additions (D1/D3) 4. Each new row carries a **Backend** marker: ✅ confirmed live in the 2026-07-31 authenticated probe, ⚠️ live-but-constrained, or *per OpenAPI, unverified* (spec-listed / gap-planned but not individually hit read-only). **Footnote 8 RESOLVED** — `GET /api/users/{username}` public profile now exists (verified live, migration D2); the direct-read row is added and the decision-0002 fallback is slated for replacement. **Footnote 12 RESOLVED** — native OAuth identity linking (`POST /api/auth/{provider}/link` via `Auth.linkIdentity` + `ASWebAuthenticationSession` + `interlinedlist://oauth/callback`) is BUILT on `feature/web-parity-batch-2026-07`; the "blocked upstream" note no longer applies and the `…/link` row is added. **Grand total: 98 original + 53 new = 151 endpoints (~150).** No original row's ☑/◐/☐ mark was changed; new rows flip only under the existing maintenance rule (a tested App-layer view model drives them end-to-end).
 

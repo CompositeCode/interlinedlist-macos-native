@@ -27,7 +27,7 @@ Milestones **M0–M7** feature work is complete; post-milestone items NW-1…NW-
 - **Sharing collaborators / invites / visibility** (PR #13, merged 2026-09-02) — extends the G3 sharing group: per-person document collaborators (search/add/set-role/remove), email invites for lists **and** documents, and a make-public visibility toggle. Full stack (Kit `SharingEndpoint`/`SharingDTO`, Domain `Sharing` models + `SharingService`, App `DocumentCollaborators*`/`Invites*`/`Visibility*` views + VMs) with Kit/Domain/App tests. Create paths are subscriber-gated.
 - **Timeline cross-post destination links** (PR #14, merged 2026-09-02) — a message row links out to where it was cross-posted (Bluesky/Mastodon/X/LinkedIn external URLs) via the Domain `Message` cross-post projection + mappers.
 
-**Where we are now:** §1 (client-side parity) is effectively **exhausted** — every unblocked gap is built and merged; only tiny follow-ups remain (the G14 `ImagePrep` size-ceiling tail, and G4's two backend-blocked routes). The remaining levers are **§2** (backend-gated — nothing more buildable from the client until the backend moves; the one high-impact item is [P1-G](#p1-g-following-feed)) and **§3** (release engineering — the PKG/DMG ship path in [§3a](#3a-notarized-pkgdmg-release--the-current-ship-path), which is now the critical path to shipping). **Next phase: release engineering.**
+**Where we are now:** §1 (client-side parity) is **exhausted** — every unblocked gap is built and merged, and the last client-side follow-up (the G14 `ImagePrep` size-ceiling tail) is done too; only G4's two backend-blocked routes remain open there. The remaining levers are **§2** (backend-gated — nothing more buildable from the client until the backend moves; the one high-impact item is [P1-G](#p1-g-following-feed)) and **§3** (release engineering — the PKG/DMG ship path in [§3a](#3a-notarized-pkgdmg-release--the-current-ship-path), which is now the critical path to shipping). **Next phase: release engineering.**
 
 ---
 
@@ -35,7 +35,7 @@ Milestones **M0–M7** feature work is complete; post-milestone items NW-1…NW-
 
 Everything here is client-side and buildable today (the backend already exists or none is needed). Ordered by value.
 
-> **Status 2026-09-02 — §1 is effectively done.** Every item below is built and merged to `dev`. The only open threads are (a) the small **G14** `ImagePrep` size-ceiling follow-up, and (b) **G4**'s issue **update**/**comment** routes, which are backend-blocked ([P1-H2](#p1-h2-github-issue-update-comment-routes)) — not a client gap. No further client-only parity work remains; pick up **§3 release** next.
+> **Status 2026-09-05 — §1 is done.** Every item below is built and merged to `dev`. The **G14** `ImagePrep` size-ceiling follow-up is **closed** (verified in code 2026-09-05: `MessagesService.uploadImage` and `DocumentsService.uploadImage` both call `ImagePrep.prepare(_:limits:)` with `contentLimits?.limits() ?? .default` projected through `ContentLimits.imagePrepLimits`, so the ceilings are server-driven with the hard-coded constants as fallback). The only open thread is **G4**'s issue **update**/**comment** routes, which are backend-blocked ([P1-H2](#p1-h2-github-issue-update-comment-routes)) — not a client gap. No client-only parity work remains; pick up **§3 release** next.
 
 ### 1a. Parity features buildable now
 
@@ -65,7 +65,7 @@ The `/api/github/*` routes are deployed (`GET /api/github/repos` → 400 "GitHub
 
 **G11a · LinkedIn posting target** — ✅ **Target-aware toggle shipped 2026-08-15.** `LinkedInService` is now wired into `AppEnvironment`; enabling the composer's LinkedIn cross-post toggle fetches `postingTargets()` and shows **which destination the post publishes to** ("Posting as …"), rolls the toggle back with a connect hint when the account has no LinkedIn target, and surfaces the org-scope-missing note — all mirroring the Bluesky/Mastodon readiness pattern and reusing the verified `crossPostToLinkedIn` request path. 6 composer tests. **Deferred (needs a verified wire shape):** a true multi-*target selector* and the `POST /api/linkedin/sync-pages` refresh both wait on a confirmed per-target request field; LinkedIn **org** pages are upstream-blocked (G11b).
 
-**G14 · `/api/limits` composer validation** — ✅ **Message-length validation shipped 2026-08-15.** New Kit `Limits` endpoint + `LimitsDTO`; domain `ContentLimits` model + `ContentLimitsService` (fetch with `ContentLimits.default` fallback); wired into the composer as a live character counter + publish gate (over-limit disables Post, turns the counter/border red). 13 tests (4 Kit + 4 Domain + 5 App). **Remaining follow-up (smaller):** feed the same `ContentLimits` into `ImagePrep` so the image/video *size* ceilings are server-driven too — today `ImagePrep` keeps the matching hard-coded constants (which equal the live values).
+**G14 · `/api/limits` composer validation** — ✅ **Message-length validation shipped 2026-08-15.** New Kit `Limits` endpoint + `LimitsDTO`; domain `ContentLimits` model + `ContentLimitsService` (fetch with `ContentLimits.default` fallback); wired into the composer as a live character counter + publish gate (over-limit disables Post, turns the counter/border red). 13 tests (4 Kit + 4 Domain + 5 App). ~~**Remaining follow-up (smaller):** feed the same `ContentLimits` into `ImagePrep` so the image/video *size* ceilings are server-driven too.~~ — ✅ **Done** (verified 2026-09-05). `ContentLimits.imagePrepLimits` projects `imageMaxBytes`/`imageMaxPixels` into `ImagePrep.Limits`, and both upload paths (`MessagesService.uploadImage`, `DocumentsService.uploadImage`) pass it, falling back to `ContentLimits.default` (== the built-in `ImagePrep` constants) when no provider is injected or the fetch fails.
 
 ### 1b. Client-side follow-ups & polish (no backend)
 
@@ -187,6 +187,9 @@ Ship gating is orthogonal to parity and can proceed in parallel with §1/§2. De
 One-time signing setup on the build machine, then the release run. Complete in order.
 
 **Sparkle keys & Info.plist**
+
+> **Code integration is DONE (verified 2026-09-05).** `App/Composition/SparkleController.swift` owns an `SPUStandardUpdaterController` and exposes `checkForUpdates()`; `App/MenuCommands/UpdatesMenuCommands.swift` puts it in the app menu; both are wired in `App/InterlinedListApp.swift` (`@StateObject sparkleController`, `UpdatesMenuCommands(sparkleController:)`), the SPM dependency is pinned in `Package.resolved`, and `SUFeedURL` is set to `https://interlinedlist.com/appcast.xml` in `App/Resources/Info.plist`. What remains below is **key material and hosting**, not code — `SUPublicEDKeyString` is still the literal `TODO_REPLACE_WITH_ED25519_PUBLIC_KEY`.
+
 - [ ] Generate the Sparkle Ed25519 key pair: `./bin/generate_keys` (store the private key in a password manager — never commit).
 - [ ] Paste the public key into `App/Resources/Info.plist` → `SUPublicEDKeyString` (currently `TODO_REPLACE_WITH_ED25519_PUBLIC_KEY`).
 - [ ] Verify the live update-check call, `SUFeedURL`, and `SUPublicEDKeyString` resolve against the published appcast.
