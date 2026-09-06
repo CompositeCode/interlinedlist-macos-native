@@ -212,6 +212,15 @@ public struct AIArtifactToken: Sendable, Equatable {
     let dto: AIArtifactDTO
 
     init(dto: AIArtifactDTO) { self.dto = dto }
+
+    /// An empty token for SwiftUI previews and App-layer tests, which cannot
+    /// build a real one — the payload it wraps is a kit type, and the App target
+    /// does not import the kit (decision 0003).
+    ///
+    /// **Never confirm one of these against the live service.** It would post an
+    /// empty artifact to `/api/ai/generate`. It exists so a preview or a test can
+    /// hold an `AISuggestion` without a network round-trip.
+    public static let placeholder = AIArtifactToken(dto: AIArtifactDTO())
 }
 
 /// What an AI preview actually contains, projected per feature.
