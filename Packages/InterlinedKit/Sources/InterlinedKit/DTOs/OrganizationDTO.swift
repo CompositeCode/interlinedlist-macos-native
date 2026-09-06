@@ -91,6 +91,25 @@ public struct OrganizationMembershipResponse: Codable, Sendable, Equatable {
     }
 }
 
+/// Envelope returned by `POST /api/organizations` and
+/// `PUT /api/organizations/[id]`.
+///
+/// VERIFIED live 2026-09-06: both write routes answer with
+/// `{ "message": "Organization <created|updated> successfully",
+///    "organization": { ... } }` — **not** a bare `OrganizationDTO`. The
+/// builders previously decoded the bare DTO, so every organization create and
+/// rename failed at the decoder even when the request itself succeeded
+/// (work-consolidation.md §1c · V4).
+public struct OrganizationWriteResponse: Codable, Sendable, Equatable {
+    public let message: String?
+    public let organization: OrganizationDTO
+
+    public init(message: String? = nil, organization: OrganizationDTO) {
+        self.message = message
+        self.organization = organization
+    }
+}
+
 // MARK: - OrganizationUserDTO
 
 /// A user-with-role row from `GET /api/organizations/[id]/users`. Group-local,

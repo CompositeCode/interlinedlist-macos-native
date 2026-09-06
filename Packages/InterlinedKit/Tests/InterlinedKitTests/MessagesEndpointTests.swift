@@ -420,14 +420,29 @@ final class MessagesEndpointTests: XCTestCase {
         }
     }
 
-    // MARK: - update / delete
+    // MARK: - reschedule / delete
 
-    func test_givenEdit_whenUpdateBuilt_thenPutsToMessagePath() throws {
-        let request = Messages.update(id: "m1", CreateMessageRequest(content: "edited"))
-        XCTAssertEqual(request.method, .put)
+    // `Messages.update` is gone: `PUT /api/messages/[id]` is 405 live and the
+    // `PATCH` that replaced it only moves a scheduled post's send time — it is
+    // not a message editor (verified 2026-09-06 — work-consolidation.md §1c · V1).
+    func test_givenNewDate_whenRescheduleBuilt_thenPatchesMessagePath() throws {
+        let when = Date(timeIntervalSince1970: 1_800_000_000)
+        let request = Messages.reschedule(id: "m1", RescheduleMessageRequest(scheduledAt: when))
+        XCTAssertEqual(request.method, .patch)
         XCTAssertEqual(request.path, "/api/messages/m1")
         XCTAssertEqual(request.auth, .bearer)
-        XCTAssertEqual(try encodedBody(request)["content"] as? String, "edited")
+    }
+
+    // Boundary: the body carries `scheduledAt` and nothing else — sending
+    // `content` alongside it is silently ignored by the server, so the request
+    // type must not be able to express one.
+    func test_givenReschedule_whenBodyEncoded_thenCarriesOnlyScheduledAt() throws {
+        let request = Messages.reschedule(
+            id: "m1",
+            RescheduleMessageRequest(scheduledAt: Date(timeIntervalSince1970: 1_800_000_000))
+        )
+        let body = try encodedBody(request)
+        XCTAssertEqual(Set(body.keys), ["scheduledAt"])
     }
 
     func test_givenMessageId_whenDeleteBuilt_thenDeletesMessagePath() {

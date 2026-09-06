@@ -229,6 +229,24 @@ public struct ListConnectionsResponse: Codable, Sendable, Equatable {
     }
 }
 
+/// Envelope returned by `POST /api/lists/[id]/data` and
+/// `PUT /api/lists/[id]/data/[rowId]`.
+///
+/// VERIFIED live 2026-09-06: both answer
+/// `{ "message": "Row <created|updated> successfully", "data": { …row… } }` —
+/// **not** a bare `ListRowDTO`. The builders previously decoded the bare row,
+/// so even a request that reached the server failed at the decoder
+/// (work-consolidation.md §1c · V3).
+public struct ListRowWriteResponse: Codable, Sendable, Equatable {
+    public let message: String?
+    public let data: ListRowDTO
+
+    public init(message: String? = nil, data: ListRowDTO) {
+        self.message = message
+        self.data = data
+    }
+}
+
 // MARK: - Request bodies
 
 /// `POST /api/lists` body.
@@ -283,18 +301,37 @@ public struct UpdateListSchemaRequest: Codable, Sendable, Equatable {
     }
 }
 
-/// `POST /api/lists/[id]/data` body: `{ "rowData": { ... } }`.
+/// `POST /api/lists/[id]/data` body: `{ "data": { ... } }`.
+///
+/// VERIFIED live 2026-09-06 (work-consolidation.md §1c · V3): the wire field is
+/// **`data`**, not `rowData`. Sending `rowData` returns
+/// `400 {"error":"Data is required","code":"bad_request"}`, so row creation
+/// never worked against production. The Swift property keeps the `rowData` name
+/// — it matches `ListRowDTO.rowData`, which the *response* really does nest
+/// under that key — and `CodingKeys` maps it to the wire name.
 public struct CreateListRowRequest: Codable, Sendable, Equatable {
     public let rowData: [String: ListJSONValue]
+
+    private enum CodingKeys: String, CodingKey {
+        case rowData = "data"
+    }
 
     public init(rowData: [String: ListJSONValue]) {
         self.rowData = rowData
     }
 }
 
-/// `PATCH /api/lists/[id]/data/[rowId]` body: partial `{ "rowData": { ... } }`.
+/// `PUT /api/lists/[id]/data/[rowId]` body: `{ "data": { ... } }`.
+///
+/// VERIFIED live 2026-09-06 (work-consolidation.md §1c · V3): same `data`
+/// wire-name correction as `CreateListRowRequest` — a `rowData` body is
+/// rejected with `400 "Data is required"` even once the verb is right.
 public struct UpdateListRowRequest: Codable, Sendable, Equatable {
     public let rowData: [String: ListJSONValue]
+
+    private enum CodingKeys: String, CodingKey {
+        case rowData = "data"
+    }
 
     public init(rowData: [String: ListJSONValue]) {
         self.rowData = rowData
