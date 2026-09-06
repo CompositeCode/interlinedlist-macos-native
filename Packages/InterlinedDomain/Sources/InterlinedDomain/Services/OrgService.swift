@@ -128,12 +128,14 @@ public final class OrgService: OrgServicing {
         isPublic: Bool
     ) async throws -> Organization {
         let body = CreateOrganizationRequest(name: name, description: description, isPublic: isPublic)
-        let dto = try await api.send(Organizations.create(body))
+        // The live create answers `{ message, organization }`; unwrap it.
+        let dto = try await api.send(Organizations.create(body)).organization
         return Organization(from: dto)
     }
 
     public func organization(id: String) async throws -> Organization {
-        let dto = try await api.send(Organizations.get(id: id))
+        // The live read answers `{ organization }`; unwrap it.
+        let dto = try await api.send(Organizations.get(id: id)).organization
         return Organization(from: dto)
     }
 
@@ -144,7 +146,8 @@ public final class OrgService: OrgServicing {
         isPublic: Bool?
     ) async throws -> Organization {
         let body = UpdateOrganizationRequest(name: name, description: description, isPublic: isPublic)
-        let dto = try await api.send(Organizations.update(id: id, body))
+        // The live update answers `{ message, organization }`; unwrap it.
+        let dto = try await api.send(Organizations.update(id: id, body)).organization
         return Organization(from: dto)
     }
 

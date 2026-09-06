@@ -45,15 +45,15 @@ final class GitHubEndpointTests: XCTestCase {
         XCTAssertEqual(create.method, .post)
         XCTAssertEqual(create.query.first(where: { $0.name == "repo" })?.value, "octocat/hello")
 
-        // updateIssue / comment paths remain the (live-404) nested form — the
-        // correct routes are unknown (see GitHubEndpoint ⚠️ notes / P1-H2). These
-        // assertions lock the current builder output, not a verified live route.
-        let update = GitHub.updateIssue(repo: "octocat/hello", number: 42, UpdateGitHubIssueRequest(state: "closed"))
-        XCTAssertEqual(update.path, "/api/github/repos/octocat/hello/issues/42")
+        // updateIssue / comment are FLAT under /api/github/issues — verified live
+        // 2026-09-06 (work-consolidation.md §1c · V7). The nested form these
+        // previously used 404s.
+        let update = GitHub.updateIssue(repo: "octocat/hello", number: 42, UpdateGitHubIssueRequest(labels: ["bug"]))
+        XCTAssertEqual(update.path, "/api/github/issues/octocat/hello/42")
         XCTAssertEqual(update.method, .patch)
 
         let comment = GitHub.comment(repo: "octocat/hello", number: 42, CreateGitHubCommentRequest(body: "hi"))
-        XCTAssertEqual(comment.path, "/api/github/repos/octocat/hello/issues/42/comments")
+        XCTAssertEqual(comment.path, "/api/github/issues/octocat/hello/42/comments")
         XCTAssertEqual(comment.method, .post)
 
         XCTAssertEqual(GitHub.assignees(repo: "octocat/hello").path, "/api/github/repos/octocat/hello/assignees")

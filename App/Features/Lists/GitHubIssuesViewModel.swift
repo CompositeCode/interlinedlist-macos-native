@@ -168,11 +168,11 @@ final class GitHubIssuesViewModel {
         }
     }
 
-    /// Closes an open issue or reopens a closed one.
-    func toggleState(_ issue: GitHubIssue) async {
-        let newState: GitHubIssueState = issue.state == .closed ? .open : .closed
-        await applyUpdate(to: issue.number, GitHubIssueUpdate(state: newState))
-    }
+    // No `toggleState` here: closing / reopening an issue has no live route.
+    // `PATCH /api/github/issues/{owner}/{repo}/{number}` rejects a `state`-only
+    // body with 400 "labels or assignees required" (work-consolidation.md
+    // §1c · V7), and `GitHubService.updateIssue` now refuses such an update up
+    // front with `GitHubServiceError.unsupportedIssueEdit`.
 
     /// Replaces the label set on `issue`.
     func setLabels(_ labels: [String], on issue: GitHubIssue) async {
@@ -216,6 +216,11 @@ final class GitHubIssuesViewModel {
         switch error {
         case .notLinked:
             linkState = .notLinked
+        case .unsupportedIssueEdit:
+            // Not a linking problem — the live API simply has no route for this
+            // edit, so surface the message instead of showing a "Link GitHub"
+            // CTA the user has already satisfied.
+            self.error = error
         }
     }
 

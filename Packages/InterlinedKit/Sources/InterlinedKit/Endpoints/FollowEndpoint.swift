@@ -110,9 +110,19 @@ public enum Follow {
         Request(method: .post, path: "/api/follow/\(userId)/reject", auth: .bearer)
     }
 
-    /// `POST /api/follow/[userId]/remove`
+    /// `DELETE /api/follow/[userId]/remove` — drop a follower of *this* account.
+    ///
+    /// VERIFIED live 2026-09-06 (work-consolidation.md §1c · V6): the verb is
+    /// `DELETE`. `OPTIONS` reports `Allow: DELETE, OPTIONS` and the `POST` this
+    /// shipped with returns **405**. A live `DELETE` against a non-follower
+    /// reached the handler and returned a business-level
+    /// `404 {"error":"Follower relationship not found","code":"not_found"}`,
+    /// which proves the route and verb; the **success** envelope could not be
+    /// exercised because the test account has no followers, so
+    /// `FollowActionResponse` is deliberately left tolerant rather than
+    /// tightened against an unobserved body.
     public static func remove(userId: String) -> Request<FollowActionResponse> {
-        Request(method: .post, path: "/api/follow/\(userId)/remove", auth: .bearer)
+        Request(method: .delete, path: "/api/follow/\(userId)/remove", auth: .bearer)
     }
 
     /// `GET /api/follow/requests` — pending inbound follow requests under the

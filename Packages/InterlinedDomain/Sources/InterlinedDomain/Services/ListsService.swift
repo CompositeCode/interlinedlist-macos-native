@@ -406,7 +406,8 @@ public final class ListsService: ListsServicing {
 
     public func row(listId: String, rowId: String) async throws -> ListRow {
         try requireListManagement()
-        let dto = try await api.send(Lists.row(listId: listId, rowId: rowId))
+        // The live read answers `{ data }`; unwrap it.
+        let dto = try await api.send(Lists.row(listId: listId, rowId: rowId)).data
         return ListRow(from: dto)
     }
 
@@ -414,7 +415,8 @@ public final class ListsService: ListsServicing {
         try requireListManagement()
         let wire = data.mapValues(ListJSONValue.init(from:))
         let request = CreateListRowRequest(rowData: wire)
-        let dto = try await api.send(Lists.createRow(listId: listId, request))
+        // The live create answers `{ message, data }`; unwrap it.
+        let dto = try await api.send(Lists.createRow(listId: listId, request)).data
         return ListRow(from: dto)
     }
 
@@ -426,7 +428,8 @@ public final class ListsService: ListsServicing {
         try requireListManagement()
         let wire = data.mapValues(ListJSONValue.init(from:))
         let request = UpdateListRowRequest(rowData: wire)
-        let dto = try await api.send(Lists.updateRow(listId: listId, rowId: rowId, request))
+        // The live update answers `{ message, data }`; unwrap it.
+        let dto = try await api.send(Lists.updateRow(listId: listId, rowId: rowId, request)).data
         return ListRow(from: dto)
     }
 
