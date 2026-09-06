@@ -49,19 +49,41 @@ public struct ListRow: Sendable, Equatable, Identifiable {
     /// Field-name → cell value, in no defined order. The schema string on the
     /// owning `ListDetail` defines the canonical column order for rendering.
     public let fields: [String: ListCellValue]
+    /// Origin marker when this row was synced from an external source rather
+    /// than authored in-app (e.g. `"github"`). `nil` for native rows. Projected
+    /// from `ListRowDTO.source`.
+    public let source: String?
+    /// The `"owner/repo"` slug when this row was synced from GitHub. `nil` for
+    /// native rows. Projected from `ListRowDTO.githubRepo`.
+    ///
+    /// This is the row-level backing signal the UI uses to recognise a
+    /// GitHub-backed list and route row-creation to the issue flow — there is no
+    /// stable list-level `githubSource` on the wire yet (work-consolidation.md
+    /// P3-C), so backing is derived from the rows.
+    public let githubRepo: String?
     public let createdAt: Date?
     public let updatedAt: Date?
+
+    /// Whether this row originates from a GitHub sync. True when it carries a
+    /// `githubRepo` (the authoritative marker) or a `source` of `"github"`.
+    public var isGitHubBacked: Bool {
+        githubRepo != nil || source?.lowercased() == "github"
+    }
 
     public init(
         id: String,
         listID: String? = nil,
         fields: [String: ListCellValue],
+        source: String? = nil,
+        githubRepo: String? = nil,
         createdAt: Date? = nil,
         updatedAt: Date? = nil
     ) {
         self.id = id
         self.listID = listID
         self.fields = fields
+        self.source = source
+        self.githubRepo = githubRepo
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

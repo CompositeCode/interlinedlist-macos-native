@@ -82,6 +82,11 @@ extension ListRow {
             id: dto.id,
             listID: dto.listId,
             fields: dto.rowData.mapValues(ListCellValue.init(from:)),
+            // Thread the row-level GitHub-backing markers through so the UI can
+            // detect a GitHub-backed list from its rows (work-consolidation.md
+            // P3-C). Both stay nil for native rows.
+            source: dto.source,
+            githubRepo: dto.githubRepo,
             createdAt: dto.createdAt,
             updatedAt: dto.updatedAt
         )

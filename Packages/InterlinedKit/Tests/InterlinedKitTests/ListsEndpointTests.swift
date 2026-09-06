@@ -138,6 +138,34 @@ final class ListsEndpointTests: XCTestCase {
         XCTAssertEqual(received[0].url?.path, "/api/lists/7/data/r1")
     }
 
+    // A GitHub-synced row carries `source`/`githubRepo` alongside `rowData`
+    // (work-consolidation.md P3-C). Both must decode so the client can detect
+    // the backing and route row-creation to the issue flow.
+    func test_givenGitHubSyncedRow_whenRowSent_thenDecodesSourceAndRepo() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"""
+        {"id":"r1","listId":"7","rowData":{"Title":"Fix crash"},
+         "source":"github","githubRepo":"CompositeCode/interlinedlist"}
+        """#))
+
+        let row = try await client.send(Lists.row(listId: "7", rowId: "r1"))
+
+        XCTAssertEqual(row.source, "github")
+        XCTAssertEqual(row.githubRepo, "CompositeCode/interlinedlist")
+    }
+
+    // Boundary: a native row omits both fields — they decode as nil, not a
+    // failure, so existing (non-GitHub) rows keep decoding unchanged.
+    func test_givenNativeRow_whenRowSent_thenSourceAndRepoAreNil() async throws {
+        let (client, transport) = makeClient()
+        await transport.enqueue(.json(#"{"id":"r1","listId":"7","rowData":{"Title":"Dune"}}"#))
+
+        let row = try await client.send(Lists.row(listId: "7", rowId: "r1"))
+
+        XCTAssertNil(row.source)
+        XCTAssertNil(row.githubRepo)
+    }
+
     func test_givenRowData_whenCreateRowSent_thenEncodesRowDataEnvelope() async throws {
         let (client, transport) = makeClient()
         await transport.enqueue(.json(#"{"id":"r9","rowData":{"Title":"New"}}"#))

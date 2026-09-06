@@ -342,12 +342,16 @@ enum ListsFixtures {
     static func row(
         id: String,
         listId: String = "L1",
-        fields: [String: ListCellValue] = [:]
+        fields: [String: ListCellValue] = [:],
+        source: String? = nil,
+        githubRepo: String? = nil
     ) -> ListRow {
         ListRow(
             id: id,
             listID: listId,
             fields: fields,
+            source: source,
+            githubRepo: githubRepo,
             createdAt: Date(timeIntervalSince1970: 1_700_000_000),
             updatedAt: Date(timeIntervalSince1970: 1_700_000_000)
         )

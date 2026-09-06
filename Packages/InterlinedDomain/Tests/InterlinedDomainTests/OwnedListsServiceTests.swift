@@ -698,6 +698,49 @@ final class OwnedListsServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - row GitHub-backing projection (ListRowDTO → ListRow)
+
+    func test_givenGitHubSyncedRowDTO_whenMapped_thenCarriesSourceRepoAndIsBacked() {
+        // Happy path: a synced row carries source + repo; both project through
+        // and `isGitHubBacked` is true so the UI can route to the issue flow.
+        let dto = ListRowDTO(
+            id: "r1",
+            listId: "L1",
+            rowData: [:],
+            source: "github",
+            githubRepo: "CompositeCode/interlinedlist"
+        )
+
+        let row = ListRow(from: dto)
+
+        XCTAssertEqual(row.source, "github")
+        XCTAssertEqual(row.githubRepo, "CompositeCode/interlinedlist")
+        XCTAssertTrue(row.isGitHubBacked)
+    }
+
+    func test_givenNativeRowDTO_whenMapped_thenNotGitHubBacked() {
+        // Boundary: a native row omits both markers; projection keeps them nil
+        // and `isGitHubBacked` is false so native Add Row stays available.
+        let dto = ListRowDTO(id: "r1", listId: "L1", rowData: ["Title": .string("Dune")])
+
+        let row = ListRow(from: dto)
+
+        XCTAssertNil(row.source)
+        XCTAssertNil(row.githubRepo)
+        XCTAssertFalse(row.isGitHubBacked)
+    }
+
+    func test_givenSourceGithubButNoRepo_whenMapped_thenStillBacked() {
+        // Either marker alone suffices: a `source: "github"` with no repo slug
+        // is still recognised as backed (case-insensitive).
+        let dto = ListRowDTO(id: "r1", listId: "L1", rowData: [:], source: "GitHub")
+
+        let row = ListRow(from: dto)
+
+        XCTAssertTrue(row.isGitHubBacked)
+        XCTAssertNil(row.githubRepo)
+    }
+
     // MARK: - row CRUD
 
     func test_givenRowData_whenCreatingRow_thenPostsAndMapsResponse() async throws {

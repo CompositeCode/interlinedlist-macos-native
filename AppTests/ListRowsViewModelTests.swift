@@ -128,6 +128,61 @@ final class ListRowsViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.error as? TestError, .upstream("denied"))
     }
 
+    // MARK: - GitHub-backing detection + Add Row guard
+
+    func test_givenRowWithGithubRepo_whenLoaded_thenIsGitHubBackedWithRepo() async {
+        // Happy path: a synced row makes the list GitHub-backed and exposes the
+        // repo the issue browser routes to.
+        let stub = StubListsService()
+        await stub.enqueueSchema(success: .empty)
+        let row = ListsFixtures.row(
+            id: "R1", listId: "L1", fields: ["Title": .string("Bug")],
+            source: "github", githubRepo: "CompositeCode/interlinedlist"
+        )
+        await stub.enqueueRows(success: RowsPage(rows: [row], hasMore: false, nextOffset: nil))
+        let viewModel = ListRowsViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+
+        await viewModel.initialLoad()
+
+        XCTAssertTrue(viewModel.isGitHubBacked)
+        XCTAssertEqual(viewModel.gitHubRepo, "CompositeCode/interlinedlist")
+    }
+
+    func test_givenPlainRows_whenLoaded_thenNotGitHubBacked() async {
+        // Boundary: native rows leave the list plain, so Add Row stays active.
+        let stub = StubListsService()
+        await stub.enqueueSchema(success: .empty)
+        let row = ListsFixtures.row(id: "R1", listId: "L1", fields: ["A": .string("v")])
+        await stub.enqueueRows(success: RowsPage(rows: [row], hasMore: false, nextOffset: nil))
+        let viewModel = ListRowsViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+
+        await viewModel.initialLoad()
+
+        XCTAssertFalse(viewModel.isGitHubBacked)
+        XCTAssertNil(viewModel.gitHubRepo)
+    }
+
+    func test_givenGitHubBackedList_whenAddRow_thenNoNativeRowCreated() async {
+        // The guard: Add Row must not POST a native empty row on a GitHub-backed
+        // list. It's a no-op — no createRow call, no optimistic row left behind.
+        let stub = StubListsService()
+        await stub.enqueueSchema(success: .empty)
+        let row = ListsFixtures.row(
+            id: "R1", listId: "L1", fields: [:], githubRepo: "acme/widgets"
+        )
+        await stub.enqueueRows(success: RowsPage(rows: [row], hasMore: false, nextOffset: nil))
+        // Enqueue a createRow outcome that must NOT be consumed.
+        await stub.enqueueCreateRow(success: ListsFixtures.row(id: "SHOULD-NOT-APPEAR"))
+        let viewModel = ListRowsViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+        await viewModel.initialLoad()
+
+        await viewModel.addRow()
+
+        XCTAssertEqual(viewModel.rows.map(\.id), ["R1"], "rows unchanged; no optimistic row")
+        let created = await stub.recorded.contains { if case .createRow = $0.kind { return true }; return false }
+        XCTAssertFalse(created, "createRow must not be called on a GitHub-backed list")
+    }
+
     // MARK: - updateRow optimistic + rollback
 
     func test_givenUpdateSuccess_whenUpdating_thenReplacesWithServerCopy() async {

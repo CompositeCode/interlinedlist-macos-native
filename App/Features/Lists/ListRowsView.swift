@@ -12,8 +12,12 @@ struct ListRowsView: View {
     let list: OwnedList
     let viewModel: ListRowsViewModel
 
+    @Environment(\.appEnvironment) private var environment
     @State private var selection: Set<String> = []
     @State private var deletePending: Bool = false
+    /// Presents the GitHub issue browser/composer for a GitHub-backed list —
+    /// the row-creation route for lists whose rows sync from GitHub.
+    @State private var showsIssues: Bool = false
 
     var body: some View {
         content(viewModel: viewModel)
@@ -52,15 +56,33 @@ struct ListRowsView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .sheet(isPresented: $showsIssues) {
+            if let environment, let repo = viewModel.gitHubRepo {
+                GitHubIssuesView(repo: repo, environment: environment)
+            }
+        }
     }
 
     @ViewBuilder
     private func toolbar(viewModel: ListRowsViewModel) -> some View {
         HStack(spacing: 8) {
-            Button {
-                Task { await viewModel.addRow() }
-            } label: {
-                Label("Add Row", systemImage: "plus")
+            // A GitHub-backed list's rows sync from GitHub issues, so the add
+            // action becomes "New Issue" (opening the issue composer/browser)
+            // rather than a native empty-row create, which wouldn't survive the
+            // next sync. Detection is row-derived (`viewModel.isGitHubBacked`).
+            if viewModel.isGitHubBacked {
+                Button {
+                    showsIssues = true
+                } label: {
+                    Label("New Issue", systemImage: "ladybug")
+                }
+                .help("This list syncs from GitHub — add a GitHub issue instead of a row")
+            } else {
+                Button {
+                    Task { await viewModel.addRow() }
+                } label: {
+                    Label("Add Row", systemImage: "plus")
+                }
             }
 
             Button {
@@ -68,7 +90,7 @@ struct ListRowsView: View {
             } label: {
                 Label("Delete", systemImage: "minus")
             }
-            .disabled(selection.isEmpty)
+            .disabled(selection.isEmpty || viewModel.isGitHubBacked)
 
             Spacer()
 
