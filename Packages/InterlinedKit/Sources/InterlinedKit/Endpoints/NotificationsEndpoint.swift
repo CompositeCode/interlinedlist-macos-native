@@ -36,4 +36,15 @@ public enum Notifications {
     public static func markAllRead() -> Request<NotificationMarkAllReadResponse> {
         Request(method: .post, path: "/api/notifications/mark-all-read", auth: .bearer)
     }
+
+    /// `DELETE /api/notifications/[id]` — remove a single notification from the
+    /// tray (work-consolidation.md G27). The client could previously only mark
+    /// one read.
+    ///
+    /// VERIFIED live 2026-09-06: `OPTIONS` reports `Allow: DELETE, OPTIONS` and
+    /// a real `DELETE` returned **204 No Content** — so there is no body to
+    /// decode. Send with `sendVoid`.
+    public static func delete(id: String) -> Request<EmptyResponse> {
+        Request(method: .delete, path: "/api/notifications/\(id)", auth: .bearer)
+    }
 }

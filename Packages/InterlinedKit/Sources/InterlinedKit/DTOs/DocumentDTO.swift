@@ -71,6 +71,41 @@ public struct DocumentFolderDTO: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// Envelope returned by `POST /api/documents`, `GET /api/documents/[id]`,
+/// `PATCH /api/documents/[id]` and `PUT /api/documents/[id]`.
+///
+/// VERIFIED live 2026-09-06: all four answer `{ "message"?: …,
+/// "document": { ... } }` — **not** a bare `DocumentDTO`. The builders
+/// previously decoded the bare DTO, so opening, creating and saving a document
+/// each failed at the decoder. Found while probing G27's `PUT` variant; it is
+/// the same envelope defect as the folder routes (§1c · V5).
+public struct DocumentResponse: Codable, Sendable, Equatable {
+    public let message: String?
+    public let document: DocumentDTO
+
+    public init(message: String? = nil, document: DocumentDTO) {
+        self.message = message
+        self.document = document
+    }
+}
+
+/// Envelope returned by `POST /api/documents/folders`,
+/// `GET /api/documents/folders/[id]` and `PUT /api/documents/folders/[id]`.
+///
+/// VERIFIED live 2026-09-06: all three answer `{ "message"?: …,
+/// "folder": { ... } }` — **not** a bare `DocumentFolderDTO`. The builders
+/// previously decoded the bare DTO, so folder create, read and rename all
+/// failed at the decoder (work-consolidation.md §1c · V5).
+public struct DocumentFolderResponse: Codable, Sendable, Equatable {
+    public let message: String?
+    public let folder: DocumentFolderDTO
+
+    public init(message: String? = nil, folder: DocumentFolderDTO) {
+        self.message = message
+        self.folder = folder
+    }
+}
+
 // MARK: - Sync
 
 /// `GET /api/documents/sync` response — the delta payload the

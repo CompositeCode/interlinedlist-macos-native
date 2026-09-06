@@ -40,6 +40,25 @@ struct SettingsRootView: View {
                     Label("Blocked & Muted", systemImage: "hand.raised")
                 }
 
+            // Server-driven notification event catalogue (work-consolidation.md G18).
+            NotificationPreferencesView()
+                .tabItem {
+                    Label("Notifications", systemImage: "bell")
+                }
+
+            // Active sessions with per-row revoke (work-consolidation.md G19).
+            SecuritySessionsView()
+                .tabItem {
+                    Label("Security", systemImage: "lock.shield")
+                }
+
+            // Synced-settings device registry (work-consolidation.md G17) — the
+            // machines registered under this app's key.
+            DevicesView()
+                .tabItem {
+                    Label("Devices", systemImage: "desktopcomputer")
+                }
+
             // Document sync agent (work-consolidation.md §3b) — enable the background helper
             // that mirrors documents to a local folder for Obsidian.
             DocumentSyncSettingsView()
@@ -47,7 +66,7 @@ struct SettingsRootView: View {
                     Label("Document Sync", systemImage: "arrow.triangle.2.circlepath")
                 }
         }
-        .frame(width: 560, height: 500)
+        .frame(width: 620, height: 520)
     }
 }
 

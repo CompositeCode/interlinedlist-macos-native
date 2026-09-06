@@ -19,8 +19,10 @@ import Foundation
 ///     (the nested `/repos/{repo}/issues` form 404s);
 ///   • `repos`, `assignees`, `labels`, `next-issue-number` are NESTED under
 ///     `/api/github/repos/{repo}/…` (confirmed present).
-///   • issue **update** (`updateIssue`) and **comment** routes are NOT the paths
-///     below — see their ⚠️ notes and work-consolidation.md §2 · P1-H2.
+///   • single-issue **update** and **comment** are FLAT too, but on a different
+///     shape again — `/api/github/issues/{owner}/{repo}/{number}[/comments]`
+///     (verified live 2026-09-06, work-consolidation.md §1c · V7). Note that
+///     `updateIssue` only sets labels/assignees; see its doc comment.
 /// Response shapes are decoded tolerantly (see `GitHubDTO.swift`). Auth: all `.bearer`.
 public enum GitHub {
 
@@ -65,16 +67,25 @@ public enum GitHub {
         )
     }
 
-    /// `PATCH /api/github/repos/{owner}/{repo}/issues/{number}` — edit an
-    /// issue's title/body/state/labels/assignees (only the supplied fields).
+    /// `PATCH /api/github/issues/{owner}/{repo}/{number}` — set an issue's
+    /// **labels and/or assignees**.
     ///
-    /// ⚠️ ROUTE UNVERIFIED — LIKELY BROKEN (2026-08-17). This nested path 404s
-    /// live, and the flat `/api/github/issues` collection rejects `PATCH`/`PUT`
-    /// (405; `Allow: GET, HEAD, OPTIONS, POST`). The correct update route/verb
-    /// could not be found by probing (all obvious single-issue paths 404). Until
-    /// backend confirmation (work-consolidation.md §2 · P1-H2), close/reopen and
-    /// label/assignee editing will NOT work against the live API. Left as-is so
-    /// the shape is documented rather than silently guessed.
+    /// VERIFIED live 2026-09-06 (work-consolidation.md §1c · V7). The route is
+    /// **flat** — `{owner}/{repo}/{number}` hang off `/api/github/issues`, they
+    /// are not nested under `/api/github/repos`. `OPTIONS` reports
+    /// `Allow: OPTIONS, PATCH`; the nested path this shipped with **404s**.
+    ///
+    /// - Important: despite the name, this is **not** a general issue editor.
+    ///   The handler requires `labels` or `assignees` to be present and answers
+    ///   `400 {"error":"labels or assignees required"}` to a body of `state`,
+    ///   `title` or `body` alone. With `labels`/`assignees` present the request
+    ///   is accepted and proxied to GitHub (the probe account got a
+    ///   `403 "Must have admin rights to Repository."` from GitHub itself on a
+    ///   repo it does not own — which confirms the route, the verb and the body
+    ///   shape). **Close / reopen and title/body edits therefore still have no
+    ///   live route**; `GitHubService.updateIssue` rejects those up front.
+    ///   A 200 body could not be captured because the test account has no
+    ///   admin-rights repository, so `GitHubIssueResponse` is left tolerant.
     public static func updateIssue(
         repo: String,
         number: Int,
@@ -82,18 +93,22 @@ public enum GitHub {
     ) -> Request<GitHubIssueResponse> {
         Request(
             method: .patch,
-            path: "/api/github/repos/\(repo)/issues/\(number)",
+            path: "/api/github/issues/\(repo)/\(number)",
             body: .json(body),
             auth: .bearer
         )
     }
 
-    /// `POST /api/github/repos/{owner}/{repo}/issues/{number}/comments`.
+    /// `POST /api/github/issues/{owner}/{repo}/{number}/comments` — comment on
+    /// an issue.
     ///
-    /// ⚠️ ROUTE UNVERIFIED — LIKELY BROKEN (2026-08-17). This path 404s live and
-    /// no comment route was found (`/api/github/issues/{n}/comments`,
-    /// `/api/github/issues/comments`, `/api/github/comments` all 404). Needs
-    /// backend confirmation (work-consolidation.md §2 · P1-H2).
+    /// VERIFIED live 2026-09-06 (work-consolidation.md §1c · V7): the flat path
+    /// is correct and `OPTIONS` reports `Allow: OPTIONS, POST`; the nested path
+    /// this shipped with **404s**. A live `POST` reached GitHub's own comment
+    /// logic (it came back `403 "Commenting is disabled on issues with more
+    /// than 2500 comments"` for the public `octocat/hello-world#1`), proving the
+    /// route, verb and `{ "body": … }` payload. As above, a 200 body was not
+    /// capturable from the test account, so the decoder stays tolerant.
     public static func comment(
         repo: String,
         number: Int,
@@ -101,7 +116,7 @@ public enum GitHub {
     ) -> Request<GitHubCommentResponse> {
         Request(
             method: .post,
-            path: "/api/github/repos/\(repo)/issues/\(number)/comments",
+            path: "/api/github/issues/\(repo)/\(number)/comments",
             body: .json(body),
             auth: .bearer
         )

@@ -669,7 +669,7 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenRowId_whenLoadingRow_thenMapsCells() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listRowObject(id: "row-7"))
+        await api.enqueue(json: Fixtures.listRowEnvelope(id: "row-7"))
         let service = ListsService(api: api)
 
         // When
@@ -746,7 +746,7 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenRowData_whenCreatingRow_thenPostsAndMapsResponse() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listRowObject(id: "row-new"))
+        await api.enqueue(json: Fixtures.listRowEnvelope(id: "row-new"))
         let service = ListsService(api: api)
 
         // When
@@ -765,7 +765,7 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenEmptyRowData_whenCreatingRow_thenStillPosts() async throws {
         // Given — boundary: empty row data; the API accepts it.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listRowObject(id: "row-empty"))
+        await api.enqueue(json: Fixtures.listRowEnvelope(id: "row-empty"))
         let service = ListsService(api: api)
 
         // When
@@ -790,10 +790,10 @@ final class OwnedListsServiceTests: XCTestCase {
         }
     }
 
-    func test_givenUpdate_whenUpdatingRow_thenPatchesAndMapsResponse() async throws {
+    func test_givenUpdate_whenUpdatingRow_thenPutsAndMapsResponse() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listRowObject(id: "row-7"))
+        await api.enqueue(json: Fixtures.listRowEnvelope(id: "row-7"))
         let service = ListsService(api: api)
 
         // When
@@ -806,7 +806,8 @@ final class OwnedListsServiceTests: XCTestCase {
         // Then
         XCTAssertEqual(row.id, "row-7")
         let recorded = await api.recorded
-        XCTAssertEqual(recorded.first?.method, "PATCH")
+        // PUT, not PATCH — PATCH is 405 live (work-consolidation.md §1c · V3).
+        XCTAssertEqual(recorded.first?.method, "PUT")
         XCTAssertEqual(recorded.first?.path, "/api/lists/books/data/row-7")
     }
 

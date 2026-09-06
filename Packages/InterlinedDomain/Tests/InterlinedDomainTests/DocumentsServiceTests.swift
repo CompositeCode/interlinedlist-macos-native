@@ -73,7 +73,7 @@ final class DocumentsServiceTests: XCTestCase {
     func test_givenDocumentId_whenLoadingDetail_thenMapsAllFields() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.documentObject(id: "d-42", title: "Notes", content: "# H"))
+        await api.enqueue(json: Fixtures.documentEnvelope(id: "d-42", title: "Notes", content: "# H"))
         let service = DocumentsService(api: api)
 
         // When
@@ -118,7 +118,7 @@ final class DocumentsServiceTests: XCTestCase {
     func test_givenDocumentDetailWithEmptyContent_whenLoading_thenBodyIsEmpty() async throws {
         // Given — boundary: server returns null content.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.documentObject(id: "d", content: nil))
+        await api.enqueue(json: Fixtures.documentEnvelope(id: "d", content: nil))
         let service = DocumentsService(api: api)
 
         // When
@@ -133,7 +133,7 @@ final class DocumentsServiceTests: XCTestCase {
     func test_givenTitleAndBody_whenCreating_thenPostsToDocumentsAndReturnsMapped() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.documentObject(id: "d-new", title: "New", content: "Body"))
+        await api.enqueue(json: Fixtures.documentEnvelope(id: "d-new", title: "New", content: "Body"))
         let service = DocumentsService(api: api)
 
         // When
@@ -164,7 +164,7 @@ final class DocumentsServiceTests: XCTestCase {
     func test_givenEmptyBody_whenCreating_thenStillPostsAndReturnsServerResponse() async throws {
         // Given — boundary: API permits empty body.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.documentObject(id: "d-e", content: ""))
+        await api.enqueue(json: Fixtures.documentEnvelope(id: "d-e", content: ""))
         let service = DocumentsService(api: api)
 
         // When
@@ -179,7 +179,7 @@ final class DocumentsServiceTests: XCTestCase {
     func test_givenPartialEdit_whenUpdating_thenPatchesDocumentAndReturnsMapped() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.documentObject(id: "d", title: "Renamed"))
+        await api.enqueue(json: Fixtures.documentEnvelope(id: "d", title: "Renamed"))
         let service = DocumentsService(api: api)
 
         // When
@@ -225,7 +225,7 @@ final class DocumentsServiceTests: XCTestCase {
     func test_givenAllFieldsNil_whenUpdating_thenStillPatches() async throws {
         // Given — boundary: every field nil. Server may reject; service does not.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.documentObject(id: "d"))
+        await api.enqueue(json: Fixtures.documentEnvelope(id: "d"))
         let service = DocumentsService(api: api)
 
         // When / Then — no throw.
@@ -413,7 +413,7 @@ final class DocumentsServiceTests: XCTestCase {
     func test_givenFolderId_whenLoadingFolder_thenMapsFolder() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.folderObject(id: "f1", name: "Inbox"))
+        await api.enqueue(json: Fixtures.folderEnvelope(id: "f1", name: "Inbox"))
         let service = DocumentsService(api: api)
 
         // When
@@ -442,7 +442,7 @@ final class DocumentsServiceTests: XCTestCase {
     func test_givenName_whenCreatingFolder_thenPostsAndMaps() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.folderObject(id: "f-new", name: "New"))
+        await api.enqueue(json: Fixtures.folderEnvelope(id: "f-new", name: "New"))
         let service = DocumentsService(api: api)
 
         // When
@@ -470,10 +470,10 @@ final class DocumentsServiceTests: XCTestCase {
         }
     }
 
-    func test_givenFolderId_whenRenamingFolder_thenPatchesAndMaps() async throws {
+    func test_givenFolderId_whenRenamingFolder_thenPutsAndMaps() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.folderObject(id: "f1", name: "Renamed"))
+        await api.enqueue(json: Fixtures.folderEnvelope(id: "f1", name: "Renamed"))
         let service = DocumentsService(api: api)
 
         // When
@@ -482,7 +482,8 @@ final class DocumentsServiceTests: XCTestCase {
         // Then
         XCTAssertEqual(folder.name, "Renamed")
         let recorded = await api.recorded
-        XCTAssertEqual(recorded.first?.method, "PATCH")
+        // PUT, not PATCH — PATCH is 405 live (work-consolidation.md §1c · V5).
+        XCTAssertEqual(recorded.first?.method, "PUT")
         XCTAssertEqual(recorded.first?.path, "/api/documents/folders/f1")
     }
 
