@@ -256,6 +256,10 @@ Removing Sparkle breaks the PKG/DMG channel, so App Store work happens on a sepa
 
 ## Provenance
 
+> **Docs reconciliation 2026-09-05.** `docs/api-coverage.md` was walked row-by-row against the shipped code after its 2026-07-31 re-baseline rows were found never to have been rescored — **56 of 83 scoreable new rows were already shipped but still marked ☐/☐**. That pass also corrected eight endpoint paths the matrix had transcribed from OpenAPI rather than from the live-verified client (six Moderation, two GitHub), added six shipped `/invites` endpoints the matrix omitted entirely, rescored the removed G6 List Folders rows as non-targets, and recomputed the totals: the matrix is **187 rows**, not the "151 (~150)" previously carried here and in `docs/api-coverage.md`. **Any note in this file or elsewhere citing a "~151-endpoint API surface" is stale by that amount.** Details in footnote 14 of `docs/api-coverage.md`.
+
+
+
 This file consolidates and replaces the following, now removed (recoverable via git history):
 
 - `feature-gaps.md` — parity gap snapshot (2026-07-18 → refreshed 2026-08-15).
