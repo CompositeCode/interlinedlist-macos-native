@@ -40,6 +40,13 @@ public enum JSONCoders {
         return encoder
     }
 
+    /// Parses an ISO 8601 timestamp using the same two formats the decoder
+    /// accepts. Needed where a date arrives inside an opaque payload that
+    /// bypasses `dateDecodingStrategy` (see `AppSettingsDTO`).
+    public static func parseDate(_ string: String) -> Date? {
+        iso8601Fractional.date(from: string) ?? iso8601.date(from: string)
+    }
+
     // MARK: - Internals
 
     nonisolated(unsafe) static let iso8601Fractional: ISO8601DateFormatter = {
