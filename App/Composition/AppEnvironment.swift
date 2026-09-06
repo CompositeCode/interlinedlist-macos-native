@@ -189,6 +189,25 @@ final class AppEnvironment: ObservableObject {
     /// native OAuth flow. Exposed as the protocol so test doubles substitute in.
     let github: GitHubServicing
 
+    /// Synced app settings + the per-machine device registry
+    /// (work-consolidation.md G17) — the platform's own mechanism for companion
+    /// apps, and the sanctioned home for this app's preferences and the
+    /// Document Sync Agent's per-machine configuration. Optional because it is
+    /// only usable once an `appKey` is registered with the backend owner; the
+    /// Settings panes render an explicit unavailable state while it is nil.
+    let appSettings: AppSettingsServicing?
+
+    /// The server-driven notification-preferences catalogue
+    /// (work-consolidation.md G18) that Settings ▸ Notifications renders itself from.
+    let notificationPreferences: NotificationPreferencesServicing?
+
+    /// Active sessions + revocation (work-consolidation.md G19) for
+    /// Settings ▸ Security.
+    let sessions: SessionsServicing?
+
+    /// Tag trending + autocomplete (work-consolidation.md G20).
+    let tags: TagsServicing?
+
     /// The Direct Messages surface the Messages feature binds against
     /// (work-consolidation.md G1). Exposed as the protocol so test doubles
     /// substitute in. Wraps the `/api/messages/*` DM endpoints (folders,
@@ -256,7 +275,11 @@ final class AppEnvironment: ObservableObject {
         directMessages: DirectMessagesServicing,
         directMessagesEventBus: DirectMessagesEventBus,
         sharingAPI: APIClientProtocol,
-        shareBaseURL: URL
+        shareBaseURL: URL,
+        appSettings: AppSettingsServicing? = nil,
+        notificationPreferences: NotificationPreferencesServicing? = nil,
+        sessions: SessionsServicing? = nil,
+        tags: TagsServicing? = nil
     ) {
         self.messages = messages
         self.lists = lists
@@ -286,7 +309,22 @@ final class AppEnvironment: ObservableObject {
         self.directMessagesEventBus = directMessagesEventBus
         self.sharingAPI = sharingAPI
         self.shareBaseURL = shareBaseURL
+        self.appSettings = appSettings
+        self.notificationPreferences = notificationPreferences
+        self.sessions = sessions
+        self.tags = tags
     }
+
+    /// The app-settings key this client registers under (work-consolidation.md
+    /// G17).
+    ///
+    /// ⚠️ **Nil until an `appKey` is registered with the backend owner** — that
+    /// registration is a stated prerequisite of G17, and calling the routes with
+    /// an unregistered key 404s. While nil, `AppEnvironment.appSettings` is nil
+    /// and the Settings panes render an explicit "not configured" state instead
+    /// of failing opaquely. Set this to the agreed key to switch the feature on;
+    /// it is deliberately the single edit required.
+    static let appSettingsKey: String? = nil
 
     /// Builds the production service graph:
     ///
@@ -455,6 +493,16 @@ final class AppEnvironment: ObservableObject {
         // dock-badge coordinator all see the same stream.
         let directMessages = DirectMessagesService(api: api)
         let directMessagesEventBus = DirectMessagesEventBus()
+        // Settings cluster (work-consolidation.md G17-G20). All reuse the shared
+        // kit-layer `APIClient`.
+        //   • G17 app settings + device registry — gated on `appSettingsKey`
+        //     being registered with the backend owner; nil until then, and the
+        //     panes say so rather than failing opaquely.
+        //   • G18 notification preferences, G19 sessions, G20 tags.
+        let appSettings = Self.appSettingsKey.map { AppSettingsService(api: api, appKey: $0) }
+        let notificationPreferences = NotificationPreferencesService(api: api)
+        let sessions = SessionsService(api: api)
+        let tags = TagsService(api: api)
         return AppEnvironment(
             messages: messages,
             lists: lists,
@@ -489,7 +537,11 @@ final class AppEnvironment: ObservableObject {
             // the canonical web-URL builder for links the server returns
             // without a pre-built `url`.
             sharingAPI: api,
-            shareBaseURL: InterlinedKit.defaultBaseURL
+            shareBaseURL: InterlinedKit.defaultBaseURL,
+            appSettings: appSettings,
+            notificationPreferences: notificationPreferences,
+            sessions: sessions,
+            tags: tags
         )
     }
 
