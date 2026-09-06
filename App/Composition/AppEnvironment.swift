@@ -102,6 +102,11 @@ final class AppEnvironment: ObservableObject {
     /// substitute in. Ungated, so it is a plain stored service (no live
     /// entitlements rebuild).
     let documentTemplatesService: DocumentTemplatesServicing
+    /// AI writing assistance and generation (work-consolidation.md G15).
+    let aiService: AIServicing
+    /// "Create from…" — messages/lists/rows/documents into new lists and
+    /// documents (work-consolidation.md G16).
+    let materializeService: MaterializeServicing
 
     /// The owner of `/api/documents/sync` — the M4 offline backbone
     /// (PLAN.md §3, §6 M4). The App layer reaches in directly for the
@@ -239,6 +244,8 @@ final class AppEnvironment: ObservableObject {
         listsStore: ListsStore,
         documentsService: DocumentsServicing,
         documentTemplatesService: DocumentTemplatesServicing,
+        aiService: AIServicing,
+        materializeService: MaterializeServicing,
         documentSyncEngine: DocumentSyncEngine,
         documentSyncEvents: AsyncStream<DocumentSyncEvent>,
         notificationsService: NotificationsServicing,
@@ -268,6 +275,8 @@ final class AppEnvironment: ObservableObject {
         self.listsStore = listsStore
         self.documentsService = documentsService
         self.documentTemplatesService = documentTemplatesService
+        self.aiService = aiService
+        self.materializeService = materializeService
         self.documentSyncEngine = documentSyncEngine
         self.documentSyncEvents = documentSyncEvents
         self.notificationsService = notificationsService
@@ -401,6 +410,13 @@ final class AppEnvironment: ObservableObject {
         // `/api/documents/templates` endpoints are already routed by the
         // shared `authTransport`. Ungated, so a plain stored service.
         let documentTemplatesService = DocumentTemplatesService(api: api)
+        // AI (G15) and Create-from (G16). Both reuse the shared kit `APIClient`;
+        // their routes are Bearer and already routed by `authTransport`.
+        // AI gating is deliberately *not* computed from `customerStatus` here —
+        // `GET /api/ai/status` is authoritative because a subscriber without a
+        // provider key still cannot call, and only the server knows that.
+        let aiService = AIService(api: api)
+        let materializeService = MaterializeService(api: api)
         let documentSyncEvents = documentSyncEngine.events
         // M5 — Notifications + Social write surface (PLAN.md §6 M5).
         // `NotificationsService` already exists with the read + mark
@@ -466,6 +482,8 @@ final class AppEnvironment: ObservableObject {
             listsStore: listsStore,
             documentsService: documentsService,
             documentTemplatesService: documentTemplatesService,
+            aiService: aiService,
+            materializeService: materializeService,
             documentSyncEngine: documentSyncEngine,
             documentSyncEvents: documentSyncEvents,
             notificationsService: notificationsService,

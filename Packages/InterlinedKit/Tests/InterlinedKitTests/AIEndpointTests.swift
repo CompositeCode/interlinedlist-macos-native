@@ -213,7 +213,8 @@ final class AIEndpointTests: XCTestCase {
         XCTAssertEqual(json?["scheduleImmediately"] as? Bool, true)
         XCTAssertEqual((json?["crossPost"] as? [String: Any])?["bluesky"] as? Bool, true)
         XCTAssertEqual(response.created?.scheduledMessageIds, ["m1", "m2"])
-        XCTAssertEqual(response.created?.firstScheduledAt, "2026-09-06T01:00:00.000Z")
+        XCTAssertEqual(response.created?.firstScheduledAt,
+                       ISO8601DateFormatter().date(from: "2026-09-06T01:00:00Z"))
     }
 
     // MARK: - Invalid input

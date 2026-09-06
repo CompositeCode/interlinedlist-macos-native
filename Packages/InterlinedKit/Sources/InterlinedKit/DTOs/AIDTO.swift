@@ -144,6 +144,16 @@ public struct AISuggestContext: Encodable, Sendable, Equatable {
     }
 }
 
+// MARK: - Wire aliases
+
+/// The kit declares an `enum InterlinedKit` of its own, so `InterlinedKit.AIFeature`
+/// resolves to that enum rather than to the module and fails to compile. Consumers
+/// that also declare an `AIFeature` (the domain layer does, so the App never
+/// imports this module) reach the wire enums through these aliases instead.
+public typealias AIWireFeature = AIFeature
+public typealias AIWireWritingAction = AIWritingAction
+public typealias AIWireDocumentMode = AIDocumentMode
+
 // MARK: - Suggest
 
 /// `POST /api/ai/suggest` request body — `{ feature, input, context? }`.
@@ -428,13 +438,13 @@ public struct AIGenerateResponse: Decodable, Sendable, Equatable {
         public let listId: String?
         public let documentId: String?
         public let scheduledMessageIds: [String]?
-        public let firstScheduledAt: String?
+        public let firstScheduledAt: Date?
 
         public init(
             listId: String? = nil,
             documentId: String? = nil,
             scheduledMessageIds: [String]? = nil,
-            firstScheduledAt: String? = nil
+            firstScheduledAt: Date? = nil
         ) {
             self.listId = listId
             self.documentId = documentId
