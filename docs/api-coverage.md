@@ -2,6 +2,8 @@
 
 > **Re-baselined 2026-07-31 against the live `openapi.json` (~150 endpoints).** The **original 98 rows** below cover the 2026-06-11 API surface and keep their real ☑/◐/☐ implementation-and-test state unchanged. The live API has since grown across whole new feature areas; those are captured in the **[New endpoints](#new-endpoints-2026-07-31-re-baseline--implementation-state-reconciled-2026-09-05)** section, mapped to their gap ID (G1–G14) in **[`work-consolidation.md`](../work-consolidation.md)**. **Reconciled 2026-09-05** against the shipped code: the matrix is **187 rows** (not the previously stated 151 — see footnote 14), and the new rows now carry their real ☑/◐/☐ state instead of the blanket ☐/☐ they were added with. This file remains the home for the per-endpoint ☑/◐ **test** matrix; the maintenance rule below still governs when a new row may flip.
 
+> **⚠️ The endpoint inventory below is stale as of 2026-09-05.** A fresh authenticated pull of `GET /api/openapi.json` reports **226 paths / 294 operations** — this matrix holds 191 rows, and the client builds 154 request builders. Roughly 100 live operations have no row here at all (whole product areas: AI, "Create from…"/materialize, app-settings & devices, notification preferences, sessions, tags, link metadata). The gap analysis lives in [`work-consolidation.md` §1d](../work-consolidation.md#1d-new-feature-areas-2026-09-05-re-measure); **six shipping client calls also use a verb the live server rejects** — see [§1c](../work-consolidation.md#1c-live-verb-defects--fix-first). Re-baselining this matrix against the 294-operation surface is queued work, not done.
+
 **Audience:** engineering (maintainers and implementing agents).
 
 This matrix exists so that full coverage of the [InterlinedList API](https://interlinedlist.com/help/api) is **verified, not assumed** (PLAN.md §7). It maps every documented endpoint to the service planned to implement it (PLAN.md §3) and the milestone that ships it (PLAN.md §6), with check-off columns for implementation and tests.
@@ -205,8 +207,8 @@ The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-conso
 | `GET /api/github/repos` | GitHub | ⚠️ | G4 | List linked-account repos (400 "not linked" until OAuth link) | ☑ | ☑ |
 | `GET /api/github/issues` | GitHub | per OpenAPI, unverified | G4 | List issues for a repo | ☑ | ☑ |
 | `POST /api/github/issues` | GitHub | per OpenAPI, unverified | G4 | Create an issue | ☑ | ☑ |
-| `PATCH /api/github/repos/{repo}/issues/{number}` | GitHub | per OpenAPI, unverified | G4 | Edit an issue (labels / assignees / state) | ☑ | ◐ |
-| `POST /api/github/repos/{repo}/issues/{number}/comments` | GitHub | per OpenAPI, unverified | G4 | Comment on an issue | ☑ | ◐ |
+| `PATCH /api/github/issues/{owner}/{repo}/{number}`¹⁵ | GitHub | ✅ live (`Allow: OPTIONS, PATCH`) | G4 | Edit an issue (labels / assignees / state) — **the client points at `/api/github/repos/{repo}/issues/{number}`, which 404s** | ☐ | ☐ |
+| `POST /api/github/issues/{owner}/{repo}/{number}/comments`¹⁵ | GitHub | ✅ live (`Allow: OPTIONS, POST`) | G4 | Comment on an issue — **the client points at `/api/github/repos/{repo}/issues/{number}/comments`, which 404s** | ☐ | ☐ |
 | `GET /api/github/repos/{owner}/{repo}/assignees` | GitHub | per OpenAPI, unverified | G4 | List assignable users for a repo | ☑ | ☑ |
 | `GET /api/github/repos/{owner}/{repo}/labels` | GitHub | per OpenAPI, unverified | G4 | List labels for a repo | ☑ | ☑ |
 | `GET /api/github/repos/{owner}/{repo}/next-issue-number` | GitHub | per OpenAPI, unverified | G4 | Next issue number for a repo | ☑ | ☑ |
@@ -238,7 +240,7 @@ The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-conso
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/auth/twitter/authorize` | Twitter / X auth | per OpenAPI, unverified | G7 | Begin X/Twitter OAuth authorization | ☐ | ☐ |
+| `GET /api/auth/twitter/authorize` | Twitter / X auth | ✅ | G7 | Begin X/Twitter OAuth authorization — built by the shared `Auth.authorize(provider:)` builder (`OAuthProvider` includes `.twitter`), consumed by `UserService` + `LinkedAccountsViewModel` | ☑ | ☑ |
 | `GET /api/auth/twitter/callback` | Twitter / X auth | per OpenAPI, unverified | G7 | X/Twitter OAuth callback | ☐ | ☐ |
 | `GET /api/auth/twitter/status` | Twitter / X auth | ✅ | G7 | X/Twitter link status (`configured:true`) | ☐ | ☐ |
 
@@ -293,9 +295,20 @@ New HTTP methods / paths on already-listed resource families, surfaced by the re
 | `POST /api/lists/{id}/watchers` | Lists | per OpenAPI, unverified | — | Invite a watcher via POST (matrix has `PUT …/watchers/{userId}`) | ☐ | ☐ |
 | `POST /api/auth/verify-email-change` | Auth | per OpenAPI, unverified | — | Confirm a pending email-change (pairs with existing `change-email/request`) | ☐ | ☐ |
 
-**New-endpoints subtotal:** **89 rows** — Direct Messages 11 · Moderation 10 · Share Links & Collaborators 23 · List Folders 4 · Search 3 · GitHub 8 · Push 2 · Stripe/Billing 2 · LinkedIn targets 4 · Twitter/X auth 3 · Document templates & tree 6 · Document presence 2 · Utility/limits 2 · Multi-account 3 · Public profile & OAuth-link (D2 / fn 12) 2 · Messages & auth drift additions 4. *(Recomputed from the rows themselves on 2026-09-05. The former "53" was an arithmetic slip — it is the running total through the GitHub section, i.e. the addition stopped six sections early. Share Links grew 17 → 23 when the six shipped `/invites` endpoints were added; see footnote 14.)*
+### User lookup & provider status — 4
 
-**Re-baseline grand total:** **98 original + 89 new = 187 rows.** *(Supersedes the previously stated "151 (~150)", which inherited the 53 slip above. `work-consolidation.md` and any note citing a "~151-endpoint API surface" carry the same stale figure.)*
+> **Added by the 2026-09-05 live re-measure.** Implemented in `UserEndpoint` / `AuthEndpoint` and consumed by `UserService`, but never carried a matrix row in either audit pass.
+
+| Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
+| --- | --- | --- | --- | --- | --- | --- |
+| `GET /api/users/search` | User | ✅ | — | Search users by handle (collaborator / invite pickers) | ☑ | ◐ |
+| `GET /api/users/lookup` | User | ✅ | — | Resolve a single `@handle` to a user | ☑ | ◐ |
+| `GET /api/auth/bluesky/status` | Auth (OAuth) | ✅ | NW-4 | Whether Bluesky OAuth is configured on the server | ☑ | ◐ |
+| `GET /api/auth/mastodon/status` | Auth (OAuth) | ✅ | NW-4 | Whether Mastodon OAuth is configured for an instance | ☑ | ◐ |
+
+**New-endpoints subtotal:** **93 rows** — Direct Messages 11 · Moderation 10 · Share Links & Collaborators 23 · List Folders 4 (retired) · Search 3 · GitHub 8 · Push 2 · Stripe/Billing 2 · LinkedIn targets 4 · Twitter/X auth 3 · Document templates & tree 6 · Document presence 2 · Utility/limits 2 · Multi-account 3 · Public profile & OAuth-link (D2 / fn 12) 2 · Messages & auth drift additions 4 · User lookup & provider status 4. *(Recomputed from the rows themselves on 2026-09-05. The former "53" was an arithmetic slip — it is the running total through the GitHub section, i.e. the addition stopped six sections early. Share Links grew 17 → 23 when the six shipped `/invites` endpoints were added; see footnote 14.)*
+
+**Re-baseline grand total:** **98 original + 93 new = 191 rows** (new section: 59 ☑ implemented · 31 Tested ☑ · 28 ◐ · 28 ☐ · 6 out of scope). *(Supersedes the previously stated "151 (~150)", which inherited the 53 slip above. `work-consolidation.md` and any note citing a "~151-endpoint API surface" carry the same stale figure.)*
 
 **Scored state as of the 2026-09-05 reconciliation:**
 
@@ -330,6 +343,8 @@ New HTTP methods / paths on already-listed resource families, surfaced by the re
     - **The subtotal and grand total were arithmetic errors** — "53 new" is the running total through the sixth of sixteen sections, and "151 endpoints" inherited it. Recomputed from the rows: 89 new, 187 total.
     Two rows are scored `—` as non-targets: **G6 List Folders** (feature removed from the client 2026-09-05, PR #19) joins **G8 Stripe** (out of scope 2026-07-31). The routes still exist server-side; the client will not implement them.
 
+15. **GitHub issue update / comment: the live routes are the FLAT ones, and the client points elsewhere (2026-09-05 live re-measure).** Both audit passes on 2026-09-05 corrected these rows to the *client's* nested path. The live API disagrees with the client: `GET /api/openapi.json` lists `PATCH /api/github/issues/{owner}/{repo}/{number}` and `POST /api/github/issues/{owner}/{repo}/{number}/comments`, and authenticated `OPTIONS` calls return `Allow: OPTIONS, PATCH` and `Allow: OPTIONS, POST` on those paths — i.e. exactly the three-segment flat form the 2026-07-31 re-baseline originally documented. The client's `GitHub.updateIssue` / `GitHub.comment` build `/api/github/repos/{repo}/issues/{number}[/comments]`, which 404s, so these rows are **Implemented ☐**: a builder exists, but not for this route. This also resolves the backend ask [P1-H2](../work-consolidation.md#p1-h2-github-issue-update-comment-routes) — no backend change is needed, only a client path fix ([`work-consolidation.md` §1c · V7](../work-consolidation.md#1c-live-verb-defects--fix-first)). `labels`, `assignees`, and `next-issue-number` are unaffected — their nested `/api/github/repos/{owner}/{repo}/…` routes answer `GET`.
+
 ## Cross-check against PLAN.md §1 (2026-06-11)
 
 - Every API surface named in PLAN.md §1 maps to at least one row above. No PLAN.md endpoint is missing from the live reference.
@@ -338,6 +353,8 @@ New HTTP methods / paths on already-listed resource families, surfaced by the re
 - PLAN.md §4's "Session-only" list (replies, digs, follow, organizations, notifications, document CRUD) matches the live annotations. The live reference additionally marks the User group's write endpoints and Exports as Session — the M0 spike should probe these groups too.
 
 ## Update history
+
+- **2026-09-05 (later) — reconciled the two parallel audit passes and folded in the live re-measure.** Two sessions audited this matrix the same evening; PR #22 merged the first. This entry merges the second pass on top and adds what a fresh live pull found. **From the second pass:** four implemented endpoints neither pass had a row for (`GET /api/users/search`, `GET /api/users/lookup`, `GET /api/auth/bluesky/status`, `GET /api/auth/mastodon/status`) are added as a new section, and `GET /api/auth/twitter/authorize` flips ☐/☐ → ☑/☑ — it is built by the shared `Auth.authorize(provider:)` builder (`OAuthProvider` includes `.twitter`) and consumed by `UserService` + `LinkedAccountsViewModel`. Where the two passes graded *Tested* differently on shared rows, PR #22's grades stand; they are internally consistent and no less defensible. **From the live re-measure:** the two GitHub issue rows are corrected again — to the **flat** routes the live spec and `OPTIONS` confirm, with Implemented back to ☐ because the client's builders point at a 404ing nested path (footnote 15); and a staleness banner now heads the file, because `GET /api/openapi.json` reports **294 operations** against this matrix's 191 rows. **Totals recomputed:** 93 new rows, 191 total.
 
 - **2026-09-05 — Reconciliation pass over the 2026-07-31 new-endpoint rows.** The re-baseline rows were added ☐/☐ and never rescored, so the matrix understated the app by a wide margin: **56 of the 83 scoreable new rows were already shipped**. Walked every row against the Kit builders, DTOs and Domain service call paths and applied the maintenance rule literally (footnote 14 records the exact ☑-vs-◐ rule used). **58 row edits:** 50 rows flipped ☐/☐ → Implemented ☑ with Tested ☑ or ◐ across Direct Messages (9 of 11), Moderation (8 of 10), Share Links & Collaborators (15 of 17 documented), Search (3 of 3), GitHub (8 of 8), LinkedIn posting-targets, Document templates (3 of 6), `GET /api/limits`, `GET /api/users/{username}` (D2) and `POST /api/auth/{provider}/link` (fn 12); **8 rows had their documented path corrected** to what the client actually sends (six Moderation, two GitHub — see footnote 14). **Six shipped `/invites` endpoints that were absent from the matrix were added** (G3: 17 → 23 rows). **`GET /api/dm/images/upload`, `GET /api/dm/{id}`, `GET /api/lists/watching`, `GET /api/lists/shared/{token}/data`, `GET /api/linkedin/targets`, `GET /api/documents/tree`, and the two block/mute status reads stay ☐** — verified absent from the client. **G6 List Folders rescored `—` (feature removed, PR #19 `1afb89d`)**, joining the out-of-scope G8 Stripe rows. **Totals recomputed from the rows, not carried forward: the previous "53 new / 151 total" was an arithmetic slip** (53 is the running total through the sixth of sixteen sections); the matrix is **89 new + 98 original = 187 rows**, of which **154 ☑ implemented / 27 ☐ / 6 —** and **104 ☑ / 44 ◐ / 33 ☐ / 6 — tested**. No original-98 row was touched. Footnote 14 added.
 
