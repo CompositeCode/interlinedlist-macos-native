@@ -174,3 +174,44 @@ final class StubAppSettingsService: AppSettingsServicing, @unchecked Sendable {
         }
     }
 }
+
+// MARK: - G20 tags
+
+final class StubTagsService: TagsServicing, @unchecked Sendable {
+
+    private let lock = NSLock()
+    private var trendingOutcomes: [Result<[TrendingTag], Error>] = []
+    private var suggestionOutcomes: [Result<[String], Error>] = []
+    private(set) var requestedPrefixes: [String] = []
+
+    func enqueueTrending(success: [TrendingTag]) {
+        lock.withLock { trendingOutcomes.append(.success(success)) }
+    }
+
+    func enqueueTrending(failure: Error) {
+        lock.withLock { trendingOutcomes.append(.failure(failure)) }
+    }
+
+    func enqueueSuggestions(success: [String]) {
+        lock.withLock { suggestionOutcomes.append(.success(success)) }
+    }
+
+    func enqueueSuggestions(failure: Error) {
+        lock.withLock { suggestionOutcomes.append(.failure(failure)) }
+    }
+
+    func trending(limit: Int?) async throws -> [TrendingTag] {
+        try lock.withLock {
+            guard !trendingOutcomes.isEmpty else { return [] }
+            return try trendingOutcomes.removeFirst().get()
+        }
+    }
+
+    func suggestions(prefix: String, limit: Int?) async throws -> [String] {
+        try lock.withLock {
+            requestedPrefixes.append(prefix)
+            guard !suggestionOutcomes.isEmpty else { return [] }
+            return try suggestionOutcomes.removeFirst().get()
+        }
+    }
+}
