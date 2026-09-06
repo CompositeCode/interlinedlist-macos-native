@@ -2,8 +2,8 @@
 
 **Single source of truth for remaining work, in execution order.** This file consolidates and replaces six older docs (see [Provenance](#provenance)): the parity gap lists, the backend-blocker index + paste-ready prompts, the Document Sync Agent plan, and the v1 release checklist.
 
-- **Consolidated:** 2026-08-15 · **Last synced to code:** 2026-09-02 · **Branch:** `dev` (⚠️ `main` is behind at the 2026-08-17 state — 30 commits back; catch it up before a release cut) · **Bundle:** `com.interlinedlist.macos` · **Team:** `BJA9558E4B`
-- **Structure:** [§1 Immediate work (do now)](#1-immediate-work--unblocked-do-now) → [§2 Blocked work (backend / spike-first)](#2-blocked-work--backend-gated-or-spike-first) → [§3 Final work (release & App Store)](#3-final-work--release--app-store)
+- **Consolidated:** 2026-08-15 · **Last synced to code:** 2026-09-05 · **Last re-measured against the live API:** 2026-09-05 (`GET /api/openapi.json` under a Bearer token from the `.env` test account: **226 paths / 294 operations**; the client builds 154) · **Branch:** `dev` (⚠️ `main` is behind at the 2026-08-17 state — 30 commits back; catch it up before a release cut) · **Bundle:** `com.interlinedlist.macos` · **Team:** `BJA9558E4B`
+- **Structure:** [§1 Immediate work (do now)](#1-immediate-work--unblocked-do-now) — including [§1c verb defects](#1c-live-verb-defects--fix-first) and [§1d the 2026-09-05 parity batch](#1d-new-feature-areas-2026-09-05-re-measure) → [§2 Blocked work (backend / spike-first)](#2-blocked-work--backend-gated-or-spike-first) → [§3 Final work (release & App Store)](#3-final-work--release--app-store)
 - **Test baseline (all green, re-run 2026-09-02):** SyncAgent **53** · InterlinedKit **317** · InterlinedDomain **628** · InterlinedPersistence **135** · App target **`** TEST SUCCEEDED **`** (≈611 tests, static count). Packages verified this session under plain `swift test`; the App target ran green under `xcodebuild test … CODE_SIGNING_ALLOWED=NO` (the signing override is still required on this machine). *(Prior 2026-08-16 baseline was Kit 286 / Domain 590 / App 566; growth is from G4 GitHub issues, sharing collaborators/invites/visibility, and timeline cross-post links.)*
 - **Distribution model:** notarized **`.pkg`** (+ `.dmg`) is the **current** ship path (closed-source private repo, no `LICENSE`). Mac App Store is a **later** path on a separate branch. Billing is handled by the web app — the native app has **no** in-app-purchase surface; it only *reads* `customerStatus` to gate subscriber features.
 
@@ -27,7 +27,11 @@ Milestones **M0–M7** feature work is complete; post-milestone items NW-1…NW-
 - **Sharing collaborators / invites / visibility** (PR #13, merged 2026-09-02) — extends the G3 sharing group: per-person document collaborators (search/add/set-role/remove), email invites for lists **and** documents, and a make-public visibility toggle. Full stack (Kit `SharingEndpoint`/`SharingDTO`, Domain `Sharing` models + `SharingService`, App `DocumentCollaborators*`/`Invites*`/`Visibility*` views + VMs) with Kit/Domain/App tests. Create paths are subscriber-gated.
 - **Timeline cross-post destination links** (PR #14, merged 2026-09-02) — a message row links out to where it was cross-posted (Bluesky/Mastodon/X/LinkedIn external URLs) via the Domain `Message` cross-post projection + mappers.
 
-**Where we are now:** §1 (client-side parity) is **exhausted** — every unblocked gap is built and merged, and the last client-side follow-up (the G14 `ImagePrep` size-ceiling tail) is done too; only G4's two backend-blocked routes remain open there. The remaining levers are **§2** (backend-gated — nothing more buildable from the client until the backend moves; the one high-impact item is [P1-G](#p1-g-following-feed)) and **§3** (release engineering — the PKG/DMG ship path in [§3a](#3a-notarized-pkgdmg-release--the-current-ship-path), which is now the critical path to shipping). **Next phase: release engineering.**
+**Where we are now (re-measured against the live API 2026-09-05):** the "§1 is exhausted" conclusion below **no longer holds**. A fresh authenticated pull of `GET /api/openapi.json` reports **226 paths / 294 operations** — the ~150-endpoint figure this doc was built on is a year-stale baseline. The macOS client builds **154** of them. Stripping the parts a native client should never call (admin 26, cron 7, webhooks 2, analytics-ingest, `test-db`, `openapi.json`, `oauth/client-metadata`, Stripe 2 — billing stays in the web app by owner decision) leaves roughly **100 live operations the app does not implement**, including whole product areas that shipped on the web after the re-baseline: **AI writing/generation, "Create from…" (materialize), Applications settings-and-devices sync, notification preferences, session revocation, tags, and link-metadata previews.**
+
+Worse, six calls the client ships today use a **verb the live server rejects** — message edit, preferences save, list-row edit, organization edit, document-folder rename, and follower removal are all broken against production right now ([§1c](#1c-live-verb-defects--fix-first)). Those are correctness bugs, not gaps.
+
+So the levers are, in priority order: **[§1c](#1c-live-verb-defects--fix-first)** (verb defects — fix first, they break shipped features), **[§1d](#1d-new-feature-areas-2026-09-05-re-measure)** (the new unblocked parity batch), **§2** (still genuinely backend-gated — [P1-G](#p1-g-following-feed) re-verified still broken 2026-09-05), and **§3** (release engineering, unchanged and still the ship path).
 
 ---
 
@@ -35,7 +39,9 @@ Milestones **M0–M7** feature work is complete; post-milestone items NW-1…NW-
 
 Everything here is client-side and buildable today (the backend already exists or none is needed). Ordered by value.
 
-> **Status 2026-09-05 — §1 is done.** Every item below is built and merged to `dev`. The **G14** `ImagePrep` size-ceiling follow-up is **closed** (verified in code 2026-09-05: `MessagesService.uploadImage` and `DocumentsService.uploadImage` both call `ImagePrep.prepare(_:limits:)` with `contentLimits?.limits() ?? .default` projected through `ContentLimits.imagePrepLimits`, so the ceilings are server-driven with the hard-coded constants as fallback). The only open thread is **G4**'s issue **update**/**comment** routes, which are backend-blocked ([P1-H2](#p1-h2-github-issue-update-comment-routes)) — not a client gap. No client-only parity work remains; pick up **§3 release** next.
+> **⚠️ Superseded 2026-09-05 by the live re-measure — see [§1c](#1c-live-verb-defects--fix-first) and [§1d](#1d-new-feature-areas-2026-09-05-re-measure).** The statement below is true only of the gaps *known at the time*; the live API has since grown well past this doc's baseline.
+>
+> **Status 2026-09-05 — the G1–G14 batch is done.** Every item below is built and merged to `dev`. The **G14** `ImagePrep` size-ceiling follow-up is **closed** (verified in code 2026-09-05: `MessagesService.uploadImage` and `DocumentsService.uploadImage` both call `ImagePrep.prepare(_:limits:)` with `contentLimits?.limits() ?? .default` projected through `ContentLimits.imagePrepLimits`, so the ceilings are server-driven with the hard-coded constants as fallback). The only open thread is **G4**'s issue **update**/**comment** routes, which are backend-blocked ([P1-H2](#p1-h2-github-issue-update-comment-routes)) — not a client gap. No client-only parity work remains; pick up **§3 release** next.
 
 ### 1a. Parity features buildable now
 
@@ -63,6 +69,7 @@ The `/api/github/*` routes are deployed (`GET /api/github/repos` → 400 "GitHub
 > - **`PUT /api/messages/[id]` → HTTP 405 — backend ask, see [§2 · P2-I](#p2-i-message-edit-method).** Message **edit** is broken against the live API; the correct verb (likely `PATCH`) needs backend confirmation before a client change. Left as-is (client still sends `PUT`) pending that confirmation.
 > - **`GET /api/user/identities` responded 200 under Bearer** even though the client declares it `auth: .session`. Read-only note; no change made (session remains the documented contract).
 
+<a id="g11a-linkedin-posting-target"></a>
 **G11a · LinkedIn posting target** — ✅ **Target-aware toggle shipped 2026-08-15.** `LinkedInService` is now wired into `AppEnvironment`; enabling the composer's LinkedIn cross-post toggle fetches `postingTargets()` and shows **which destination the post publishes to** ("Posting as …"), rolls the toggle back with a connect hint when the account has no LinkedIn target, and surfaces the org-scope-missing note — all mirroring the Bluesky/Mastodon readiness pattern and reusing the verified `crossPostToLinkedIn` request path. 6 composer tests. **Deferred (needs a verified wire shape):** a true multi-*target selector* and the `POST /api/linkedin/sync-pages` refresh both wait on a confirmed per-target request field; LinkedIn **org** pages are upstream-blocked (G11b).
 
 **G14 · `/api/limits` composer validation** — ✅ **Message-length validation shipped 2026-08-15.** New Kit `Limits` endpoint + `LimitsDTO`; domain `ContentLimits` model + `ContentLimitsService` (fetch with `ContentLimits.default` fallback); wired into the composer as a live character counter + publish gate (over-limit disables Post, turns the counter/border red). 13 tests (4 Kit + 4 Domain + 5 App). ~~**Remaining follow-up (smaller):** feed the same `ContentLimits` into `ImagePrep` so the image/video *size* ceilings are server-driven too.~~ — ✅ **Done** (verified 2026-09-05). `ContentLimits.imagePrepLimits` projects `imageMaxBytes`/`imageMaxPixels` into `ImagePrep.Limits`, and both upload paths (`MessagesService.uploadImage`, `DocumentsService.uploadImage`) pass it, falling back to `ContentLimits.default` (== the built-in `ImagePrep` constants) when no provider is injected or the fetch fails.
@@ -78,6 +85,93 @@ The `/api/github/*` routes are deployed (`GET /api/github/repos` → 400 "GitHub
 
 ---
 
+<a id="1c-live-verb-defects--fix-first"></a>
+### 1c. Live-verb defects — fix first (found 2026-09-05)
+
+Six shipping calls send an HTTP verb the live server does not accept, so the feature behind each one **fails against production today**. Each was confirmed twice: the live `openapi.json` lists only the other verb, and an authenticated `OPTIONS` returns an `Allow` header without the client's verb. No backend work is needed — these are one-line client fixes plus a regression test.
+
+| # | Client call | Sends | Live `Allow` | Broken user-facing behavior |
+| --- | --- | --- | --- | --- |
+| V1 | `Messages.update` → `/api/messages/{id}` | `PUT` | `DELETE, GET, HEAD, OPTIONS, PATCH` | **Editing a message.** Closes [P2-I](#p2-i-message-edit-method) — the verb is `PATCH`, no backend ask needed. |
+| V2 | `User.update` → `/api/user/update` | `POST` | `OPTIONS, PATCH` | **Saving Settings ▸ Preferences.** The pane shipped 2026-08-16 against a `POST` the server no longer accepts. |
+| V3 | `Lists.updateRow` → `/api/lists/{id}/data/{rowId}` | `PATCH` | `DELETE, GET, HEAD, OPTIONS, PUT` | **Editing a list row** (the row inspector's save path). |
+| V4 | `Organizations.update` → `/api/organizations/{id}` | `PATCH` | `DELETE, GET, HEAD, OPTIONS, PUT` | **Editing an organization.** |
+| V5 | `Documents.updateFolder` → `/api/documents/folders/{id}` | `PATCH` | `DELETE, GET, HEAD, OPTIONS, PUT` | **Renaming / moving a document folder.** |
+| V6 | `Follow.remove` → `/api/follow/{userId}/remove` | `POST` | `DELETE, OPTIONS` | **Removing a follower.** |
+
+**V7 · GitHub issue update + comment routes — [P1-H2](#p1-h2-github-issue-update-comment-routes) is RESOLVED, and the client is pointed at the wrong paths.** The live spec and `OPTIONS` both confirm the **flat** routes exist: `PATCH /api/github/issues/{owner}/{repo}/{number}` (`Allow: OPTIONS, PATCH`) and `POST /api/github/issues/{owner}/{repo}/{number}/comments` (`Allow: OPTIONS, POST`) — exactly the shape the coverage matrix documented before the 2026-08-17 pass moved the client to nested `/api/github/repos/{repo}/issues/{n}` paths that 404. Point `GitHub.updateIssue` and `GitHub.comment` back at the flat routes and close/reopen, label/assignee editing, and commenting all start working. (`labels`, `assignees`, and `next-issue-number` are already correct — their nested `/api/github/repos/{owner}/{repo}/…` routes answer `GET`.)
+
+> **Verify-before-fix, as always:** `OPTIONS` proves which verb is accepted, not which body shape or response envelope the route returns. Exercise each corrected call against the `.env` test account before tightening any decoder — the `POST /api/messages` envelope drift found during the G7 pass is exactly the failure mode to expect.
+
+<a id="1d-new-feature-areas-2026-09-05-re-measure"></a>
+### 1d. New feature areas — the 2026-09-05 re-measure
+
+Product areas that exist on the live API and in the published help docs (`https://interlinedlist.com/help`) but have **no client implementation at all**. Ordered by user-visible value. Sizes are rough. Every one is client-side buildable: the backend already ships them.
+
+<a id="g15-ai"></a>
+**G15 · AI writing & generation — HIGH, the biggest single parity gap. Size L.**
+Live and available to the test account: `GET /api/ai/status` returns `{"subscriber":true,"providers":["anthropic"],"defaultModels":{…},"quota":{"usedToday":0,"dailyLimit":50,"remaining":50}}`; the write pair is `POST /api/ai/suggest` (run a feature, return a validated **preview**) and `POST /api/ai/generate` (persist a confirmed artifact from that preview). Per `/help/ai` the surface is four features: **composer writing assistant** (rewrite, tighten, expand, fix grammar, convert-to-thread, suggest tags), **series planning** (a brief → a sequence of connected posts, or an article series), **AI list templates** (describe a structure → drafted schema + starter rows), and **AI documents** (from a topic, a list, an existing article, or a URL). Subscriber-gated, and the user brings their own OpenAI / Anthropic / Gemini key via the web Integrations page. The suggest→confirm→generate shape maps cleanly onto a preview sheet with a Confirm button. **The `feature` enum and both request/response bodies are unmodelled in the OpenAPI spec** (`{"feature": string}` is all it declares) — probe live or read the web app's network calls before building.
+
+<a id="g16-materialize"></a>
+**G16 · "Create from…" (materialize) — HIGH. Size M.**
+`POST /api/materialize` creates a **List, a Document, or both** from a source object. Per `/help/create-from` the sources are one or many messages, one or many lists, one or many list rows, and a whole document or a highlighted markdown selection; the preview lets the user set title/description/visibility, rename columns and change column types for the list target, and choose numbered/bulleted styling for the doc target. On macOS this is a `＋ Create` menu on a row, a selection-bar action for multi-select, and a selection menu in the document editor. Request body is unmodelled in the spec (`{"source": string}`) — probe first.
+
+<a id="g17-app-settings"></a>
+**G17 · Applications: synced settings + device registry — HIGH for a native client specifically. Size M.**
+`GET/PUT/DELETE /api/user/app-settings/{appKey}`, `GET /api/user/app-settings/{appKey}/bootstrap?deviceId=…`, `GET/POST /api/user/app-settings/{appKey}/devices`, `GET/PUT /api/user/app-settings/{appKey}/devices/{deviceId}/settings`, `PATCH/DELETE /api/user/app-settings/{appKey}/devices/{deviceId}`. Per `/help/app-settings` this is the platform's *own* mechanism for companion apps: **shared settings** follow the account to every machine, **per-machine settings** stay pinned to one computer, one machine is the "main workstation" whose config seeds a brand-new device on first sign-in, and devices can be renamed or deregistered. This is the sanctioned home for the macOS app's preferences **and** the Document Sync Agent's per-machine configuration, replacing purely local `UserDefaults` state. Pick and register an `appKey` with the backend owner before building.
+
+<a id="g18-notification-preferences"></a>
+**G18 · Notification preferences — MEDIUM. Size S.**
+`GET /api/user/notification-preferences` returns a typed event catalogue — `{"events":[{"key":"dig","label":"Digs on your messages","description":"…","channels":{"push":true,"inApp":true}}, …]}` — and `PATCH` writes it. Server-driven labels and descriptions mean the pane renders itself from the payload; drop it into Settings beside Preferences. Also the per-event `channels.push` flags are the switchboard [G9 push](#2b-spike-first-native-gaps) will need.
+
+<a id="g19-sessions"></a>
+**G19 · Active sessions & token revocation — MEDIUM. Size S. (Closes the client half of [P3-D](#p3-d-sessions-revocation).)**
+`GET /api/user/sessions` is **Bearer-reachable** and returns `{"sessions":[{"id","deviceLabel","createdAt","lastUsedAt","isCurrent"}…]}`; `DELETE /api/user/sessions/{id}` revokes one. A Settings ▸ Security pane listing sessions with a Revoke action is a small, self-contained slice — and it is the honest complement to a never-expiring sync token.
+
+<a id="g20-tags"></a>
+**G20 · Tags: trending + autocomplete — MEDIUM. Size S.**
+`GET /api/tags/trending` (verified: `{"tags":[{"tag","count","lastUsedAt"}…]}`) and `GET /api/tags/autocomplete` (prefix match on public messages). Feeds a composer tag-completion popover and a trending strip on the timeline. Pairs naturally with G15's "suggest tags" assistant.
+
+<a id="g21-link-metadata"></a>
+**G21 · Link metadata / previews — MEDIUM. Size S–M.**
+`GET /api/link-metadata?url=…`, plus `GET /api/messages/{id}/metadata` (read stored metadata, lightweight) and `POST /api/messages/{id}/metadata` (fetch and persist a message's link metadata). The app already **ships a "link previews" toggle** in Settings ▸ Preferences with nothing behind it, and [P3-F](#2c-backend-confirmation--polish-asks) documents the client rendering previews from a value set it guessed. Also `GET /api/images/proxy` for server-side image fetching.
+
+<a id="g22-dm-completeness"></a>
+**G22 · Direct-message completeness — MEDIUM. Size S.**
+Three routes the DM feature shipped without: `GET /api/dm/conversations` (one row per conversation grouped by `pairKey`, newest first — verified live, `{"items":[],"nextCursor":null}` — this is the natural inbox list, versus today's folder-based `GET /api/dm`), `GET /api/dm/{id}` (single message), and `POST /api/dm/images/upload` (DM image attachments, which the DM composer advertises but cannot perform).
+
+<a id="g23-lists-gaps"></a>
+**G23 · Lists: shared-with-me, contributors, watcher add — MEDIUM. Size M.**
+`GET /api/lists/watching` (verified live, returns real rows) is the **"shared with me" / watched-lists** surface the sidebar lacks. Also `GET /api/lists/{id}/contributors` (full ranked contributor list), `POST /api/lists/{id}/watchers` (add watchers — the client can only read and delete), `GET /api/lists/shared/{token}/data` (row data for a token-shared list, the read-only viewer's missing half), and the invite landing pair `GET`/`POST /api/lists/invite/{token}`.
+
+<a id="g24-documents-gaps"></a>
+**G24 · Documents: sidebar tree, public docs, invites, presence — MEDIUM. Size M.**
+`GET /api/documents/tree` returns `{folders, rootDocuments}` in **one** call — today the sidebar assembles that from several. `GET /api/users/{username}/documents` is public documents by user (the profile page has no documents tab). `GET`/`POST /api/documents/invite/{token}` are the invite landing/claim pair matching the list ones. `POST /api/documents/folders/{id}/documents` creates a document directly in a folder. `POST`/`DELETE /api/documents/{id}/presence` is the live-cursor heartbeat — **defer**: it is a collaborative-editing feature with a polling cost, worth building only if multi-user editing is a goal.
+
+<a id="g25-org-admin"></a>
+**G25 · Organization admin + LinkedIn org pages — MEDIUM. Size M. (This is [G11b](#2d-upstream-blocked--deferred-confirm-demand-before-building), no longer upstream-blocked.)**
+`PUT /api/organizations/{id}` and `DELETE /api/organizations/{id}` (the client can create and read but not rename or delete — and it sends `PATCH`, see [V4](#1c-live-verb-defects--fix-first)), plus the org LinkedIn set that was recorded as 404/not-deployed and now exists: `GET /api/organizations/{id}/linkedin/status`, `POST /api/organizations/{id}/linkedin/sync-pages`, `PUT /api/organizations/{id}/linkedin/assignments`, `DELETE /api/organizations/{id}/linkedin/credential`. Personal-scope `PUT /api/linkedin/posting-targets` and `POST /api/linkedin/sync-pages` also exist, which closes the "needs a verified per-target wire shape" note on [G11a](#g11a-linkedin-posting-target).
+
+<a id="g26-identities"></a>
+**G26 · Identity management: unlink + verify — LOW–MEDIUM. Size S.**
+`DELETE /api/user/identities` (unlink a provider — Settings ▸ Linked Accounts can link but never unlink), `POST /api/user/identities/verify`, and `GET /api/auth/github/status` (the client has `bluesky`/`mastodon`/`linkedin`/`twitter` status but not GitHub's).
+
+<a id="g27-small-gaps"></a>
+**G27 · Small, self-contained gaps — LOW. Size XS each.**
+`DELETE /api/notifications/{id}` (delete a single notification; the client can only mark read), `POST /api/messages/{id}/reply-counts`, `GET /api/user/engagement` (aggregate dig/push engagement on your own messages — **note:** returned 401 under Bearer in the 2026-09-05 probe, so it may be session-only; confirm before building), and `PUT /api/documents/{id}` (a full-replace variant beside the `PATCH` the client already uses).
+
+<a id="g28-dashboard"></a>
+**G28 · Dashboard / front-wall layouts + widgets — CONFIRM DEMAND before building. Size L.**
+`GET`/`PUT /api/user/dashboard-layout`, `GET`/`PUT /api/user/front-wall-layout`, and the widget feeds `GET /api/widgets/{markets,news,transit,transit/stops,bike-share}` plus `GET /api/weather` and `GET /api/location`. `/help/getting-started` puts the Dashboard second in prominence on the web, so this is real product surface — but it is a large, web-layout-shaped feature, and a native app may want its own arrangement rather than mirroring the web's saved layout. **Owner decision needed before any of it is built.**
+
+<a id="g29-blog"></a>
+**G29 · Blog — CONFIRM DEMAND. Size M (read) / L (authoring).**
+`/help/blog` documents a Blog feature; the public API surface is only subscribe/confirm/unsubscribe (`/api/blog/*`), while authoring lives behind admin-only routes (`/api/admin/blog*`). A native reader is plausible; native authoring is admin-gated and probably out of scope. **Owner decision needed.**
+
+**Explicitly out of scope for the native client** (counted here so future re-measures stop re-flagging them): `/api/admin/**` (26 ops, admin console), `/api/cron/**` (7, scheduler), `/api/webhooks/**` (2, Stripe + Resend), `/api/stripe/**` (2 — billing is managed in the web app by owner decision, see [G8](#2d-upstream-blocked--deferred-confirm-demand-before-building)), `POST /api/analytics/ingest`, `GET /api/test-db`, `GET /api/openapi.json`, `GET /api/oauth/client-metadata`, and `/api/architecture-aggregates/**`.
+
+---
+
 ## 2. Blocked work — backend-gated or spike-first
 
 Cannot be finished from the client alone. Each item carries a paste-ready prompt for the InterlinedList backend Claude Code session (base URL `https://interlinedlist.com`). **The single high-impact backend blocker is P1-G (Following feed);** everything else is a spike, a confirmation, or low-priority polish.
@@ -85,15 +179,15 @@ Cannot be finished from the client alone. Each item carries a paste-ready prompt
 ### 2a. High-impact blocker
 
 <a id="p1-g-following-feed"></a>
-**P1-G · Following / home feed endpoint** — **HIGH.** Re-verified 2026-07-31: `GET /api/messages` ignores `feed`/`scope`/`following`/`filter` (every variant returns the same "all" feed) and `POST /api/user/update {viewingPreference}` → 405. The client's `TimelineScope.following` is fully UI-wired (All/Mine/Following picker) but `MessagesService.timeline` short-circuits `.following` to an empty "coming soon" page (`MessagesService.swift:364`). One client branch flips to consume this the moment it exists.
+**P1-G · Following / home feed endpoint** — **HIGH. Re-verified STILL BROKEN 2026-09-05:** an authenticated `GET /api/messages?limit=50` and `GET /api/messages?limit=50&scope=following` return the identical 50 messages from the identical author set, so the parameter is still ignored a month on. This remains the one high-impact backend blocker. *(Original 2026-07-31 finding:* `GET /api/messages` ignores `feed`/`scope`/`following`/`filter` (every variant returns the same "all" feed) and `POST /api/user/update {viewingPreference}` → 405. The client's `TimelineScope.following` is fully UI-wired (All/Mine/Following picker) but `MessagesService.timeline` short-circuits `.following` to an empty "coming soon" page (`MessagesService.swift:364`).* ) One client branch flips to consume this the moment it exists.
 
 > **PROMPT:** You are working on the InterlinedList API (interlinedlist.com). Add a followed-accounts timeline feed. Preferred: extend `GET /api/messages` with `?scope=following` (or add `GET /api/feed/following`), returning only messages authored by accounts the caller follows, using the **same paginated envelope** as `GET /api/messages` (same `limit`/`offset`/`hasMore` shape). Bearer auth. Document it. Note: as of 2026-07-31 the live server silently ignores `scope`/`feed`/`following`/`filter` on `GET /api/messages` and `POST /api/user/update {viewingPreference}` → 405, so this needs a real implementation, not just docs. The macOS client already has the UI wired and flips one branch to consume it.
 
 ### 2b. Spike-first native gaps
 
-**G9 · Push notifications (APNs)** — route live (`POST /api/push/register` → 400 "token is required"). **Spike S2 first:** does a sandboxed, notarized, non-App-Store `.pkg` support APNs, and what provisioning is required? Also confirm the `unregister` verb (POST → 405, likely DELETE). Deep-link routing wants the backend `routePath` field ([P2-C](#p2-c-notification-routepath)). Then: register the device token on launch/sign-in, unregister on sign-out; real pushes augment (don't replace) tray polling. **Size M.**
+**G9 · Push notifications (APNs)** — routes confirmed in the 2026-09-05 live spec (`POST /api/push/register`, `DELETE /api/push/unregister` — the `unregister` verb question is settled: it is **DELETE**). Per-event push switches now exist too ([G18](#g18-notification-preferences)). **Spike S2 first:** does a sandboxed, notarized, non-App-Store `.pkg` support APNs, and what provisioning is required? Also confirm the `unregister` verb (POST → 405, likely DELETE). Deep-link routing wants the backend `routePath` field ([P2-C](#p2-c-notification-routepath)). Then: register the device token on launch/sign-in, unregister on sign-out; real pushes augment (don't replace) tray polling. **Size M.**
 
-**G10 · Multi-account switching** — **Spike S4 first:** `/api/auth/accounts` returns 401 under Bearer (session-cookie-only). Resolve the Bearer-vs-session constraint (drive a cookie session for these routes, or request a bearer variant upstream — see [P3-D](#p3-d-sessions-revocation)) before building the account switcher + per-account `KeychainCredentialStore` + cache reset on switch. **Size M.**
+**G10 · Multi-account switching** — **Spike S4 first:** `/api/auth/accounts` returns **401 under Bearer, re-verified 2026-09-05** (session-cookie-only; `/api/auth/switch` and `/api/auth/remove-account` are the same family). Resolve the Bearer-vs-session constraint (drive a cookie session for these routes, or request a bearer variant upstream — see [P3-D](#p3-d-sessions-revocation)) before building the account switcher + per-account `KeychainCredentialStore` + cache reset on switch. **Size M.**
 
 ### 2c. Backend confirmation & polish asks
 
@@ -121,7 +215,7 @@ Reconciliations and additive niceties. The client already works around each; the
 > **PROMPT (optional doc-only):** Document `crossPostToTwitter: true` on `POST /api/messages` alongside `crossPostToBluesky` / `crossPostToLinkedIn`, and document the `crossPosts[]` result entry `{ platform: "twitter", status, externalUrl }`.
 
 <a id="p2-i-message-edit-method"></a>
-**P2-I · Message edit verb drift — `PUT /api/messages/[id]` → HTTP 405.** **NEW, found 2026-08-17.** The client edits a message via `PUT /api/messages/[id]` (`Messages.update`), but the live route returns **405 Method Not Allowed** with an empty body, so **editing a message is broken end-to-end**. `POST` (create) and `DELETE` work; `GET` returns a flat `MessageDTO`. The correct edit verb needs confirmation before the client changes (likely `PATCH`, mirroring `/api/documents/[id]`). Until then the composer's edit path fails against production.
+**P2-I · Message edit verb drift — ✅ RESOLVED 2026-09-05, no backend ask needed.** The live spec and `OPTIONS /api/messages/{id}` both give `Allow: DELETE, GET, HEAD, OPTIONS, PATCH` — the edit verb is **`PATCH`**. This is now a client fix, tracked as [V1](#1c-live-verb-defects--fix-first). *(Original 2026-08-17 finding:* The client edits a message via `PUT /api/messages/[id]` (`Messages.update`), but the live route returns **405 Method Not Allowed** with an empty body, so **editing a message is broken end-to-end**. `POST` (create) and `DELETE` work; `GET` returns a flat `MessageDTO`. The correct edit verb needs confirmation before the client changes (likely `PATCH`, mirroring `/api/documents/[id]`). Until then the composer's edit path fails against production.*)
 > **PROMPT:** `PUT /api/messages/[id]` returns HTTP 405. Confirm the supported method for editing a message (we expect `PATCH /api/messages/[id]` with the same body shape as `POST /api/messages` — `content`, `publiclyVisible`, `tags`, cross-post flags). Document the verb, the accepted body fields, and the response envelope (the create response now wraps the message under `data` with a top-level `crossPosts` array — confirm edit matches). If `PUT` is intended to keep working, restore it.
 
 **P3-A · Document version / ETag** for sync conflict detection.
@@ -134,7 +228,7 @@ Reconciliations and additive niceties. The client already works around each; the
 > **PROMPT:** Add to List objects with `githubSource`: `{ "lastRefreshedAt": "iso-8601 or null", "refreshStatus": "idle|pending|failed", "refreshError": "string or null" }`. Also accept `githubSource` on `POST /api/lists`: `{ "owner", "repo", "path", "ref" }`; if provided, trigger initial refresh and return `refreshStatus: "pending"`.
 
 <a id="p3-d-sessions-revocation"></a>
-**P3-D · Token revocation + `GET /api/user/sessions`.** Relates to [G10](#2b-spike-first-native-gaps) (accounts are session-cookie-only, 401 under Bearer); a Bearer-reachable sessions surface helps both.
+**P3-D · Token revocation + `GET /api/user/sessions`** — ✅ **client half unblocked 2026-09-05.** `GET /api/user/sessions` **is** Bearer-reachable and returns `{id, deviceLabel, createdAt, lastUsedAt, isCurrent}` rows; `DELETE /api/user/sessions/{id}` revokes. Build it as [G19](#g19-sessions). The remaining ask is only the accounts/switch family below. Relates to [G10](#2b-spike-first-native-gaps) (accounts are session-cookie-only, 401 under Bearer); a Bearer-reachable sessions surface helps both.
 > **PROMPT:** Add optional `deviceLabel` to `POST /api/auth/sync-token`. Implement `GET /api/user/sessions` → `{ sessions: [{ id, deviceLabel, createdAt, lastUsedAt, isCurrent }] }` and `DELETE /api/user/sessions/[id]` → 204 (token immediately invalid; 400 `{"error":"cannot_revoke_current_session"}` on self-revoke).
 
 **P3-E · `RateLimit-*` headers universally.** Currently only on `POST /api/messages` and `POST /api/documents/sync`; client already nil-guards absent headers.
@@ -146,15 +240,15 @@ Reconciliations and additive niceties. The client already works around each; the
 **P3-G · List "save to my lists" clone-with-rows.** `ListDetailViewModel.saveToMyLists` copies title/description/schema only, **no rows** (documented degradation; no clone endpoint exists).
 > **PROMPT:** Add `POST /api/lists/[id]/clone` (or a rows-copy option on save) that duplicates a public list's rows into a new owned list, so "save to my lists" carries the data, not just the schema.
 
-**P3-H · Message edit verb reconciliation.** Reference documents `PATCH /api/messages/[id]`; client sends `PUT` (both work live).
+**P3-H · Message edit verb reconciliation** — ⛔ **superseded / the premise was wrong.** "Both work live" is no longer true (and may never have been): `PUT` is rejected outright. Folded into [P2-I](#p2-i-message-edit-method) / [V1](#1c-live-verb-defects--fix-first).
 > **PROMPT:** The API reference documents message edit as `PATCH /api/messages/[id]`, but the client sends `PUT` and it works. Confirm the canonical verb and reconcile the reference with live behavior. While you're here, confirm the canonical verb for `/api/messages/{id}/replies` (OpenAPI shows `POST`; the client uses `GET`).
 
 <a id="p1-h-github-issue-shapes"></a>
-**P1-H · GitHub issue create/comment + labels/assignees shapes** *(docs; unblocks [§1 · G4](#g4-github-issue-integration) end-to-end).* Routes are deployed; shapes are undocumented and can only be exercised once a test identity links GitHub. *(2026-08-17: `create` route + `title`-required confirmed via unlinked probe; `next-issue-number` confirmed to exist.)*
+**P1-H · GitHub issue create/comment + labels/assignees shapes** *(docs; unblocks [§1 · G4](#g4-github-issue-integration) end-to-end).* **Partially unblocked 2026-09-05: the test account is now GitHub-linked** — `GET /api/github/repos` returns **200** instead of the old 400 "not linked", and `GET /api/github/orgs` (a route the client does not build) also answers 200. But the repo list comes back **empty**, so issue request/response envelopes still cannot be exercised end-to-end; a repo has to be configured on that account first. Routes are deployed; shapes remain undocumented. *(2026-08-17: `create` route + `title`-required confirmed via unlinked probe; `next-issue-number` confirmed to exist.)*
 > **PROMPT:** The GitHub issue routes are deployed but undocumented for third-party clients. Define and document, with concrete request/response JSON: (1) issue **labels** and **assignees** as fields on GitHub-sourced list rows; (2) the endpoint to **create a GitHub issue** from a synced list; (3) the endpoint to **comment on an issue**; (4) `next-issue-number` if it exists. State the linked-identity precondition and the exact 400 error body when unlinked. Coordinate with P3-C.
 
 <a id="p1-h2-github-issue-update-comment-routes"></a>
-**P1-H2 · GitHub issue UPDATE + COMMENT route location** *(NEW 2026-08-17 — the specific blocker for G4 close/reopen/label/assignee editing).* Unlinked route-surface probing established the issue **list/create** routes are flat (`GET`/`POST /api/github/issues?repo={owner/repo}`; `OPTIONS`→`Allow: GET, HEAD, OPTIONS, POST`) and the client is now fixed to use them. But the **update** and **comment** routes could not be found: `PATCH`/`PUT /api/github/issues` → 405; every nested/flat single-issue candidate (`/api/github/repos/{repo}/issues/{n}`, `/api/github/issues/{n}`, `/api/github/issues/{n}/comments`, `/api/github/issues/comments`, `/api/github/comments`) → 404.
+**P1-H2 · GitHub issue UPDATE + COMMENT route location** — ✅ **RESOLVED 2026-09-05 by the live spec; no backend ask needed.** The routes are the **flat** ones the coverage matrix originally documented: `PATCH /api/github/issues/{owner}/{repo}/{number}` (`OPTIONS` → `Allow: OPTIONS, PATCH`) and `POST /api/github/issues/{owner}/{repo}/{number}/comments` (`Allow: OPTIONS, POST`). The 2026-08-17 probe searched nested and single-segment candidates but not the three-segment flat form. Client fix tracked as [V7](#1c-live-verb-defects--fix-first). *(Original 2026-08-17 finding:* Unlinked route-surface probing established the issue **list/create** routes are flat (`GET`/`POST /api/github/issues?repo={owner/repo}`; `OPTIONS`→`Allow: GET, HEAD, OPTIONS, POST`) and the client is now fixed to use them. But the **update** and **comment** routes could not be found: `PATCH`/`PUT /api/github/issues` → 405; every nested/flat single-issue candidate (`/api/github/repos/{repo}/issues/{n}`, `/api/github/issues/{n}`, `/api/github/issues/{n}/comments`, `/api/github/issues/comments`, `/api/github/comments`) → 404.*)
 > **PROMPT (ready-to-paste):**
 > You are working on the InterlinedList API backend (base URL `https://interlinedlist.com`). The macOS client integrates the GitHub issue routes under `/api/github/*`, but **two** operations point at routes that return 404/405 live, so issue **editing** and **commenting** are broken end-to-end. I mapped the route surface by probing with a Bearer token for an account whose GitHub identity is **not** linked — so every route that *exists* returns `400 {"error":"GitHub account not linked"}`, and every route that is *missing* returns the Next.js HTML 404. Please locate/confirm the two missing routes and document them.
 >
@@ -173,8 +267,8 @@ Reconciliations and additive niceties. The client already works around each; the
 
 ### 2d. Upstream-blocked / deferred (confirm demand before building)
 
-- **G11b · LinkedIn org posting pages** — upstream-blocked on this tenant (`orgScopesEnabled:false`, `…/linkedin-page` → 404; not deployed). Personal targets (G11a) are unaffected.
-- **G13 · Document presence / live cursors** — highest complexity, lowest urgency; not probed. Confirm demand first.
+- ~~**G11b · LinkedIn org posting pages** — upstream-blocked on this tenant.~~ — ✅ **DEPLOYED as of the 2026-09-05 live spec; moved to [§1d · G25](#g25-org-admin).** `GET /api/organizations/{id}/linkedin/status`, `POST /api/organizations/{id}/linkedin/sync-pages`, `PUT /api/organizations/{id}/linkedin/assignments`, and `DELETE /api/organizations/{id}/linkedin/credential` all exist now, as do the personal-scope `PUT /api/linkedin/posting-targets` and `POST /api/linkedin/sync-pages`. Re-confirm `orgScopesEnabled` on the tenant before building.
+- **G13 · Document presence / live cursors** — routes confirmed live 2026-09-05 (`POST`/`DELETE /api/documents/{id}/presence`, a combined heartbeat+poll), so it is no longer *blocked* — just still the highest-complexity, lowest-urgency item. Tracked with the rest of the document gaps in [§1d · G24](#g24-documents-gaps). Confirm demand first.
 
 ---
 
@@ -261,3 +355,7 @@ This file consolidates and replaces the following, now removed (recoverable via 
 - `v1-release-checklist.md` — the release/App Store checklist (folded into [§3](#3-final-work--release--app-store)).
 
 Retained references: `App-Dmg-Pkg-Deployment.md` (deployment command detail), `README.md`, `docs/`.
+
+## Re-measure log
+
+- **2026-09-05 — live re-measure + parity sweep.** Authenticated against `https://interlinedlist.com` with the `.env` contract-test account (`POST /api/auth/sync-token` → Bearer), pulled `GET /api/openapi.json` (**226 paths / 294 operations**, OpenAPI 3.1, `InterlinedList API 0.1.0`) and diffed it against the 154 request builders in `Packages/InterlinedKit/Sources/InterlinedKit/Endpoints/*.swift`. Cross-read the published help docs at `/help` (18 topics) for the user-facing feature list. **Found:** (1) six shipping calls send a verb the server rejects — [§1c](#1c-live-verb-defects--fix-first), each confirmed by both the spec and an authenticated `OPTIONS` `Allow` header; (2) ~100 unimplemented live operations after excluding admin/cron/webhooks/Stripe/analytics, including whole new product areas — [§1d](#1d-new-feature-areas-2026-09-05-re-measure) G15–G29; (3) [P1-H2](#p1-h2-github-issue-update-comment-routes) and [P2-I](#p2-i-message-edit-method) are **resolved** — both were client-side path/verb errors, not backend gaps; (4) [P1-G](#p1-g-following-feed) re-verified **still broken**, and [G10](#2b-spike-first-native-gaps)'s `/api/auth/accounts` re-verified **still 401 under Bearer**; (5) the test account is now **GitHub-linked** (`/api/github/repos` → 200) but its repo list is empty, so G4 issue envelopes still cannot be exercised. All probes were read-only (`GET`/`OPTIONS`); no writes were made.
