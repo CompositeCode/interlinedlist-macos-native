@@ -430,9 +430,25 @@ public struct AIGenerateRequest: Encodable, Sendable, Equatable {
 /// `scheduledMessageIds` + `firstScheduledAt`, an unscheduled one returns
 /// `listId`, and a powered document returns `documentId`.
 public struct AIGenerateResponse: Decodable, Sendable, Equatable {
+    public let ok: Bool?
+    public let feature: String?
     public let created: CreatedDTO?
+    /// Post-call quota, verified live 2026-09-06. The domain refreshes
+    /// availability after a confirm anyway (a free call), so this is modelled
+    /// for accuracy rather than consumed today.
+    public let quota: AIStatusDTO.QuotaDTO?
 
-    public init(created: CreatedDTO? = nil) { self.created = created }
+    public init(
+        ok: Bool? = nil,
+        feature: String? = nil,
+        created: CreatedDTO? = nil,
+        quota: AIStatusDTO.QuotaDTO? = nil
+    ) {
+        self.ok = ok
+        self.feature = feature
+        self.created = created
+        self.quota = quota
+    }
 
     public struct CreatedDTO: Decodable, Sendable, Equatable {
         public let listId: String?

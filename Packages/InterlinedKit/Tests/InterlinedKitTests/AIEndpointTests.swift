@@ -217,6 +217,26 @@ final class AIEndpointTests: XCTestCase {
                        ISO8601DateFormatter().date(from: "2026-09-06T01:00:00Z"))
     }
 
+    func test_givenTheLiveGenerateEnvelope_whenDecoded_thenCarriesQuotaAlongsideCreated() async throws {
+        let (client, transport) = makeClient()
+        // Verbatim from a real 2026-09-06 generate.
+        await transport.enqueue(.json(#"""
+        { "ok": true, "feature": "powered_document",
+          "created": { "documentId": "b6a9310b-2c7a-47be-9573-32f19c7121a5" },
+          "quota": { "usedToday": 9, "dailyLimit": 50 } }
+        """#, status: 201))
+
+        let response = try await client.send(AI.generate(AIGenerateRequest(
+            feature: .poweredDocument, artifact: AIArtifactDTO()
+        )))
+
+        XCTAssertEqual(response.ok, true)
+        XCTAssertEqual(response.feature, "powered_document")
+        XCTAssertEqual(response.created?.documentId, "b6a9310b-2c7a-47be-9573-32f19c7121a5")
+        XCTAssertEqual(response.quota?.usedToday, 9)
+        XCTAssertEqual(response.quota?.dailyLimit, 50)
+    }
+
     // MARK: - Invalid input
 
     func test_givenUnknownFeatureRejection_whenSuggestSent_thenSurfacesServerMessage() async throws {

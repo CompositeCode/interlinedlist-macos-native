@@ -27,6 +27,10 @@ struct OwnedListsRootView: View {
     @State private var showsNewListSheet: Bool = false
     /// Drives the "Draft with AI" sheet (work-consolidation.md G15).
     @State private var showsAIListSheet = false
+
+    /// Drives the "Create from…" sheet for the selected list
+    /// (work-consolidation.md G16).
+    @State private var showsCreateFromList = false
     @State private var showsSchemaEditor: Bool = false
     @State private var showsWatchers: Bool = false
     @State private var showsShareLinks: Bool = false
@@ -138,6 +142,15 @@ struct OwnedListsRootView: View {
                 }
                 .help("Describe a list and let AI draft its columns and starter rows")
 
+                // "Create from…" over the selected list (work-consolidation.md G16).
+                Button {
+                    showsCreateFromList = true
+                } label: {
+                    Label("Create from\u{2026}", systemImage: "plus.rectangle.on.folder")
+                }
+                .disabled(viewModel.selectedListID == nil)
+                .help("Turn this list into a document, or into another list")
+
                 Button {
                     Task {
                         if let id = viewModel.selectedListID {
@@ -211,6 +224,17 @@ struct OwnedListsRootView: View {
                 // finally makes the already-built issue browser reachable.
                 .disabled((rowsViewModel?.gitHubRepo ?? viewModel.selectedListGitHubRepo) == nil)
                 .help("Browse and create GitHub issues for this list")
+            }
+        }
+        .sheet(isPresented: $showsCreateFromList) {
+            if let environment, let listId = viewModel.selectedListID {
+                CreateFromSheet(
+                    source: .lists(ids: [listId]),
+                    environment: environment,
+                    initialOutput: .document
+                ) { _ in
+                    Task { await viewModel.refresh() }
+                }
             }
         }
         .sheet(isPresented: $showsAIListSheet) {

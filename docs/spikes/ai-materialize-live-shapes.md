@@ -119,6 +119,31 @@ The default columns for a **message** source are Content (`textarea`), Author (`
 
 Note the created object is **nested** under `list` — not a flat `listId`. `MaterializeResponse` decodes both and surfaces a flat `listId`/`documentId` either way.
 
+## Live end-to-end pass — 2026-09-06
+
+Every route exercised against the `.env` test account, including the persisting half. All six artifacts created were deleted afterwards and the account's inventory was confirmed back at its baseline (1 list, 5 documents, no leftovers).
+
+| call | result |
+| --- | --- |
+| `powered_document` suggest → generate | `200` → `201 {"ok":true,"feature":"powered_document","created":{"documentId":"…"},"quota":{…}}` |
+| `powered_template` suggest → generate | `200` → `201 … "created":{"listId":"…"}` |
+| `message_series` suggest → generate (unscheduled) | `200` (5 items) → `201 … "created":{"listId":"…"}` — an unscheduled series collects into a list, as modelled |
+| `materialize` target `doc` | `201 {"document":{"id":"…","title":"…"}}` |
+| `materialize` target `both` | `201 {"list":{…},"document":{…}}` |
+| `article_series` suggest | **`502 provider_error` — three attempts, three failures** |
+
+The generate envelope carries `ok` / `feature` / `quota` alongside `created`; the created ids match what `AIGenerateResponse` and `MaterializeResponse` model, and the nested `list` / `document` objects match `MaterializeOutcome`.
+
+### ⚠️ `article_series` is broken upstream, not in this client
+
+Three separate attempts on two days, with different briefs (all comfortably over the ten-word minimum), returned the same body:
+
+```json
+{"error":"The AI provider rejected the request.","code":"provider_error"}
+```
+
+Every other feature succeeds on the same account, key, and model, so this is not entitlement, quota, or input length. The client models the feature and maps the failure to `AIError.providerRejected`, which presents as "the AI provider couldn't complete that request" rather than blaming the user — but the feature cannot work until the server side is fixed. Tracked as a backend ask in [`work-consolidation.md` §2](../../work-consolidation.md#2c-backend-confirmation--polish-asks).
+
 ## Reproducing
 
 ```bash
