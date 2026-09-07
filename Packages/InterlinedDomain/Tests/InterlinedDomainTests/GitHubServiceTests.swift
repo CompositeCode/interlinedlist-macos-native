@@ -99,17 +99,70 @@ final class GitHubServiceTests: XCTestCase {
         XCTAssertEqual(recorded.first?.query["repo"], "o/r")
     }
 
-    func test_givenStateUpdate_whenUpdating_thenPatchesIssue() async throws {
+    // The live `PATCH /api/github/issues/{owner}/{repo}/{number}` sets labels
+    // and assignees only. A state/title/body-only body comes back
+    // `400 "labels or assignees required"` (verified 2026-09-06 —
+    // work-consolidation.md §1c · V7), so the service refuses it locally.
+    func test_givenLabelUpdate_whenUpdating_thenPatchesFlatIssuePath() async throws {
         let api = StubAPIClient()
-        await api.enqueue(json: #"{"number":21,"title":"New bug","state":"closed"}"#)
+        await api.enqueue(json: #"{"number":21,"title":"New bug","state":"open"}"#)
         let service = GitHubService(api: api)
 
-        let issue = try await service.updateIssue(repo: "o/r", number: 21, GitHubIssueUpdate(state: .closed))
+        let issue = try await service.updateIssue(
+            repo: "o/r",
+            number: 21,
+            GitHubIssueUpdate(labels: ["bug"])
+        )
 
-        XCTAssertEqual(issue.state, .closed)
+        XCTAssertEqual(issue.number, 21)
         let recorded = await api.recorded
         XCTAssertEqual(recorded.first?.method, "PATCH")
-        XCTAssertEqual(recorded.first?.path, "/api/github/repos/o/r/issues/21")
+        XCTAssertEqual(recorded.first?.path, "/api/github/issues/o/r/21")
+    }
+
+    func test_givenStateOnlyUpdate_whenUpdating_thenThrowsWithoutCallingAPI() async throws {
+        let api = StubAPIClient()
+        let service = GitHubService(api: api)
+
+        do {
+            _ = try await service.updateIssue(repo: "o/r", number: 21, GitHubIssueUpdate(state: .closed))
+            XCTFail("Expected unsupportedIssueEdit")
+        } catch let error as GitHubServiceError {
+            XCTAssertEqual(error, .unsupportedIssueEdit)
+        }
+
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty)
+    }
+
+    // Boundary: a title/body edit is refused on the same grounds — the route
+    // ignores both unless labels/assignees accompany them.
+    func test_givenTitleOnlyUpdate_whenUpdating_thenThrowsUnsupported() async throws {
+        let api = StubAPIClient()
+        let service = GitHubService(api: api)
+
+        do {
+            _ = try await service.updateIssue(repo: "o/r", number: 21, GitHubIssueUpdate(title: "Renamed"))
+            XCTFail("Expected unsupportedIssueEdit")
+        } catch let error as GitHubServiceError {
+            XCTAssertEqual(error, .unsupportedIssueEdit)
+        }
+    }
+
+    // Boundary: assignees alone is enough to satisfy the route's requirement.
+    func test_givenAssigneesOnlyUpdate_whenUpdating_thenIsAccepted() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(json: #"{"number":21,"title":"New bug","state":"open"}"#)
+        let service = GitHubService(api: api)
+
+        _ = try await service.updateIssue(
+            repo: "o/r",
+            number: 21,
+            GitHubIssueUpdate(assignees: ["octocat"])
+        )
+
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.count, 1)
     }
 
     func test_givenComment_whenAdding_thenPostsAndReturnsComment() async throws {
@@ -122,7 +175,8 @@ final class GitHubServiceTests: XCTestCase {
         XCTAssertEqual(comment.body, "thanks")
         XCTAssertEqual(comment.author?.login, "octocat")
         let recorded = await api.recorded
-        XCTAssertEqual(recorded.first?.path, "/api/github/repos/o/r/issues/21/comments")
+        // Flat comment route, verified live 2026-09-06 (§1c · V7).
+        XCTAssertEqual(recorded.first?.path, "/api/github/issues/o/r/21/comments")
     }
 
     // MARK: - Labels / assignees / next number

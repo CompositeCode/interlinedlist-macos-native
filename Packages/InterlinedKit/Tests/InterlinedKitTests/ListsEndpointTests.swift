@@ -47,7 +47,8 @@ final class ListsEndpointTests: XCTestCase {
         XCTAssertEqual(Lists.rows(listId: "7").paginationKey, "rows")
         XCTAssertEqual(Lists.createRow(listId: "7", CreateListRowRequest(rowData: [:])).method, .post)
         XCTAssertEqual(Lists.row(listId: "7", rowId: "r1").path, "/api/lists/7/data/r1")
-        XCTAssertEqual(Lists.updateRow(listId: "7", rowId: "r1", UpdateListRowRequest(rowData: [:])).method, .patch)
+        // PUT, not PATCH — PATCH is 405 live (work-consolidation.md §1c · V3).
+        XCTAssertEqual(Lists.updateRow(listId: "7", rowId: "r1", UpdateListRowRequest(rowData: [:])).method, .put)
         XCTAssertEqual(Lists.deleteRow(listId: "7", rowId: "r1").method, .delete)
 
         XCTAssertEqual(Lists.watchers(listId: "7").path, "/api/lists/7/watchers")
@@ -120,12 +121,14 @@ final class ListsEndpointTests: XCTestCase {
 
     func test_givenDynamicSchemaRow_whenRowSent_thenDecodesFlexibleRowData() async throws {
         let (client, transport) = makeClient()
+        // The live single-row read is enveloped under `data` (verified
+        // 2026-09-06 — work-consolidation.md §1c · V3).
         await transport.enqueue(.json(#"""
-        {"id":"r1","listId":"7",
-         "rowData":{"Title":"Dune","Year":1965,"Read":true,"Rating":4.5,"Tags":["sci-fi"]}}
+        {"data":{"id":"r1","listId":"7",
+         "rowData":{"Title":"Dune","Year":1965,"Read":true,"Rating":4.5,"Tags":["sci-fi"]}}}
         """#))
 
-        let row = try await client.send(Lists.row(listId: "7", rowId: "r1"))
+        let row = try await client.send(Lists.row(listId: "7", rowId: "r1")).data
 
         XCTAssertEqual(row.id, "r1")
         XCTAssertEqual(row.rowData["Title"], .string("Dune"))
@@ -144,11 +147,11 @@ final class ListsEndpointTests: XCTestCase {
     func test_givenGitHubSyncedRow_whenRowSent_thenDecodesSourceAndRepo() async throws {
         let (client, transport) = makeClient()
         await transport.enqueue(.json(#"""
-        {"id":"r1","listId":"7","rowData":{"Title":"Fix crash"},
-         "source":"github","githubRepo":"CompositeCode/interlinedlist"}
+        {"data":{"id":"r1","listId":"7","rowData":{"Title":"Fix crash"},
+         "source":"github","githubRepo":"CompositeCode/interlinedlist"}}
         """#))
 
-        let row = try await client.send(Lists.row(listId: "7", rowId: "r1"))
+        let row = try await client.send(Lists.row(listId: "7", rowId: "r1")).data
 
         XCTAssertEqual(row.source, "github")
         XCTAssertEqual(row.githubRepo, "CompositeCode/interlinedlist")
@@ -158,26 +161,32 @@ final class ListsEndpointTests: XCTestCase {
     // failure, so existing (non-GitHub) rows keep decoding unchanged.
     func test_givenNativeRow_whenRowSent_thenSourceAndRepoAreNil() async throws {
         let (client, transport) = makeClient()
-        await transport.enqueue(.json(#"{"id":"r1","listId":"7","rowData":{"Title":"Dune"}}"#))
+        await transport.enqueue(.json(#"{"data":{"id":"r1","listId":"7","rowData":{"Title":"Dune"}}}"#))
 
-        let row = try await client.send(Lists.row(listId: "7", rowId: "r1"))
+        let row = try await client.send(Lists.row(listId: "7", rowId: "r1")).data
 
         XCTAssertNil(row.source)
         XCTAssertNil(row.githubRepo)
     }
 
-    func test_givenRowData_whenCreateRowSent_thenEncodesRowDataEnvelope() async throws {
+    // The live create takes `{ "data": … }` on the wire and answers
+    // `{ message, data }` (verified 2026-09-06 — work-consolidation.md §1c · V3).
+    // The old fixture asserted a `rowData` request key, which the server rejects
+    // with 400 "Data is required".
+    func test_givenRowData_whenCreateRowSent_thenEncodesUnderDataKey() async throws {
         let (client, transport) = makeClient()
-        await transport.enqueue(.json(#"{"id":"r9","rowData":{"Title":"New"}}"#))
+        await transport.enqueue(.json(#"{"message":"Row created successfully","data":{"id":"r9","rowData":{"Title":"New"}}}"#))
 
         let body = CreateListRowRequest(rowData: ["Title": .string("New")])
-        _ = try await client.send(Lists.createRow(listId: "7", body))
+        let created = try await client.send(Lists.createRow(listId: "7", body))
 
+        XCTAssertEqual(created.data.id, "r9")
         let received = await transport.received
         XCTAssertEqual(received[0].httpMethod, "POST")
         let sent = try XCTUnwrap(received[0].httpBody)
         let decoded = try JSONDecoder().decode([String: [String: ListJSONValue]].self, from: sent)
-        XCTAssertEqual(decoded["rowData"]?["Title"], .string("New"))
+        XCTAssertEqual(decoded["data"]?["Title"], .string("New"))
+        XCTAssertNil(decoded["rowData"])
     }
 
     func test_givenConnectionsEnvelope_whenConnectionsSent_thenDecodesUnderConnectionsKey() async throws {
@@ -222,9 +231,9 @@ final class ListsEndpointTests: XCTestCase {
 
     func test_givenEmptyRowData_whenRowSent_thenDecodesEmptyMap() async throws {
         let (client, transport) = makeClient()
-        await transport.enqueue(.json(#"{"id":"r1","rowData":{}}"#))
+        await transport.enqueue(.json(#"{"data":{"id":"r1","rowData":{}}}"#))
 
-        let row = try await client.send(Lists.row(listId: "7", rowId: "r1"))
+        let row = try await client.send(Lists.row(listId: "7", rowId: "r1")).data
 
         XCTAssertTrue(row.rowData.isEmpty)
     }

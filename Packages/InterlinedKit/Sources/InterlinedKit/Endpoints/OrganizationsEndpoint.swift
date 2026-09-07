@@ -37,19 +37,34 @@ public enum Organizations {
         )
     }
 
-    /// `POST /api/organizations`
-    public static func create(_ body: CreateOrganizationRequest) -> Request<OrganizationDTO> {
+    /// `POST /api/organizations` — create an organization.
+    ///
+    /// VERIFIED live 2026-09-06: answers `{ "message": …, "organization": { … } }`,
+    /// so this decodes `OrganizationWriteResponse`. It previously decoded a bare
+    /// `OrganizationDTO` and therefore failed on every successful create.
+    public static func create(_ body: CreateOrganizationRequest) -> Request<OrganizationWriteResponse> {
         Request(method: .post, path: "/api/organizations", body: .json(body), auth: .bearer)
     }
 
-    /// `GET /api/organizations/[id]`
-    public static func get(id: String) -> Request<OrganizationDTO> {
+    /// `GET /api/organizations/[id]` — one organization.
+    ///
+    /// VERIFIED live 2026-09-06: answers `{ "organization": { … } }`, the same
+    /// envelope as the write routes (no `message` key on the read). Was decoding
+    /// a bare `OrganizationDTO`, so organization detail never loaded.
+    public static func get(id: String) -> Request<OrganizationWriteResponse> {
         Request(method: .get, path: "/api/organizations/\(id)", auth: .bearer)
     }
 
-    /// `PATCH /api/organizations/[id]`
-    public static func update(id: String, _ body: UpdateOrganizationRequest) -> Request<OrganizationDTO> {
-        Request(method: .patch, path: "/api/organizations/\(id)", body: .json(body), auth: .bearer)
+    /// `PUT /api/organizations/[id]` — rename / re-describe / re-scope an org.
+    ///
+    /// VERIFIED live 2026-09-06 (work-consolidation.md §1c · V4): the verb is
+    /// `PUT`. `OPTIONS` reports `Allow: DELETE, GET, HEAD, OPTIONS, PUT` and the
+    /// `PATCH` this shipped with returns **405**. A live `PUT` renamed a probe
+    /// organization and returned HTTP 200 with the `OrganizationWriteResponse`
+    /// envelope — the response type is corrected here too, since fixing only the
+    /// verb would have swapped a 405 for a decode failure.
+    public static func update(id: String, _ body: UpdateOrganizationRequest) -> Request<OrganizationWriteResponse> {
+        Request(method: .put, path: "/api/organizations/\(id)", body: .json(body), auth: .bearer)
     }
 
     // MARK: - Members

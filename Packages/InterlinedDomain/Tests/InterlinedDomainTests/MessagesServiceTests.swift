@@ -460,67 +460,119 @@ final class MessagesServiceTests: XCTestCase {
         }
     }
 
-    // MARK: - M2 write surface: update (edit)
+    // MARK: - M2 write surface: update (edit) — unsupported upstream
 
-    func test_givenEdits_whenUpdating_thenPutsToMessageIdAndCachesResult() async throws {
+    // The live API has no route that edits a posted message. `PUT
+    // /api/messages/[id]` is 405 and the `PATCH` that replaced it only moves a
+    // scheduled post's send time, rejecting a content body with
+    // `400 "No valid updates provided"` and silently dropping `content` sent
+    // beside `scheduledAt` (verified 2026-09-06 — work-consolidation.md §1c ·
+    // V1). `update` therefore refuses locally instead of issuing a doomed call.
+
+    func test_givenEdits_whenUpdating_thenThrowsEditingNotSupportedWithoutCallingAPI() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.messageObject(id: "m-42", content: "edited"))
         let store = InMemoryMessageStore()
         let service = MessagesService(api: api, store: store)
-
-        // When
-        let updated = try await service.update(
-            messageId: "m-42",
-            body: "edited",
-            tags: ["swift"],
-            visibility: .public
-        )
-
-        // Then
-        XCTAssertEqual(updated.text, "edited")
-        let recorded = await api.recorded
-        XCTAssertEqual(recorded.first?.method, "PUT")
-        XCTAssertEqual(recorded.first?.path, "/api/messages/m-42")
-        let cached = await store.cachedMessage(id: "m-42")
-        XCTAssertEqual(cached?.text, "edited")
-    }
-
-    func test_givenEmptyBody_whenUpdating_thenStillIssuesPut() async throws {
-        // Given — boundary: empty body. Forwarded as-is; server validates.
-        let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.messageObject(id: "m-42", content: ""))
-        let service = MessagesService(api: api)
-
-        // When
-        let updated = try await service.update(
-            messageId: "m-42",
-            body: "",
-            tags: [],
-            visibility: .public
-        )
-
-        // Then
-        XCTAssertEqual(updated.text, "")
-    }
-
-    func test_givenUpdateAPIFailure_whenUpdating_thenThrows() async throws {
-        // Given
-        let api = StubAPIClient()
-        await api.enqueue(failure: .notFound(serverMessage: "gone"))
-        let service = MessagesService(api: api)
 
         // When / Then
         do {
             _ = try await service.update(
-                messageId: "missing",
-                body: "x",
-                tags: [],
+                messageId: "m-42",
+                body: "edited",
+                tags: ["swift"],
                 visibility: .public
             )
+            XCTFail("Expected editingNotSupported")
+        } catch let error as MessagesError {
+            XCTAssertEqual(error, .editingNotSupported)
+        }
+
+        // And — no request was made, and nothing was written to the cache.
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty)
+        let cached = await store.cachedMessage(id: "m-42")
+        XCTAssertNil(cached)
+    }
+
+    func test_givenEmptyBody_whenUpdating_thenStillThrowsEditingNotSupported() async throws {
+        // Boundary: an empty edit is refused on the same grounds, not passed
+        // through for the server to validate.
+        let api = StubAPIClient()
+        let service = MessagesService(api: api)
+
+        do {
+            _ = try await service.update(messageId: "m-42", body: "", tags: [], visibility: .public)
+            XCTFail("Expected editingNotSupported")
+        } catch let error as MessagesError {
+            XCTAssertEqual(error, .editingNotSupported)
+        }
+    }
+
+    func test_givenEditingNotSupported_whenDescribed_thenExplainsTheAlternative() {
+        // The message is user-facing, so it must name what the user *can* do.
+        let description = MessagesError.editingNotSupported.description
+        XCTAssertTrue(description.contains("reschedule"))
+        XCTAssertTrue(description.contains("delete"))
+    }
+
+    // MARK: - reschedule (the write the live API does support)
+
+    func test_givenNewDate_whenRescheduling_thenPatchesWithScheduledAtOnly() async throws {
+        // Given — the live reply is a bare MessageDTO, not the create envelope.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageObject(id: "m-42", content: "scheduled"))
+        let store = InMemoryMessageStore()
+        let service = MessagesService(api: api, store: store)
+        let newDate = Date(timeIntervalSince1970: 1_800_000_000)
+
+        // When
+        let updated = try await service.reschedule(messageId: "m-42", newDate: newDate)
+
+        // Then
+        XCTAssertEqual(updated.id, "m-42")
+        let recorded = await api.recorded
+        // Exactly one call: the old implementation did a GET first to re-send
+        // the whole message, which the server discards anyway.
+        XCTAssertEqual(recorded.count, 1)
+        XCTAssertEqual(recorded.first?.method, "PATCH")
+        XCTAssertEqual(recorded.first?.path, "/api/messages/m-42")
+    }
+
+    func test_givenReschedule_whenSucceeding_thenWritesThroughToTheCache() async throws {
+        // Boundary: the rescheduled copy must land in the store so the
+        // Scheduled pane repaints from cache without a refetch.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.messageObject(id: "m-42", content: "scheduled"))
+        let store = InMemoryMessageStore()
+        let service = MessagesService(api: api, store: store)
+
+        _ = try await service.reschedule(
+            messageId: "m-42",
+            newDate: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+
+        let cached = await store.cachedMessage(id: "m-42")
+        XCTAssertEqual(cached?.id, "m-42")
+    }
+
+    func test_givenPublishedMessage_whenRescheduling_thenPropagatesServerRefusal() async throws {
+        // Upstream failure: the live route rejects an already-published post
+        // with 400 "Can only edit scheduled posts that are in the future".
+        let api = StubAPIClient()
+        await api.enqueue(failure: .badRequest(
+            serverMessage: "Can only edit scheduled posts that are in the future"
+        ))
+        let service = MessagesService(api: api)
+
+        do {
+            _ = try await service.reschedule(messageId: "m-42", newDate: .distantFuture)
             XCTFail("Expected an APIError")
         } catch let error as APIError {
-            XCTAssertEqual(error, .notFound(serverMessage: "gone"))
+            XCTAssertEqual(
+                error,
+                .badRequest(serverMessage: "Can only edit scheduled posts that are in the future")
+            )
         }
     }
 

@@ -86,7 +86,14 @@ public final class GitHubService: GitHubServicing {
     }
 
     public func updateIssue(repo: String, number: Int, _ update: GitHubIssueUpdate) async throws -> GitHubIssue {
-        try await mappingNotLinked {
+        // The live route sets labels/assignees only — a state/title/body-only
+        // edit is rejected with 400 "labels or assignees required", so refuse it
+        // here rather than spending a round trip to learn that
+        // (work-consolidation.md §1c · V7).
+        guard update.labels != nil || update.assignees != nil else {
+            throw GitHubServiceError.unsupportedIssueEdit
+        }
+        return try await mappingNotLinked {
             let request = UpdateGitHubIssueRequest(
                 title: update.title,
                 body: update.body,

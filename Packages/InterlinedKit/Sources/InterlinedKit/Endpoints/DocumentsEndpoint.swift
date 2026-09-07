@@ -55,18 +55,38 @@ public enum Documents {
     }
 
     /// `POST /api/documents`
-    public static func create(_ body: CreateDocumentRequest) -> Request<DocumentDTO> {
+    ///
+    /// VERIFIED live 2026-09-06: answers `{ message, document }`, not a bare DTO.
+    public static func create(_ body: CreateDocumentRequest) -> Request<DocumentResponse> {
         Request(method: .post, path: "/api/documents", body: .json(body), auth: .bearer)
     }
 
     /// `GET /api/documents/[id]`
-    public static func get(id: String) -> Request<DocumentDTO> {
+    ///
+    /// VERIFIED live 2026-09-06: answers `{ "document": { … } }` (no `message`
+    /// on the read), not a bare DTO.
+    public static func get(id: String) -> Request<DocumentResponse> {
         Request(method: .get, path: "/api/documents/\(id)", auth: .bearer)
     }
 
-    /// `PATCH /api/documents/[id]`
-    public static func update(id: String, _ body: UpdateDocumentRequest) -> Request<DocumentDTO> {
+    /// `PATCH /api/documents/[id]` — merge the supplied fields only.
+    ///
+    /// VERIFIED live 2026-09-06: answers `{ message, document }`, not a bare
+    /// DTO. A title-only `PATCH` left `content` intact, confirming it is a true
+    /// partial update.
+    public static func update(id: String, _ body: UpdateDocumentRequest) -> Request<DocumentResponse> {
         Request(method: .patch, path: "/api/documents/\(id)", body: .json(body), auth: .bearer)
+    }
+
+    /// `PUT /api/documents/[id]` — full replace (work-consolidation.md G27).
+    ///
+    /// VERIFIED live 2026-09-06: `OPTIONS` reports
+    /// `Allow: DELETE, GET, HEAD, OPTIONS, PATCH, PUT`, and a live `PUT`
+    /// carrying `title` + `content` replaced both and returned the same
+    /// `{ message, document }` envelope as `PATCH`. Use `update` for a partial
+    /// edit; this is the whole-document variant.
+    public static func replace(id: String, _ body: UpdateDocumentRequest) -> Request<DocumentResponse> {
+        Request(method: .put, path: "/api/documents/\(id)", body: .json(body), auth: .bearer)
     }
 
     /// `DELETE /api/documents/[id]`
@@ -110,21 +130,32 @@ public enum Documents {
     }
 
     /// `POST /api/documents/folders`
-    public static func createFolder(_ body: CreateDocumentFolderRequest) -> Request<DocumentFolderDTO> {
+    /// VERIFIED live 2026-09-06: answers the `{ message, folder }` envelope,
+    /// not a bare `DocumentFolderDTO`.
+    public static func createFolder(_ body: CreateDocumentFolderRequest) -> Request<DocumentFolderResponse> {
         Request(method: .post, path: "/api/documents/folders", body: .json(body), auth: .bearer)
     }
 
     /// `GET /api/documents/folders/[id]`
-    public static func folder(id: String) -> Request<DocumentFolderDTO> {
+    ///
+    /// VERIFIED live 2026-09-06: answers `{ "folder": { … } }` (no `message` on
+    /// the read). Was decoding a bare DTO, so folder detail never loaded.
+    public static func folder(id: String) -> Request<DocumentFolderResponse> {
         Request(method: .get, path: "/api/documents/folders/\(id)", auth: .bearer)
     }
 
-    /// `PATCH /api/documents/folders/[id]`
+    /// `PUT /api/documents/folders/[id]` — rename or re-parent a folder.
+    ///
+    /// VERIFIED live 2026-09-06 (work-consolidation.md §1c · V5): the verb is
+    /// `PUT`. `OPTIONS` reports `Allow: DELETE, GET, HEAD, OPTIONS, PUT` and the
+    /// `PATCH` this shipped with returns **405**. A live `PUT` renamed a probe
+    /// folder and returned HTTP 200 with the `{ message, folder }` envelope, so
+    /// the response type is corrected alongside the verb.
     public static func updateFolder(
         id: String,
         _ body: UpdateDocumentFolderRequest
-    ) -> Request<DocumentFolderDTO> {
-        Request(method: .patch, path: "/api/documents/folders/\(id)", body: .json(body), auth: .bearer)
+    ) -> Request<DocumentFolderResponse> {
+        Request(method: .put, path: "/api/documents/folders/\(id)", body: .json(body), auth: .bearer)
     }
 
     /// `DELETE /api/documents/folders/[id]`

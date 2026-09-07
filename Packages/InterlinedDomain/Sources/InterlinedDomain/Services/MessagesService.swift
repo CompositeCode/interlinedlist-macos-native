@@ -30,6 +30,18 @@ public enum MessagesError: Error, Sendable, Equatable {
     /// the UI can tell the user how much to trim (PLAN.md §8 — "clear errors
     /// when impossible").
     case mediaTooLarge(byteCount: Int, limit: Int)
+
+    /// The requested write has **no route on the live API**, so the client
+    /// refuses it up front rather than firing a call that cannot succeed.
+    ///
+    /// Raised by `update(messageId:body:tags:visibility:)`: editing a published
+    /// message is not something the server offers. `PATCH /api/messages/[id]`
+    /// exists but only reschedules a future scheduled post — it answers
+    /// `400 "No valid updates provided"` for a content body and silently drops
+    /// `content` when it accompanies `scheduledAt` (verified 2026-09-06,
+    /// work-consolidation.md §1c · V1). Throwing here keeps the failure honest
+    /// and local instead of letting the UI believe an edit was saved.
+    case editingNotSupported
 }
 
 extension MessagesError: LocalizedError, CustomStringConvertible {
@@ -48,6 +60,9 @@ extension MessagesError: LocalizedError, CustomStringConvertible {
             }
         case .mediaTooLarge(let byteCount, let limit):
             return "This file is \(byteCount) bytes, over the \(limit)-byte limit."
+        case .editingNotSupported:
+            return "InterlinedList does not support editing a message after it is posted. "
+                + "You can reschedule a post that has not gone out yet, or delete this one and post again."
         }
     }
 }
@@ -134,8 +149,17 @@ public protocol MessagesServicing: Sendable {
         visibility: Visibility
     ) async throws -> Message
 
-    /// Edits an existing message in place. The full body/tags/visibility are
-    /// resent — this is a PUT, not a PATCH, matching the kit builder.
+    /// Editing a posted message.
+    ///
+    /// - Important: **Always throws `MessagesError.editingNotSupported`.** The
+    ///   live API has no route that edits a message's content: the only write
+    ///   on `/api/messages/[id]` is the `PATCH` reschedule, which rejects a
+    ///   content body outright and silently discards `content` sent next to
+    ///   `scheduledAt` (verified 2026-09-06 — work-consolidation.md §1c · V1).
+    ///   The method is kept so the capability gap is explicit at the call site
+    ///   and typed for the UI, rather than being a call that quietly no-ops.
+    ///   Use `reschedule(messageId:newDate:)` for the write the server *does*
+    ///   support.
     func update(
         messageId: String,
         body: String,
@@ -498,15 +522,9 @@ public final class MessagesService: MessagesServicing {
         tags: [String],
         visibility: Visibility
     ) async throws -> Message {
-        let request = CreateMessageRequest(
-            content: body,
-            publiclyVisible: visibility.isPubliclyVisible,
-            tags: tags.isEmpty ? nil : tags
-        )
-        let dto = try await api.send(Messages.update(id: messageId, request)).message
-        let message = Message(from: dto)
-        await store?.upsert([message])
-        return message
+        // No live route edits a posted message — fail fast and honestly rather
+        // than sending a request the server will reject or silently ignore.
+        throw MessagesError.editingNotSupported
     }
 
     public func delete(messageId: String) async throws {
@@ -679,15 +697,15 @@ public final class MessagesService: MessagesServicing {
     }
 
     public func reschedule(messageId: String, newDate: Date) async throws -> Message {
-        let existing = try await message(id: messageId)
-        let request = CreateMessageRequest(
-            content: existing.text,
-            publiclyVisible: existing.visibility.isPubliclyVisible,
-            tags: existing.tags.isEmpty ? nil : existing.tags,
-            scheduledAt: newDate
-        )
-        let dto = try await api.send(Messages.update(id: messageId, request)).message
+        // `scheduledAt` is the only key the live PATCH honours, so send just
+        // that. The previous implementation round-tripped the whole message
+        // through `CreateMessageRequest`, which cost an extra GET and shipped
+        // content/tags/visibility fields the server discards.
+        let request = RescheduleMessageRequest(scheduledAt: newDate)
+        // The reply is a bare `MessageDTO`, not the create envelope.
+        let dto = try await api.send(Messages.reschedule(id: messageId, request))
         let updated = Message(from: dto)
+        await store?.upsert([updated])
         return updated
     }
 
