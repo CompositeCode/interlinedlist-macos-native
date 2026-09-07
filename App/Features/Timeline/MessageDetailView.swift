@@ -78,7 +78,13 @@ struct MessageDetailView: View {
         }
         .task {
             if viewModel == nil, let environment {
-                let model = MessageDetailViewModel(messages: environment.messages, messageID: messageID)
+                let model = MessageDetailViewModel(
+                    messages: environment.messages,
+                    messageID: messageID,
+                    // An inline reply is a post: it honours the same account
+                    // default as the composer and the repost sheet.
+                    defaultVisibility: environment.defaultComposeVisibility
+                )
                 viewModel = model
                 await model.load()
             }
