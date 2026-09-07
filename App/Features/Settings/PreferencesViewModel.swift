@@ -21,6 +21,12 @@ final class PreferencesViewModel {
 
     private let userService: UserServicing
 
+    /// The session-cached account projection. A successful save re-resolves it
+    /// so anything reading a preference off `CurrentUser` — today the composer's
+    /// default visibility — picks the change up without an app restart. Optional
+    /// so existing tests and previews construct the view model unchanged.
+    private let currentUserStore: CurrentUserStore?
+
     /// The working copy bound directly to the pane's controls. `save()`
     /// persists it; a successful load/save resets `lastSaved` to match.
     var settings: UserSettings = .default
@@ -42,8 +48,9 @@ final class PreferencesViewModel {
     /// Drives the Save button's enabled state.
     var hasChanges: Bool { settings != lastSaved }
 
-    init(userService: UserServicing) {
+    init(userService: UserServicing, currentUserStore: CurrentUserStore? = nil) {
         self.userService = userService
+        self.currentUserStore = currentUserStore
     }
 
     /// Loads the current settings from the server. On failure surfaces the
@@ -74,6 +81,12 @@ final class PreferencesViewModel {
             let updated = try await userService.updateSettings(settings)
             settings = updated
             lastSaved = updated
+            // Re-resolve the cached account so preference-derived UI elsewhere
+            // (the composer's default visibility) reflects the change now rather
+            // than at next launch. Mirrors `AccountViewModel`'s post-mutation
+            // refresh; the error is swallowed because the save itself succeeded
+            // and a failed re-read must not be reported as a failed save.
+            _ = try? await currentUserStore?.restore()
         } catch {
             self.error = error
         }

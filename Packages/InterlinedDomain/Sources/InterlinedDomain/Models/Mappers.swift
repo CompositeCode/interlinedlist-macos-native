@@ -38,6 +38,9 @@ extension CurrentUser {
             customerStatus: CustomerStatus(raw: dto.customerStatus),
             isEmailVerified: dto.emailVerified,
             isPrivateAccount: dto.isPrivateAccount ?? false,
+            // Absent field falls back to `true`, matching `UserSettings.default`
+            // so both readings of the same payload agree.
+            defaultPubliclyVisible: dto.defaultPubliclyVisible ?? true,
             createdAt: dto.createdAt
         )
     }

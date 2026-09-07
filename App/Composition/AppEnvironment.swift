@@ -58,6 +58,21 @@ final class AppEnvironment: ObservableObject {
         EntitlementsService(user: currentUserStore.currentUser)
     }
 
+    /// The visibility a new-message composer draft opens on — the signed-in
+    /// account's "new posts are public by default" preference. Derived live from
+    /// `currentUserStore.currentUser`, exactly like `liveEntitlements` above, so
+    /// it is cached for the session and re-resolved whenever the store refreshes
+    /// (sign-in, sign-out, restore, or an explicit `restore()` after the
+    /// Preferences pane saves). Falls back to `.public` when signed out or not
+    /// yet resolved, matching `UserSettings.default`.
+    ///
+    /// The return type is module-qualified because this file also imports
+    /// SwiftUI, which declares an unrelated `Visibility` (the `.hidden` /
+    /// `.visible` modifier type).
+    var defaultComposeVisibility: InterlinedDomain.Visibility {
+        currentUserStore.currentUser?.defaultVisibility ?? .public
+    }
+
     /// Re-resolves the signed-in account's `customerStatus` (PLAN.md §8 — a
     /// gated call returning 403 means the subscription lapsed mid-session, so
     /// the UI must re-gate). The composer calls this when a gated `createPost`
