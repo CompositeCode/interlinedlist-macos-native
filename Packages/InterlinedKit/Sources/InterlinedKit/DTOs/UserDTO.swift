@@ -3,7 +3,54 @@ import Foundation
 // MARK: - UserResponse
 
 /// Envelope for `GET /api/user` — the live API nests the account under a
-/// top-level `user` key: `{ "user": { ... } }`.
+/// top-level `user` key: `{ "user": { ... /// One row in the `GET /api/user/engagement` recent feed. Structurally a
+/// notification: the aggregate view is built from the same records.
+public struct UserEngagementItemDTO: Codable, Sendable, Equatable, Identifiable {
+    public let id: String
+    public let title: String?
+    public let body: String?
+    public let type: String?
+    public let sourceMessageId: String?
+    public let createdAt: Date?
+    public let routePath: String?
+
+    public init(
+        id: String,
+        title: String? = nil,
+        body: String? = nil,
+        type: String? = nil,
+        sourceMessageId: String? = nil,
+        createdAt: Date? = nil,
+        routePath: String? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.body = body
+        self.type = type
+        self.sourceMessageId = sourceMessageId
+        self.createdAt = createdAt
+        self.routePath = routePath
+    }
+}
+
+/// `GET /api/user/engagement` response — lifetime dig / push totals on your own
+/// messages plus the most recent engagement events (work-consolidation.md G27).
+///
+/// VERIFIED live 2026-09-06: returned
+/// `{"totalDigs":24,"totalPushes":6,"recent":[ …10 items… ]}`.
+public struct UserEngagementResponse: Codable, Sendable, Equatable {
+    public let totalDigs: Int
+    public let totalPushes: Int
+    public let recent: [UserEngagementItemDTO]
+
+    public init(totalDigs: Int, totalPushes: Int, recent: [UserEngagementItemDTO] = []) {
+        self.totalDigs = totalDigs
+        self.totalPushes = totalPushes
+        self.recent = recent
+    }
+}
+
+// MARK: - Request bodies }`.
 public struct UserResponse: Decodable, Sendable, Equatable {
     public let user: UserDTO
 

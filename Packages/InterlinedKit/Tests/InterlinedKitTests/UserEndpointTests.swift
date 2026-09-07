@@ -173,10 +173,12 @@ final class UserEndpointTests: XCTestCase {
 
     // MARK: - update
 
-    func test_givenProfilePatch_whenUpdateBuilt_thenPostsOnlySetFields() throws {
+    func test_givenProfilePatch_whenUpdateBuilt_thenPatchesOnlySetFields() throws {
         // Happy path + boundary: nil fields omitted.
+        // PATCH, not POST — POST is 405 live, which is why Settings ▸ Preferences
+        // never saved (work-consolidation.md §1c · V2).
         let request = User.update(UpdateUserRequest(displayName: "New Name", bio: nil))
-        XCTAssertEqual(request.method, .post)
+        XCTAssertEqual(request.method, .patch)
         XCTAssertEqual(request.path, "/api/user/update")
         XCTAssertEqual(request.auth, .bearer)
         let body = try encodedBody(request)
@@ -198,7 +200,7 @@ final class UserEndpointTests: XCTestCase {
         let response = try await client.send(User.update(UpdateUserRequest(displayName: "Ada")))
         XCTAssertEqual(response.user.username, "ada")
         let received = await transport.received
-        XCTAssertEqual(received[0].httpMethod, "POST")
+        XCTAssertEqual(received[0].httpMethod, "PATCH")
     }
 
     func test_givenInvalidPatch_whenUpdateSent_thenThrowsBadRequest() async throws {

@@ -208,6 +208,11 @@ struct TimelineRootView: View {
     private func timelineBody(viewModel: TimelineViewModel) -> some View {
         VStack(spacing: 0) {
             toolbar(viewModel: viewModel)
+            // Trending tags (work-consolidation.md G20). Hides itself when the
+            // list is empty or unavailable, so it costs no space by default.
+            TrendingTagsStrip(activeTag: viewModel.tagFilter) { tag in
+                await viewModel.setTagFilter(tag)
+            }
             Divider()
             content(viewModel: viewModel)
         }

@@ -334,19 +334,16 @@ private struct GitHubIssueDetailView: View {
         .padding()
     }
 
+    // NOTE: there is deliberately no Close / Reopen control here. The live
+    // `PATCH /api/github/issues/{owner}/{repo}/{number}` route only sets labels
+    // and assignees — a `state` change comes back
+    // `400 "labels or assignees required"` (verified 2026-09-06,
+    // work-consolidation.md §1c · V7). The button used to sit in this bar and
+    // could never have worked against production, so it was removed rather than
+    // left to fail; "Open on GitHub" in the header is the working path until the
+    // backend grows a state route.
     private var editingBar: some View {
         HStack(spacing: 8) {
-            Button {
-                Task { await viewModel.toggleState(issue) }
-            } label: {
-                if issue.state == .closed {
-                    Label("Reopen", systemImage: "arrow.counterclockwise.circle")
-                } else {
-                    Label("Close", systemImage: "checkmark.circle")
-                }
-            }
-            .disabled(viewModel.isUpdating)
-
             Menu {
                 if viewModel.labelCatalog.isEmpty {
                     Text(viewModel.isLoadingCatalog ? "Loading…" : "No labels")

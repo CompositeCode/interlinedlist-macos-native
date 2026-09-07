@@ -200,7 +200,8 @@ final class SocialServiceWriteTests: XCTestCase {
 
         // Then
         let recorded = await api.recorded
-        XCTAssertEqual(recorded.first?.method, "POST")
+        // DELETE, not POST — POST is 405 live (work-consolidation.md §1c · V6).
+        XCTAssertEqual(recorded.first?.method, "DELETE")
         XCTAssertEqual(recorded.first?.path, "/api/follow/user-42/remove")
     }
 

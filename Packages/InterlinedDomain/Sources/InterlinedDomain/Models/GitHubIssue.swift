@@ -268,4 +268,28 @@ public struct GitHubIssueUpdate: Sendable, Equatable {
 /// "Link GitHub" CTA that deep-links the existing native OAuth flow.
 public enum GitHubServiceError: Error, Equatable, Sendable {
     case notLinked(message: String)
+
+    /// The requested issue edit is not something the live API can perform.
+    ///
+    /// `PATCH /api/github/issues/{owner}/{repo}/{number}` is a **labels and
+    /// assignees** route: it answers `400 "labels or assignees required"` when
+    /// the body carries only `state`, `title` or `body` (verified 2026-09-06 —
+    /// work-consolidation.md §1c · V7). Closing / reopening an issue and
+    /// editing its title or body have no live route, so `GitHubService` raises
+    /// this instead of firing a request that is guaranteed to 400.
+    case unsupportedIssueEdit
+}
+
+extension GitHubServiceError: LocalizedError, CustomStringConvertible {
+    public var errorDescription: String? { description }
+
+    public var description: String {
+        switch self {
+        case .notLinked(let message):
+            return message
+        case .unsupportedIssueEdit:
+            return "InterlinedList can only change an issue's labels and assignees. "
+                + "Closing, reopening, or renaming an issue has to be done on GitHub."
+        }
+    }
 }

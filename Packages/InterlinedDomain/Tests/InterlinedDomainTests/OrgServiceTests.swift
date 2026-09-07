@@ -85,7 +85,7 @@ final class OrgServiceTests: XCTestCase {
     func test_givenValidFields_whenCreating_thenPostsBodyAndMapsOrg() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.organizationObject(id: "o-new", name: "Acme", isPublic: false))
+        await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-new", name: "Acme", isPublic: false))
         let service = OrgService(api: api)
 
         // When
@@ -103,7 +103,7 @@ final class OrgServiceTests: XCTestCase {
     func test_givenMalformedCreateResponse_whenCreating_thenThrowsDecoding() async throws {
         // Given — invalid input: response missing required `name`.
         let api = StubAPIClient()
-        await api.enqueue(json: #"{"id":"o-new"}"#)
+        await api.enqueue(json: #"{"organization":{"id":"o-new"}}"#)
         let service = OrgService(api: api)
 
         // When / Then
@@ -133,7 +133,7 @@ final class OrgServiceTests: XCTestCase {
     func test_givenEmptyDescription_whenCreating_thenStillSucceeds() async throws {
         // Given — boundary: empty description string is accepted by the API.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.organizationObject(id: "o-2", description: nil))
+        await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-2", description: nil))
         let service = OrgService(api: api)
 
         // When
@@ -149,7 +149,7 @@ final class OrgServiceTests: XCTestCase {
     func test_givenExistingId_whenGetting_thenMapsOrg() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.organizationObject(id: "o-7", name: "Globex"))
+        await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-7", name: "Globex"))
         let service = OrgService(api: api)
 
         // When
@@ -180,7 +180,7 @@ final class OrgServiceTests: XCTestCase {
     func test_givenMalformedGetResponse_whenGetting_thenThrowsDecoding() async throws {
         // Given — invalid input.
         let api = StubAPIClient()
-        await api.enqueue(json: #"{"oops":true}"#)
+        await api.enqueue(json: #"{"organization":{"oops":true}}"#)
         let service = OrgService(api: api)
 
         // When / Then
@@ -195,7 +195,7 @@ final class OrgServiceTests: XCTestCase {
     func test_givenOrgWithoutTimestamps_whenGetting_thenMapsNilDates() async throws {
         // Given — boundary: server omits createdAt / updatedAt.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.organizationObject(id: "o-8", includeTimestamps: false))
+        await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-8", includeTimestamps: false))
         let service = OrgService(api: api)
 
         // When
@@ -206,12 +206,12 @@ final class OrgServiceTests: XCTestCase {
         XCTAssertNil(org.updatedAt)
     }
 
-    // MARK: - update (patch)
+    // MARK: - update (PUT)
 
-    func test_givenPartialPatch_whenUpdating_thenPatchesAndMaps() async throws {
+    func test_givenPartialPatch_whenUpdating_thenPutsAndMaps() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.organizationObject(id: "o-7", name: "Renamed"))
+        await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-7", name: "Renamed"))
         let service = OrgService(api: api)
 
         // When — only `name` changes.
@@ -220,7 +220,8 @@ final class OrgServiceTests: XCTestCase {
         // Then
         XCTAssertEqual(org.name, "Renamed")
         let recorded = await api.recorded
-        XCTAssertEqual(recorded.first?.method, "PATCH")
+        // PUT, not PATCH — PATCH is 405 live (work-consolidation.md §1c · V4).
+        XCTAssertEqual(recorded.first?.method, "PUT")
         XCTAssertEqual(recorded.first?.path, "/api/organizations/o-7")
     }
 
@@ -257,7 +258,7 @@ final class OrgServiceTests: XCTestCase {
     func test_givenAllFieldsNil_whenUpdating_thenStillRoundTrips() async throws {
         // Given — boundary: a no-op patch (all fields nil).
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.organizationObject(id: "o-7"))
+        await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-7"))
         let service = OrgService(api: api)
 
         // When
