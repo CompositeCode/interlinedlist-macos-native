@@ -127,14 +127,70 @@ final class AppSettingsServiceTests: XCTestCase {
 
     // MARK: - Upstream failure
 
-    func test_givenUnregisteredAppKey_whenFetching_thenThrows() async {
+    func test_givenForbidden_whenFetching_thenThrows() async {
+        // Replaces an earlier test that asserted a 404 must throw. The live probe
+        // showed 404 is the empty-bucket state, not an unknown-key rejection, so
+        // the meaningful auth failure to cover here is 403.
         let api = StubAPIClient()
-        await api.enqueue(failure: .notFound(serverMessage: "unknown app key"))
+        await api.enqueue(failure: .forbidden(serverMessage: "nope"))
         let service = makeService(api)
 
         do {
             _ = try await service.sharedSettings()
-            XCTFail("An unregistered appKey must surface, not silently yield empty settings")
+            XCTFail("Expected the failure to propagate")
+        } catch {
+            // expected
+        }
+    }
+
+    // MARK: - First-run 404s
+    //
+    // Verified live 2026-09-06: the server answers 404 for an app key with
+    // nothing stored yet, and 404 `{"source":"none"}` for a device it has not
+    // seen. Both are ordinary first-run states — treating them as errors made a
+    // fresh install show a failure instead of empty settings.
+
+    func test_givenNothingStoredYet_whenReadingSharedSettings_thenReturnsEmptyBagNotAnError() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(failure: .notFound(serverMessage: "Not found"))
+        let service = makeService(api)
+
+        let bag = try await service.sharedSettings()
+
+        XCTAssertTrue(bag.isEmpty)
+    }
+
+    func test_givenUnregisteredDevice_whenBootstrapping_thenReturnsEmptySnapshotFlaggedNew() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(failure: .notFound(serverMessage: "Not found"))
+        let service = makeService(api)
+
+        let snapshot = try await service.bootstrap(deviceID: "dev-new")
+
+        XCTAssertTrue(snapshot.shared.isEmpty)
+        XCTAssertTrue(snapshot.device.isEmpty)
+        XCTAssertTrue(snapshot.isNewDevice, "the caller registers off this flag")
+    }
+
+    func test_givenNothingStoredYet_whenReadingDeviceSettings_thenReturnsEmptyBag() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(failure: .notFound(serverMessage: "Not found"))
+        let service = makeService(api)
+
+        let bag = try await service.deviceSettings(deviceID: "dev-1")
+
+        XCTAssertTrue(bag.isEmpty)
+    }
+
+    func test_givenRealFailure_whenReadingSettings_thenStillThrows() async {
+        // Only 404 is benign. A 500 or a 401 must still reach the UI.
+        let api = StubAPIClient()
+        await api.enqueue(failure: .httpStatus(code: 500, serverMessage: "boom"))
+        let service = makeService(api)
+
+        do {
+            _ = try await service.sharedSettings()
+            XCTFail("a server error is not a first-run state")
         } catch {
             // expected
         }

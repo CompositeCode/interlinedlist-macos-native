@@ -37,6 +37,10 @@ struct ComposerWindowView: View {
     /// `ComposerViewModel`, so the publish path is untouched.
     @State private var tagCompletion: TagCompletionViewModel?
 
+    /// AI assistant (work-consolidation.md G15). Built alongside the composer
+    /// view model so the menu can read availability as soon as the window opens.
+    @State private var assistant: AIAssistantViewModel?
+
     var body: some View {
         Group {
             if let viewModel {
@@ -46,6 +50,16 @@ struct ComposerWindowView: View {
             }
         }
         .frame(minWidth: 520, minHeight: 420)
+        .sheet(isPresented: Binding(
+            get: { assistant?.pendingSuggestion != nil },
+            set: { presented in if !presented { assistant?.reset() } }
+        )) {
+            if let assistant, let suggestion = assistant.pendingSuggestion, let viewModel {
+                AIPreviewSheet(suggestion: suggestion, viewModel: assistant) { outcome in
+                    apply(outcome, to: viewModel)
+                }
+            }
+        }
         .task {
             if viewModel == nil, let environment {
                 viewModel = ComposerViewModel(
@@ -75,6 +89,13 @@ struct ComposerWindowView: View {
                     // picker opens on the right value with no fetch and no flicker.
                     initialVisibility: environment.defaultComposeVisibility
                 )
+            }
+            if assistant == nil, let environment {
+                let assistant = AIAssistantViewModel(ai: environment.aiService)
+                self.assistant = assistant
+                // Free read — no quota, no provider call — so the menu can show
+                // a real reason instead of an unexplained disabled control.
+                await assistant.refreshAvailability()
                 // Pull the live limits once; the provider falls back to the
                 // built-in default, so this never leaves the counter unset.
                 await viewModel?.refreshLimits()
@@ -123,6 +144,8 @@ struct ComposerWindowView: View {
 
                 // Tag input. Comma- or space-separated tokens — the view
                 // model normalises on submit.
+                aiRow(viewModel: viewModel)
+
                 tagsField(viewModel: viewModel)
 
                 visibilityPicker(viewModel: viewModel)
@@ -431,6 +454,67 @@ struct ComposerWindowView: View {
             .accessibilityLabel(
                 "\(viewModel.messageCharacterCount) of \(viewModel.messageCharacterLimit) characters"
             )
+        }
+    }
+
+    /// The AI menu, sitting with the draft it acts on. Errors surface inline
+    /// here rather than in a dialog: a refusal ("write a little more first") is
+    /// guidance, not an interruption.
+    @ViewBuilder
+    private func aiRow(viewModel: ComposerViewModel) -> some View {
+        if let assistant {
+            HStack(spacing: 10) {
+                AIComposerMenu(
+                    viewModel: assistant,
+                    draft: viewModel.body,
+                    channels: selectedChannels(viewModel: viewModel)
+                )
+                if assistant.isBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("AI is working")
+                }
+                if let message = assistant.errorMessage {
+                    Text(message)
+                        .font(.ilMono(10))
+                        .foregroundStyle(Color.accentColor)
+                        .lineLimit(2)
+                }
+                if case .finished(let message, _) = assistant.phase {
+                    Text(message)
+                        .font(.ilMono(10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+            }
+        }
+    }
+
+    /// Cross-post destinations the composer currently has enabled, named the way
+    /// the AI route expects, so a planned series is sized to the smallest limit.
+    private func selectedChannels(viewModel: ComposerViewModel) -> [String] {
+        var channels: [String] = []
+        if viewModel.crossPostToBluesky { channels.append("Bluesky") }
+        if viewModel.crossPostToMastodon { channels.append("Mastodon") }
+        if viewModel.crossPostToLinkedIn { channels.append("LinkedIn") }
+        if viewModel.crossPostToTwitter { channels.append("X/Twitter") }
+        return channels
+    }
+
+    /// Applies an accepted assistant result to the draft.
+    private func apply(_ outcome: AIAssistantOutcome, to viewModel: ComposerViewModel) {
+        switch outcome {
+        case .replaceDraft(let text):
+            viewModel.body = text
+        case .useThread(let parts):
+            // The web app joins parts with a double space; matching it keeps a
+            // thread pasted from either client identical.
+            viewModel.body = parts.joined(separator: "  ")
+        case .addTags(let tags):
+            let existing = viewModel.tagsInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            let added = tags.joined(separator: ", ")
+            viewModel.tagsInput = existing.isEmpty ? added : "\(existing), \(added)"
         }
     }
 

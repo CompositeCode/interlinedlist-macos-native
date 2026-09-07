@@ -63,6 +63,9 @@ struct MessageRowView: View {
     /// sheet pre-filled from this message.
     var onCreateGitHubIssue: ((Message) -> Void)? = nil
 
+    /// Opens "Create from…" for this message (work-consolidation.md G16).
+    var onCreateFrom: ((Message) -> Void)? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
@@ -288,6 +291,17 @@ struct MessageRowView: View {
                 onCreateGitHubIssue(message)
             } label: {
                 Label("Create GitHub Issue\u{2026}", systemImage: "ladybug")
+            }
+        }
+
+        // "Create from…" (work-consolidation.md G16) — turn this message into a
+        // list, a document, or both. Ownership-independent: the source only has
+        // to be readable, and the created list or document belongs to the caller.
+        if let onCreateFrom {
+            Button {
+                onCreateFrom(message)
+            } label: {
+                Label("Create from\u{2026}", systemImage: "plus.rectangle.on.folder")
             }
         }
 

@@ -19,6 +19,10 @@ struct ListRowsView: View {
     /// the row-creation route for lists whose rows sync from GitHub.
     @State private var showsIssues: Bool = false
 
+    /// Drives the "Create from…" sheet for the selected rows
+    /// (work-consolidation.md G16).
+    @State private var showsCreateFrom = false
+
     var body: some View {
         content(viewModel: viewModel)
             .navigationTitle(list.title)
@@ -61,6 +65,14 @@ struct ListRowsView: View {
                 GitHubIssuesView(repo: repo, environment: environment)
             }
         }
+        .sheet(isPresented: $showsCreateFrom) {
+            if let environment {
+                CreateFromSheet(
+                    source: .rows(listId: list.id, rowIds: Array(selection)),
+                    environment: environment
+                )
+            }
+        }
     }
 
     @ViewBuilder
@@ -91,6 +103,17 @@ struct ListRowsView: View {
                 Label("Delete", systemImage: "minus")
             }
             .disabled(selection.isEmpty || viewModel.isGitHubBacked)
+
+            // "Create from…" over the current row selection
+            // (work-consolidation.md G16). Unlike Delete this is safe on a
+            // GitHub-backed list: it reads the rows, it does not write them.
+            Button {
+                showsCreateFrom = true
+            } label: {
+                Label("Create from\u{2026}", systemImage: "plus.rectangle.on.folder")
+            }
+            .disabled(selection.isEmpty)
+            .help("Turn the selected rows into a new list or document")
 
             Spacer()
 
