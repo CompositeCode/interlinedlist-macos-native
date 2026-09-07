@@ -67,6 +67,12 @@ struct InterlinedListApp: App {
             AppRootView(store: environment.currentUserStore)
                 .environmentObject(environment)
                 .environment(\.appEnvironment, environment)
+                // Crash reporting (GitHub issue #29). Applied at the window
+                // root because the sheet must be able to appear on a cold
+                // launch, long before anyone opens Settings. Every decision
+                // about whether to prompt lives inside the modifier — this
+                // line is the whole integration.
+                .crashReportPrompt(service: environment.crashReports)
                 .task {
                     // Begin observing session state, then attempt a
                     // token-restore. Errors are swallowed at the launch
