@@ -11,7 +11,7 @@
 // M2 additions:
 // - The dig label becomes a tappable button that flips the dig state
 //   optimistically via the host's `onToggleDig` closure.
-// - Context menu with "Repost", "Edit", "Delete". Edit / Delete
+// - Context menu with "Push", "Edit", "Delete". Edit / Delete
 //   render only when `canEdit` is true (ownership-gated per PLAN.md
 //   §6 M2 — never enabled-but-broken).
 // - Host wires the actions via closures so the row stays passive and
@@ -30,41 +30,13 @@ struct MessageRowView: View {
     /// asking `TimelineViewModel.canEdit(message:currentUserID:)`.
     var canEdit: Bool = false
 
-    /// Optional dig-toggle handler. When `nil`, the dig glyph renders
-    /// as plain text (no button) — used in preview / static contexts.
-    var onToggleDig: ((Message) -> Void)? = nil
-
-    /// Optional repost handler. When `nil`, the "Repost" menu item is
-    /// hidden.
-    var onRepost: ((Message) -> Void)? = nil
-
-    /// Optional edit handler. Only invoked when `canEdit` is true.
-    var onEdit: ((Message) -> Void)? = nil
-
-    /// Optional delete handler. Only invoked when `canEdit` is true.
-    /// The host is responsible for the confirmation dialog.
-    var onDelete: ((Message) -> Void)? = nil
-
-    /// Optional block handler (work-consolidation.md G2). When non-nil, a "Block
-    /// author" item is added to the overflow menu. The host performs the
-    /// moderation call and refreshes the timeline.
-    var onBlock: ((Message) -> Void)? = nil
-
-    /// Optional mute handler. When non-nil, a "Mute author" item is added.
-    var onMute: ((Message) -> Void)? = nil
-
-    /// Optional report handler. When non-nil, a "Report…" item opens the
-    /// host's report sheet for this message. Replaces the old
-    /// support-URL fallback so reporting is a real backend action.
-    var onReport: ((Message) -> Void)? = nil
-
-    /// Optional "Create GitHub issue" handler (work-consolidation.md G4). When
-    /// non-nil, a "Create GitHub Issue…" item opens the host's create-issue
-    /// sheet pre-filled from this message.
-    var onCreateGitHubIssue: ((Message) -> Void)? = nil
+    /// Every optional action the host wires in — dig, reply, push, edit,
+    /// delete, moderation, and "create GitHub issue". Defaults to `.none`
+    /// so preview and read-only contexts (search results) render the row
+    /// with no interactive affordances at all.
+    var actions: MessageRowActions = .none
 
     /// Opens "Create from…" for this message (work-consolidation.md G16).
-    var onCreateFrom: ((Message) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -91,8 +63,14 @@ struct MessageRowView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
-        .accessibilityAction(named: "Dig") {
-            onToggleDig?(message)
+        .accessibilityAction(named: "I Dig!") {
+            actions.onToggleDig?(message)
+        }
+        .accessibilityAction(named: "Reply") {
+            actions.onReply?(message)
+        }
+        .accessibilityAction(named: "Push") {
+            actions.onPush?(message)
         }
     }
 
@@ -216,23 +194,21 @@ struct MessageRowView: View {
         }
     }
 
+    /// The row's action bar. Order matches the web's message actions:
+    /// Reply, I Dig!, Push, Push & Comment, Link.
+    ///
+    /// Reply / Dig / Push degrade to a plain count label when the host wired
+    /// no handler (search results, previews), so a read-only row still shows
+    /// the numbers without offering a control that would do nothing. Link is
+    /// unconditional — it is a pure client-side permalink and needs no host
+    /// wiring, so it works everywhere the message has an id.
     private var footer: some View {
         HStack(spacing: 16) {
+            replyButton
             digButton
-
-            if message.repostCount > 0 {
-                Label("\(message.repostCount)", systemImage: "arrow.2.squarepath")
-                    .font(.ilMono(10))
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("\(message.repostCount) reposts")
-            }
-
-            if let count = message.replyCount, count > 0 {
-                Label("\(count)", systemImage: "bubble.left")
-                    .font(.ilMono(10))
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("\(count) replies")
-            }
+            pushButton
+            pushAndCommentButton
+            linkButton
 
             if message.visibility == .private {
                 Label("Private", systemImage: "lock")
@@ -245,11 +221,101 @@ struct MessageRowView: View {
         }
     }
 
+    /// Shared shape for every action-bar item: an icon with an optional
+    /// count beside it. `nil` count renders icon-only rather than an empty
+    /// title, so a zero never reads as a stray glyph.
+    @ViewBuilder
+    private func actionLabel(count: Int?, systemImage: String, tint: Color) -> some View {
+        if let count, count > 0 {
+            Label("\(count)", systemImage: systemImage)
+                .font(.ilMono(10))
+                .foregroundStyle(tint)
+        } else {
+            Image(systemName: systemImage)
+                .font(.ilMono(10))
+                .foregroundStyle(tint)
+        }
+    }
+
+    /// Reply. Routes to the message-detail composer via the host rather than
+    /// opening a second write surface.
+    @ViewBuilder
+    private var replyButton: some View {
+        let count = message.replyCount ?? 0
+        if let onReply = actions.onReply {
+            Button {
+                onReply(message)
+            } label: {
+                actionLabel(count: count, systemImage: "arrowshape.turn.up.left", tint: .secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(count > 0 ? "Reply \u{2014} \(count) replies" : "Reply")
+            .help("Reply to this post")
+        } else if count > 0 {
+            actionLabel(count: count, systemImage: "arrowshape.turn.up.left", tint: .secondary)
+                .accessibilityLabel("\(count) replies")
+        }
+    }
+
+    /// Bare, one-tap Push (repost with no commentary).
+    @ViewBuilder
+    private var pushButton: some View {
+        if let onPush = actions.onPush {
+            Button {
+                onPush(message)
+            } label: {
+                actionLabel(count: message.repostCount, systemImage: "arrow.2.squarepath", tint: .secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                message.repostCount > 0
+                    ? "Push \u{2014} \(message.repostCount) pushes"
+                    : "Push"
+            )
+            .help("Push this post to your followers")
+        } else if message.repostCount > 0 {
+            actionLabel(count: message.repostCount, systemImage: "arrow.2.squarepath", tint: .secondary)
+                .accessibilityLabel("\(message.repostCount) pushes")
+        }
+    }
+
+    /// Push with commentary — opens the host's repost sheet.
+    @ViewBuilder
+    private var pushAndCommentButton: some View {
+        if let onPushAndComment = actions.onPushAndComment {
+            Button {
+                onPushAndComment(message)
+            } label: {
+                actionLabel(count: nil, systemImage: "quote.bubble", tint: .secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Push and comment")
+            .help("Push this post with your own commentary")
+        }
+    }
+
+    /// Link to this specific post. `SwiftUI.ShareLink` (disambiguated from
+    /// `InterlinedDomain.ShareLink`) opens the system share sheet, which
+    /// includes Copy \u{2014} no `NSPasteboard`, no AppKit in the App target.
+    @ViewBuilder
+    private var linkButton: some View {
+        if let url = message.permalink() {
+            SwiftUI.ShareLink(item: url) {
+                Image(systemName: "link")
+                    .font(.ilMono(10))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Link to this post")
+            .help("Share or copy a link to this post")
+        }
+    }
+
     /// Dig label: a button when the host supplied a handler,
     /// otherwise the static label used in preview contexts.
     @ViewBuilder
     private var digButton: some View {
-        if let onToggleDig {
+        if let onToggleDig = actions.onToggleDig {
             Button {
                 onToggleDig(message)
             } label: {
@@ -257,7 +323,7 @@ struct MessageRowView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(
-                "\(message.didDig ? "Undig" : "Dig") — \(message.digCount) total"
+                "\(message.didDig ? "Undo I Dig!" : "I Dig!") — \(message.digCount) total"
             )
         } else {
             digLabel
@@ -278,15 +344,43 @@ struct MessageRowView: View {
 
     @ViewBuilder
     private var contextMenuItems: some View {
-        if let onRepost {
+        // Every action-bar affordance is mirrored here so both discovery
+        // paths (visible bar, right-click) offer the same set.
+        if let onReply = actions.onReply {
             Button {
-                onRepost(message)
+                onReply(message)
             } label: {
-                Label("Repost", systemImage: "arrow.2.squarepath")
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
             }
         }
 
-        if let onCreateGitHubIssue {
+        if let onPush = actions.onPush {
+            Button {
+                onPush(message)
+            } label: {
+                Label("Push", systemImage: "arrow.2.squarepath")
+            }
+        }
+
+        if let onPushAndComment = actions.onPushAndComment {
+            Button {
+                onPushAndComment(message)
+            } label: {
+                Label("Push & Comment\u{2026}", systemImage: "quote.bubble")
+            }
+        }
+
+        if let url = message.permalink() {
+            SwiftUI.ShareLink(item: url) {
+                Label("Link", systemImage: "link")
+            }
+        }
+
+        if actions.onReply != nil || actions.onPush != nil || actions.onPushAndComment != nil {
+            Divider()
+        }
+
+        if let onCreateGitHubIssue = actions.onCreateGitHubIssue {
             Button {
                 onCreateGitHubIssue(message)
             } label: {
@@ -297,7 +391,7 @@ struct MessageRowView: View {
         // "Create from…" (work-consolidation.md G16) — turn this message into a
         // list, a document, or both. Ownership-independent: the source only has
         // to be readable, and the created list or document belongs to the caller.
-        if let onCreateFrom {
+        if let onCreateFrom = actions.onCreateFrom {
             Button {
                 onCreateFrom(message)
             } label: {
@@ -309,14 +403,14 @@ struct MessageRowView: View {
         // (`canEdit == false`), the menu items are simply absent so
         // the user never sees an enabled-but-broken affordance.
         if canEdit {
-            if let onEdit {
+            if let onEdit = actions.onEdit {
                 Button {
                     onEdit(message)
                 } label: {
                     Label("Edit", systemImage: "pencil")
                 }
             }
-            if let onDelete {
+            if let onDelete = actions.onDelete {
                 Button(role: .destructive) {
                     onDelete(message)
                 } label: {
@@ -331,24 +425,24 @@ struct MessageRowView: View {
         // Guideline 1.2: User-Generated Content requires a report
         // mechanism). Each item renders only when its handler is wired so
         // static / preview contexts stay clean; no AppKit involvement.
-        if onBlock != nil || onMute != nil || onReport != nil {
+        if actions.onBlock != nil || actions.onMute != nil || actions.onReport != nil {
             Divider()
         }
-        if let onBlock {
+        if let onBlock = actions.onBlock {
             Button {
                 onBlock(message)
             } label: {
                 Label("Block @\(message.author.username)", systemImage: "hand.raised")
             }
         }
-        if let onMute {
+        if let onMute = actions.onMute {
             Button {
                 onMute(message)
             } label: {
                 Label("Mute @\(message.author.username)", systemImage: "speaker.slash")
             }
         }
-        if let onReport {
+        if let onReport = actions.onReport {
             Button(role: .destructive) {
                 onReport(message)
             } label: {
@@ -361,11 +455,11 @@ struct MessageRowView: View {
         HStack(spacing: 6) {
             Image(systemName: "arrow.2.squarepath")
                 .font(.ilMono(10))
-            Text("Reposted from @\(original.author.username)")
+            Text("Pushed from @\(original.author.username)")
                 .font(.ilMono(10))
         }
         .foregroundStyle(.secondary)
-        .accessibilityLabel("Reposted from @\(original.author.username)")
+        .accessibilityLabel("Pushed from @\(original.author.username)")
     }
 
     // MARK: - Helpers
@@ -383,6 +477,12 @@ struct MessageRowView: View {
             parts.append("Also cross-posted to \(names)")
         }
         parts.append("\(message.digCount) digs")
+        if message.repostCount > 0 {
+            parts.append("\(message.repostCount) pushes")
+        }
+        if let replies = message.replyCount, replies > 0 {
+            parts.append("\(replies) replies")
+        }
         return parts.joined(separator: ". ")
     }
 

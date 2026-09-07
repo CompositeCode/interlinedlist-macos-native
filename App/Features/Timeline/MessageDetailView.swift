@@ -29,6 +29,20 @@ struct MessageDetailView: View {
 
     let messageID: Message.ID
 
+    /// GitHub #27 — row-level Reply intent handed down by `TimelineRootView`.
+    /// When it matches this screen's `messageID`, the composer opens already
+    /// expanded and focused. Cleared on consumption so returning to the same
+    /// thread by a plain tap does not re-open it.
+    @Binding private var pendingReplyMessageID: String?
+
+    init(
+        messageID: Message.ID,
+        pendingReplyMessageID: Binding<String?> = .constant(nil)
+    ) {
+        self.messageID = messageID
+        self._pendingReplyMessageID = pendingReplyMessageID
+    }
+
     @Environment(\.appEnvironment) private var environment
     @Environment(\.dismiss) private var dismiss
 
@@ -42,6 +56,10 @@ struct MessageDetailView: View {
     // Inline reply composer state.
     @State private var replyBody: String = ""
     @State private var isReplyExpanded: Bool = false
+
+    /// Focuses the reply editor when the composer is opened from a row's
+    /// Reply action, so the user can start typing without a second click.
+    @FocusState private var replyFieldFocused: Bool
 
     var body: some View {
         Group {
@@ -81,12 +99,19 @@ struct MessageDetailView: View {
                 let model = MessageDetailViewModel(
                     messages: environment.messages,
                     messageID: messageID,
+                    eventBus: environment.composerEventBus,
                     // An inline reply is a post: it honours the same account
                     // default as the composer and the repost sheet.
                     defaultVisibility: environment.defaultComposeVisibility
                 )
                 viewModel = model
                 await model.load()
+            }
+            // Consume a pending Reply intent from the timeline row.
+            if pendingReplyMessageID == messageID {
+                pendingReplyMessageID = nil
+                isReplyExpanded = true
+                replyFieldFocused = true
             }
         }
         .task(id: environmentEventBusToken) {
@@ -153,12 +178,7 @@ struct MessageDetailView: View {
                     MessageRowView(
                         message: message,
                         canEdit: viewModel.canEdit(message, currentUserID: currentUserID),
-                        onToggleDig: { tapped in
-                            Task { await viewModel.toggleDig(on: tapped) }
-                        },
-                        onRepost: { tapped in repostTarget = tapped },
-                        onEdit: { tapped in editTarget = tapped },
-                        onDelete: { tapped in deleteTarget = tapped }
+                        actions: rowActions(viewModel: viewModel)
                     )
                     .padding(.horizontal, 16)
                     Divider()
@@ -184,6 +204,29 @@ struct MessageDetailView: View {
         }
     }
 
+    /// Shared action set for the header row and every reply row, so both
+    /// behave identically (each reply can be dug, pushed, edited, deleted).
+    private func rowActions(viewModel: MessageDetailViewModel) -> MessageRowActions {
+        MessageRowActions(
+            onToggleDig: { tapped in
+                Task { await viewModel.toggleDig(on: tapped) }
+            },
+            onReply: { _ in
+                // The replies list is flat, so Reply from any row \u{2014} the
+                // header or a reply \u{2014} opens this thread's one composer,
+                // which posts against the root message.
+                isReplyExpanded = true
+                replyFieldFocused = true
+            },
+            onPush: { tapped in
+                Task { await viewModel.push(tapped) }
+            },
+            onPushAndComment: { tapped in repostTarget = tapped },
+            onEdit: { tapped in editTarget = tapped },
+            onDelete: { tapped in deleteTarget = tapped }
+        )
+    }
+
     @ViewBuilder
     private func repliesSection(viewModel: MessageDetailViewModel, currentUserID: String?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -200,12 +243,7 @@ struct MessageDetailView: View {
                     MessageRowView(
                         message: reply,
                         canEdit: viewModel.canEdit(reply, currentUserID: currentUserID),
-                        onToggleDig: { tapped in
-                            Task { await viewModel.toggleDig(on: tapped) }
-                        },
-                        onRepost: { tapped in repostTarget = tapped },
-                        onEdit: { tapped in editTarget = tapped },
-                        onDelete: { tapped in deleteTarget = tapped }
+                        actions: rowActions(viewModel: viewModel)
                     )
                     .padding(.horizontal, 16)
                     Divider()
@@ -223,6 +261,7 @@ struct MessageDetailView: View {
                 content: {
                     VStack(alignment: .leading, spacing: 8) {
                         TextEditor(text: $replyBody)
+                            .focused($replyFieldFocused)
                             .font(.ilBody())
                             .frame(minHeight: 80)
                             .scrollContentBackground(.hidden)

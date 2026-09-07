@@ -1,6 +1,6 @@
 // RepostSheetView
 //
-// Small sheet opened from a message row's "Repost" context-menu item
+// Small sheet opened from a message row's "Push & Comment" action
 // (PLAN.md §6 M2). Collects optional commentary + visibility, then
 // calls into `RepostSheetViewModel.submit()`. UI is intentionally
 // minimal — a multi-line commentary field and a visibility segment.
@@ -48,7 +48,7 @@ struct RepostSheetView: View {
     @ViewBuilder
     private func sheetBody(viewModel: RepostSheetViewModel) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Repost")
+            Text("Push & Comment")
                 .font(.ilSubtitle())
 
             originalPreview
@@ -69,7 +69,7 @@ struct RepostSheetView: View {
                     RoundedRectangle(cornerRadius: ILMetric.radiusSm)
                         .stroke(Color.secondary.opacity(0.25), lineWidth: 1)
                 )
-                .accessibilityLabel("Repost commentary")
+                .accessibilityLabel("Push commentary")
             }
 
             Picker("Visibility", selection: Binding(
@@ -81,7 +81,7 @@ struct RepostSheetView: View {
             }
             .pickerStyle(.segmented)
             .frame(maxWidth: 280)
-            .accessibilityLabel("Repost visibility")
+            .accessibilityLabel("Push visibility")
 
             if let error = viewModel.error {
                 Label(error.localizedDescription, systemImage: "exclamationmark.triangle.fill")
@@ -123,11 +123,11 @@ struct RepostSheetView: View {
             if viewModel.isSubmitting {
                 ProgressView()
                     .controlSize(.small)
-                    .accessibilityLabel("Submitting repost")
+                    .accessibilityLabel("Submitting push")
                     .padding(.trailing, 8)
             }
 
-            Button("Repost") {
+            Button("Push") {
                 Task { await viewModel.submit() }
             }
             .buttonStyle(.borderedProminent)
@@ -141,7 +141,7 @@ struct RepostSheetView: View {
             Image(systemName: "wrench.adjustable")
                 .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
-            Text("Repost unavailable")
+            Text("Push unavailable")
                 .font(.ilSubtitle())
             Text("AppEnvironment is not injected into the view tree.")
                 .foregroundStyle(.secondary)

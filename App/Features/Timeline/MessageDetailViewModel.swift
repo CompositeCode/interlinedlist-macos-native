@@ -30,6 +30,11 @@ final class MessageDetailViewModel {
     static let pageSize: Int = 50
 
     private let messages: MessagesServicing
+
+    /// Optional cross-window bus. When wired, a successful one-tap Push
+    /// publishes `.messageReposted` so the timeline prepends it. Defaults
+    /// to nil so unit tests construct the view model unchanged.
+    private let eventBus: ComposerEventBus?
     private let messageID: String
 
     private(set) var message: Message?
@@ -49,6 +54,9 @@ final class MessageDetailViewModel {
     /// Flips true after the root message is successfully deleted, so
     /// the view knows to dismiss / pop the detail screen.
     private(set) var didDeleteRoot: Bool = false
+
+    /// Message IDs with a Push in flight, de-bouncing a double-click.
+    private var pendingPushOperations: Set<String> = []
 
     /// IDs of messages with an in-flight dig toggle. Prevents the
     /// same row from firing twice while the round-trip resolves.
@@ -70,10 +78,12 @@ final class MessageDetailViewModel {
     init(
         messages: MessagesServicing,
         messageID: String,
+        eventBus: ComposerEventBus? = nil,
         defaultVisibility: Visibility = .public
     ) {
         self.messages = messages
         self.messageID = messageID
+        self.eventBus = eventBus
         self.defaultVisibility = defaultVisibility
     }
 
@@ -212,6 +222,33 @@ final class MessageDetailViewModel {
         }
     }
 
+
+    // MARK: - Push (bare repost)
+
+    /// One-tap Push from the detail header or any reply row: reposts with no
+    /// commentary (GitHub #27). "Push & Comment" stays the separate sheet.
+    ///
+    /// Unlike the timeline there is no list to prepend into — the pushed
+    /// message belongs on the feed, not in this thread — so the local effect
+    /// is just the source row's count, plus the bus event for the timeline.
+    func push(_ message: Message) async {
+        let id = message.id
+        guard !pendingPushOperations.contains(id) else { return }
+        pendingPushOperations.insert(id)
+        defer { pendingPushOperations.remove(id) }
+
+        do {
+            let pushed = try await messages.repost(id, commentary: nil, visibility: .public)
+            if let current = currentCopy(of: id) {
+                replace(id: id, with: current.byIncrementingPushCount())
+            }
+            eventBus?.post(.messageReposted(pushed))
+            error = nil
+        } catch {
+            self.error = error
+        }
+    }
+
     // MARK: - M2 — Delete root message
 
     /// Deletes the loaded root message. The view confirms via a
@@ -280,33 +317,5 @@ final class MessageDetailViewModel {
         if let index = replies.firstIndex(where: { $0.id == id }) {
             replies[index] = newCopy
         }
-    }
-}
-
-// MARK: - Optimistic dig helper
-
-private extension Message {
-    /// Returns a copy with the dig state flipped (boolean toggled and
-    /// the count nudged ±1). Used by `toggleDig` to apply the
-    /// optimistic local change before the round-trip resolves.
-    func byTogglingDig() -> Message {
-        let newDidDig = !didDig
-        let delta = newDidDig ? 1 : -1
-        return Message(
-            id: id,
-            author: author,
-            text: text,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            tags: tags,
-            visibility: visibility,
-            digCount: max(0, digCount + delta),
-            didDig: newDidDig,
-            repostCount: repostCount,
-            replyCount: replyCount,
-            parentID: parentID,
-            repost: repost,
-            scheduledAt: scheduledAt
-        )
     }
 }
