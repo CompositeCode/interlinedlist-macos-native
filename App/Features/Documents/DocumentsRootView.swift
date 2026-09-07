@@ -39,6 +39,13 @@ struct DocumentsRootView: View {
     /// Drives the "New from Template…" picker sheet (work-consolidation.md).
     @State private var isTemplatePickerPresented = false
 
+    /// Drives the "Draft with AI" sheet (work-consolidation.md G15).
+    @State private var isAIDocumentPresented = false
+
+    /// Drives the "Create from…" sheet for the open document
+    /// (work-consolidation.md G16).
+    @State private var isCreateFromPresented = false
+
     /// Drives the Share Links panel for the document currently open in the
     /// editor (work-consolidation.md G3).
     @State private var isShareLinksPresented = false
@@ -78,6 +85,30 @@ struct DocumentsRootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .documentsSyncNow)) { _ in
             Task { await syncStatus?.syncNow() }
+        }
+        .sheet(isPresented: $isCreateFromPresented) {
+            if let environment, let document = editor?.document {
+                CreateFromSheet(
+                    source: .document(id: document.id),
+                    environment: environment
+                ) { _ in
+                    Task { await documentsList?.refresh() }
+                }
+            }
+        }
+        .sheet(isPresented: $isAIDocumentPresented) {
+            if let documentsList, let environment {
+                AIDocumentSheet(
+                    environment: environment,
+                    // Already loaded here, so the "from a document" picker costs
+                    // nothing extra.
+                    documents: documentsList.documentsLoaded
+                ) {
+                    // The drafted document was created server-side; reload so it
+                    // appears in the list without a manual refresh.
+                    await documentsList.refresh()
+                }
+            }
         }
         .sheet(isPresented: $isTemplatePickerPresented) {
             if let documentsList, let environment {
@@ -159,6 +190,24 @@ struct DocumentsRootView: View {
                 }
                 .keyboardShortcut("n", modifiers: [.option, .command, .shift])
                 .help("Create a new document from a starter template")
+
+                // Draft a document with AI (work-consolidation.md G15). Grouped
+                // with the other "new document by another route" actions.
+                Button {
+                    isAIDocumentPresented = true
+                } label: {
+                    Label("Draft with AI", systemImage: "sparkles")
+                }
+                .help("Draft a document from a topic, one of your lists, another document, or a URL")
+
+                // "Create from…" over the open document (work-consolidation.md G16).
+                Button {
+                    isCreateFromPresented = true
+                } label: {
+                    Label("Create from\u{2026}", systemImage: "plus.rectangle.on.folder")
+                }
+                .disabled(editor.document == nil)
+                .help("Turn this document into a list, or into another document")
 
                 Button {
                     isShareLinksPresented = true

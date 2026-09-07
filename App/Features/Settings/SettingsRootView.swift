@@ -65,6 +65,15 @@ struct SettingsRootView: View {
                 .tabItem {
                     Label("Document Sync", systemImage: "arrow.triangle.2.circlepath")
                 }
+
+            // Crash reporting (GitHub issue #29) — opt in to being asked, on
+            // the launch after a crash, whether to file a GitHub issue. A
+            // native-only, machine-local preference, so it is not part of the
+            // server-synced Preferences pane above.
+            CrashReportingSettingsView()
+                .tabItem {
+                    Label("Crash Reporting", systemImage: "ladybug")
+                }
         }
         .frame(width: 620, height: 520)
     }

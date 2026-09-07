@@ -58,6 +58,21 @@ final class AppEnvironment: ObservableObject {
         EntitlementsService(user: currentUserStore.currentUser)
     }
 
+    /// The visibility a new-message composer draft opens on — the signed-in
+    /// account's "new posts are public by default" preference. Derived live from
+    /// `currentUserStore.currentUser`, exactly like `liveEntitlements` above, so
+    /// it is cached for the session and re-resolved whenever the store refreshes
+    /// (sign-in, sign-out, restore, or an explicit `restore()` after the
+    /// Preferences pane saves). Falls back to `.public` when signed out or not
+    /// yet resolved, matching `UserSettings.default`.
+    ///
+    /// The return type is module-qualified because this file also imports
+    /// SwiftUI, which declares an unrelated `Visibility` (the `.hidden` /
+    /// `.visible` modifier type).
+    var defaultComposeVisibility: InterlinedDomain.Visibility {
+        currentUserStore.currentUser?.defaultVisibility ?? .public
+    }
+
     /// Re-resolves the signed-in account's `customerStatus` (PLAN.md §8 — a
     /// gated call returning 403 means the subscription lapsed mid-session, so
     /// the UI must re-gate). The composer calls this when a gated `createPost`
@@ -102,6 +117,11 @@ final class AppEnvironment: ObservableObject {
     /// substitute in. Ungated, so it is a plain stored service (no live
     /// entitlements rebuild).
     let documentTemplatesService: DocumentTemplatesServicing
+    /// AI writing assistance and generation (work-consolidation.md G15).
+    let aiService: AIServicing
+    /// "Create from…" — messages/lists/rows/documents into new lists and
+    /// documents (work-consolidation.md G16).
+    let materializeService: MaterializeServicing
 
     /// The owner of `/api/documents/sync` — the M4 offline backbone
     /// (PLAN.md §3, §6 M4). The App layer reaches in directly for the
@@ -192,9 +212,9 @@ final class AppEnvironment: ObservableObject {
     /// Synced app settings + the per-machine device registry
     /// (work-consolidation.md G17) — the platform's own mechanism for companion
     /// apps, and the sanctioned home for this app's preferences and the
-    /// Document Sync Agent's per-machine configuration. Optional because it is
-    /// only usable once an `appKey` is registered with the backend owner; the
-    /// Settings panes render an explicit unavailable state while it is nil.
+    /// Document Sync Agent's per-machine configuration. Optional so the feature
+    /// can be switched off via `appSettingsKey`; the panes render an explicit
+    /// unavailable state while it is nil.
     let appSettings: AppSettingsServicing?
 
     /// The server-driven notification-preferences catalogue
@@ -234,6 +254,13 @@ final class AppEnvironment: ObservableObject {
         )
     }
 
+    /// Crash reporting (GitHub issue #29). Reads the breadcrumb the previous
+    /// run's signal handler left and the tail of the rotating `AppLog` file —
+    /// both `InterlinedKit` concerns, which is exactly why the service lives
+    /// in `InterlinedDomain` and reaches the App layer as this protocol
+    /// (decision 0003: `App/Features/**` may not import Kit).
+    let crashReports: CrashReportServicing
+
     /// The shared kit-layer API client retained so `sharing` can rebuild the
     /// sharing service with live entitlements on each access.
     private let sharingAPI: APIClientProtocol
@@ -258,6 +285,8 @@ final class AppEnvironment: ObservableObject {
         listsStore: ListsStore,
         documentsService: DocumentsServicing,
         documentTemplatesService: DocumentTemplatesServicing,
+        aiService: AIServicing,
+        materializeService: MaterializeServicing,
         documentSyncEngine: DocumentSyncEngine,
         documentSyncEvents: AsyncStream<DocumentSyncEvent>,
         notificationsService: NotificationsServicing,
@@ -274,6 +303,7 @@ final class AppEnvironment: ObservableObject {
         github: GitHubServicing,
         directMessages: DirectMessagesServicing,
         directMessagesEventBus: DirectMessagesEventBus,
+        crashReports: CrashReportServicing,
         sharingAPI: APIClientProtocol,
         shareBaseURL: URL,
         appSettings: AppSettingsServicing? = nil,
@@ -291,6 +321,8 @@ final class AppEnvironment: ObservableObject {
         self.listsStore = listsStore
         self.documentsService = documentsService
         self.documentTemplatesService = documentTemplatesService
+        self.aiService = aiService
+        self.materializeService = materializeService
         self.documentSyncEngine = documentSyncEngine
         self.documentSyncEvents = documentSyncEvents
         self.notificationsService = notificationsService
@@ -307,6 +339,7 @@ final class AppEnvironment: ObservableObject {
         self.github = github
         self.directMessages = directMessages
         self.directMessagesEventBus = directMessagesEventBus
+        self.crashReports = crashReports
         self.sharingAPI = sharingAPI
         self.shareBaseURL = shareBaseURL
         self.appSettings = appSettings
@@ -315,16 +348,21 @@ final class AppEnvironment: ObservableObject {
         self.tags = tags
     }
 
-    /// The app-settings key this client registers under (work-consolidation.md
-    /// G17).
+    /// The app-settings namespace this client stores its settings under
+    /// (work-consolidation.md G17).
     ///
-    /// ⚠️ **Nil until an `appKey` is registered with the backend owner** — that
-    /// registration is a stated prerequisite of G17, and calling the routes with
-    /// an unregistered key 404s. While nil, `AppEnvironment.appSettings` is nil
-    /// and the Settings panes render an explicit "not configured" state instead
-    /// of failing opaquely. Set this to the agreed key to switch the feature on;
-    /// it is deliberately the single edit required.
-    static let appSettingsKey: String? = nil
+    /// **Verified live 2026-09-06: no registration is required.** The G17 gap
+    /// definition said to "pick and register an `appKey` with the backend
+    /// owner", but the live API treats the segment as a free-form namespace —
+    /// `GET /api/user/app-settings/<any-key>/devices` answers `200 {"devices":[]}`
+    /// for a key the server has never seen, and `OPTIONS` on the parent reports
+    /// `allow: DELETE, GET, HEAD, OPTIONS, PUT`. The key's only job is to keep
+    /// this app's settings separate from other companion apps on the same
+    /// account, so it must simply stay stable — changing it orphans whatever was
+    /// stored under the old one.
+    ///
+    /// Kept optional so the feature can still be switched off in one edit.
+    static let appSettingsKey: String? = "interlinedlist-macos" 
 
     /// Builds the production service graph:
     ///
@@ -439,6 +477,13 @@ final class AppEnvironment: ObservableObject {
         // `/api/documents/templates` endpoints are already routed by the
         // shared `authTransport`. Ungated, so a plain stored service.
         let documentTemplatesService = DocumentTemplatesService(api: api)
+        // AI (G15) and Create-from (G16). Both reuse the shared kit `APIClient`;
+        // their routes are Bearer and already routed by `authTransport`.
+        // AI gating is deliberately *not* computed from `customerStatus` here —
+        // `GET /api/ai/status` is authoritative because a subscriber without a
+        // provider key still cannot call, and only the server knows that.
+        let aiService = AIService(api: api)
+        let materializeService = MaterializeService(api: api)
         let documentSyncEvents = documentSyncEngine.events
         // M5 — Notifications + Social write surface (PLAN.md §6 M5).
         // `NotificationsService` already exists with the read + mark
@@ -503,6 +548,25 @@ final class AppEnvironment: ObservableObject {
         let notificationPreferences = NotificationPreferencesService(api: api)
         let sessions = SessionsService(api: api)
         let tags = TagsService(api: api)
+        // Crash reporting (GitHub issue #29). Two things happen here, in this
+        // order, and the order matters:
+        //
+        //   1. Build the service, which knows where the breadcrumb lives.
+        //   2. Install the signal handler, which **truncates** that file.
+        //
+        // Reading therefore has to happen between the two — see
+        // `installCrashHandler(breadcrumbURL:)`, which snapshots the previous
+        // run's breadcrumb before handing the path to the handler.
+        //
+        // Installing from here rather than from `applicationDidFinishLaunching`
+        // is deliberate: that method lives in `AppDelegate.swift`, the single
+        // sanctioned AppKit file, which decision 0005 says not to extend.
+        // `live()` runs at `@StateObject` init in `InterlinedListApp`, the
+        // earliest pure-SwiftUI point in the process. Capture is installed
+        // unconditionally; the Settings toggle gates only the prompt, so a user
+        // who opts in *after* a crash still has a report to send.
+        let crashReportService = CrashReportService()
+        Self.installCrashHandler(service: crashReportService)
         return AppEnvironment(
             messages: messages,
             lists: lists,
@@ -514,6 +578,8 @@ final class AppEnvironment: ObservableObject {
             listsStore: listsStore,
             documentsService: documentsService,
             documentTemplatesService: documentTemplatesService,
+            aiService: aiService,
+            materializeService: materializeService,
             documentSyncEngine: documentSyncEngine,
             documentSyncEvents: documentSyncEvents,
             notificationsService: notificationsService,
@@ -530,6 +596,7 @@ final class AppEnvironment: ObservableObject {
             github: github,
             directMessages: directMessages,
             directMessagesEventBus: directMessagesEventBus,
+            crashReports: crashReportService,
             // Share Links (work-consolidation.md G3) reuse the same kit-layer
             // `APIClient`; the API client is retained on the environment so
             // `sharing` can rebuild the service with live entitlements per
@@ -542,6 +609,27 @@ final class AppEnvironment: ObservableObject {
             notificationPreferences: notificationPreferences,
             sessions: sessions,
             tags: tags
+        )
+    }
+
+    // MARK: - Crash reporting
+
+    /// Installs the crash breadcrumb writers, tagging the breadcrumb with this
+    /// build's identity so a report names the version that actually crashed.
+    ///
+    /// Call order matters: `CrashReportService.init` snapshots the previous
+    /// run's breadcrumb, and installing here opens that same file with
+    /// `O_TRUNC`. Install before the service is built and no crash would ever
+    /// be reported, because every read would find an empty file.
+    private static func installCrashHandler(service: CrashReportService) {
+        guard let breadcrumbURL = service.breadcrumbURL else { return }
+        let info = Bundle.main.infoDictionary
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+        CrashSignalHandler.install(
+            breadcrumbURL: breadcrumbURL,
+            appVersion: info?["CFBundleShortVersionString"] as? String ?? "unknown",
+            build: info?["CFBundleVersion"] as? String ?? "unknown",
+            osVersion: "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
         )
     }
 
