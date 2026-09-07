@@ -117,4 +117,74 @@ final class RepostSheetViewModelTests: XCTestCase {
         }
         XCTAssertTrue(viewModel.didFinish)
     }
+
+    // MARK: - Default visibility (account preference)
+    //
+    // A repost is a post, so it seeds from the same `defaultPubliclyVisible`
+    // preference as the composer. Quartet: happy, absent account, boundary
+    // (explicit pick wins), and the wire assertion.
+
+    func test_givenPrivateAccountDefault_whenOpeningRepostSheet_thenSeedsPrivate() {
+        let viewModel = RepostSheetViewModel(
+            messages: StubMessagesService(),
+            eventBus: ComposerEventBus(),
+            originalMessageID: "m-1",
+            initialVisibility: .private
+        )
+
+        XCTAssertEqual(viewModel.visibility, .private)
+    }
+
+    func test_givenNoResolvedAccount_whenOpeningRepostSheet_thenFallsBackToPublic() {
+        // Absent input: signed out or session unresolved — the same path
+        // `AppEnvironment` takes when `currentUser` is nil.
+        let viewModel = RepostSheetViewModel(
+            messages: StubMessagesService(),
+            eventBus: ComposerEventBus(),
+            originalMessageID: "m-1"
+        )
+
+        XCTAssertEqual(viewModel.visibility, .public)
+    }
+
+    func test_givenPrivateAccountDefault_whenReposting_thenPostsPrivately() async {
+        // Happy path end-to-end: the seed reaches the wire, not just the picker.
+        let stub = StubMessagesService()
+        await stub.enqueueRepost(success: MessageFixtures.message(id: "r-1", text: ""))
+        let viewModel = RepostSheetViewModel(
+            messages: stub,
+            eventBus: ComposerEventBus(),
+            originalMessageID: "m-1",
+            initialVisibility: .private
+        )
+
+        await viewModel.submit()
+
+        let recorded = await stub.recorded
+        guard case .repost(_, _, let visibility) = recorded.first?.kind else {
+            return XCTFail("Expected a `repost` call, got \(String(describing: recorded.first))")
+        }
+        XCTAssertEqual(visibility, .private)
+    }
+
+    func test_givenSeededPrivate_whenUserPicksPublic_thenTheUserChoiceIsWhatPosts() async {
+        // Boundary: the seed is a default, not a lock.
+        let stub = StubMessagesService()
+        await stub.enqueueRepost(success: MessageFixtures.message(id: "r-2", text: ""))
+        let viewModel = RepostSheetViewModel(
+            messages: stub,
+            eventBus: ComposerEventBus(),
+            originalMessageID: "m-1",
+            initialVisibility: .private
+        )
+        viewModel.visibility = .public
+
+        await viewModel.submit()
+
+        let recorded = await stub.recorded
+        guard case .repost(_, _, let visibility) = recorded.first?.kind else {
+            return XCTFail("Expected a `repost` call, got \(String(describing: recorded.first))")
+        }
+        XCTAssertEqual(visibility, .public)
+    }
 }
