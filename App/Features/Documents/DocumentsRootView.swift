@@ -39,6 +39,9 @@ struct DocumentsRootView: View {
     /// Drives the "New from Template…" picker sheet (work-consolidation.md).
     @State private var isTemplatePickerPresented = false
 
+    /// Drives the "Draft with AI" sheet (work-consolidation.md G15).
+    @State private var isAIDocumentPresented = false
+
     /// Drives the Share Links panel for the document currently open in the
     /// editor (work-consolidation.md G3).
     @State private var isShareLinksPresented = false
@@ -78,6 +81,20 @@ struct DocumentsRootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .documentsSyncNow)) { _ in
             Task { await syncStatus?.syncNow() }
+        }
+        .sheet(isPresented: $isAIDocumentPresented) {
+            if let documentsList, let environment {
+                AIDocumentSheet(
+                    environment: environment,
+                    // Already loaded here, so the "from a document" picker costs
+                    // nothing extra.
+                    documents: documentsList.documentsLoaded
+                ) {
+                    // The drafted document was created server-side; reload so it
+                    // appears in the list without a manual refresh.
+                    await documentsList.refresh()
+                }
+            }
         }
         .sheet(isPresented: $isTemplatePickerPresented) {
             if let documentsList, let environment {
@@ -159,6 +176,15 @@ struct DocumentsRootView: View {
                 }
                 .keyboardShortcut("n", modifiers: [.option, .command, .shift])
                 .help("Create a new document from a starter template")
+
+                // Draft a document with AI (work-consolidation.md G15). Grouped
+                // with the other "new document by another route" actions.
+                Button {
+                    isAIDocumentPresented = true
+                } label: {
+                    Label("Draft with AI", systemImage: "sparkles")
+                }
+                .help("Draft a document from a topic, one of your lists, another document, or a URL")
 
                 Button {
                     isShareLinksPresented = true

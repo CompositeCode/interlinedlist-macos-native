@@ -25,6 +25,8 @@ struct OwnedListsRootView: View {
     @State private var viewModel: OwnedListsViewModel?
     @State private var rowsViewModel: ListRowsViewModel?
     @State private var showsNewListSheet: Bool = false
+    /// Drives the "Draft with AI" sheet (work-consolidation.md G15).
+    @State private var showsAIListSheet = false
     @State private var showsSchemaEditor: Bool = false
     @State private var showsWatchers: Bool = false
     @State private var showsShareLinks: Bool = false
@@ -127,6 +129,15 @@ struct OwnedListsRootView: View {
                 .keyboardShortcut("n", modifiers: [.shift, .command])
                 .help("Create a new list")
 
+                // Draft a list with AI (work-consolidation.md G15). Sits beside
+                // New List because it produces the same thing by another route.
+                Button {
+                    showsAIListSheet = true
+                } label: {
+                    Label("Draft with AI", systemImage: "sparkles")
+                }
+                .help("Describe a list and let AI draft its columns and starter rows")
+
                 Button {
                     Task {
                         if let id = viewModel.selectedListID {
@@ -200,6 +211,15 @@ struct OwnedListsRootView: View {
                 // finally makes the already-built issue browser reachable.
                 .disabled((rowsViewModel?.gitHubRepo ?? viewModel.selectedListGitHubRepo) == nil)
                 .help("Browse and create GitHub issues for this list")
+            }
+        }
+        .sheet(isPresented: $showsAIListSheet) {
+            if let environment {
+                AIListTemplateSheet(environment: environment) {
+                    // The drafted list was created server-side; reload so it
+                    // appears without the user having to refresh by hand.
+                    await viewModel.refresh()
+                }
             }
         }
         .sheet(isPresented: $showsNewListSheet) {
