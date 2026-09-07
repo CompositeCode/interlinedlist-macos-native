@@ -45,6 +45,8 @@ struct TimelineRootView: View {
     // moderation service.
     @State private var reportActionVM: ModerationActionViewModel?
     @State private var createIssueTarget: Message?
+    /// The message a "Create from…" sheet is open for (work-consolidation.md G16).
+    @State private var createFromTarget: Message?
 
     // M5.x — deep-link routing. When a system notification banner for a
     // message is tapped, `MainWindowView` sets this binding to the target
@@ -134,6 +136,16 @@ struct TimelineRootView: View {
         .sheet(item: $createIssueTarget) { target in
             if let environment {
                 CreateIssueFromMessageView(message: target, environment: environment)
+            }
+        }
+        // Create-from-message sheet (work-consolidation.md G16).
+        .sheet(item: $createFromTarget) { target in
+            if let environment {
+                CreateFromSheet(
+                    source: .messages(ids: [target.id]),
+                    environment: environment,
+                    authorHandle: target.author.username
+                )
             }
         }
         .confirmationDialog(
@@ -451,6 +463,9 @@ struct TimelineRootView: View {
             },
             onCreateGitHubIssue: { tapped in
                 createIssueTarget = tapped
+            },
+            onCreateFrom: { tapped in
+                createFromTarget = tapped
             }
         )
     }

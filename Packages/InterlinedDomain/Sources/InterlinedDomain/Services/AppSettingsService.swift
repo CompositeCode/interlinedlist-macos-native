@@ -48,14 +48,28 @@ public final class AppSettingsService: AppSettingsServicing {
     // MARK: - Bootstrap
 
     public func bootstrap(deviceID: String) async throws -> AppSettingsSnapshot {
-        let dto = try await api.send(AppSettings.bootstrap(appKey: appKey, deviceId: deviceID))
-        return AppSettingsSnapshot(from: dto)
+        do {
+            let dto = try await api.send(AppSettings.bootstrap(appKey: appKey, deviceId: deviceID))
+            return AppSettingsSnapshot(from: dto)
+        } catch let error as APIError {
+            // Verified live 2026-09-06: an unregistered device answers
+            // `404 {"source":"none"}`. That is the ordinary first-run state, not
+            // a failure — a brand-new Mac has nothing stored yet — so it maps to
+            // an empty snapshot flagged `isNewDevice`, and the caller registers.
+            guard case .notFound = error else { throw error }
+            return AppSettingsSnapshot(isNewDevice: true)
+        }
     }
 
     // MARK: - Shared settings
 
     public func sharedSettings() async throws -> AppSettingsBag {
-        AppSettingsBag(from: try await api.send(AppSettings.shared(appKey: appKey)))
+        // Verified live 2026-09-06: an app key with nothing stored yet answers
+        // 404, while `OPTIONS` on the same path reports
+        // `allow: DELETE, GET, HEAD, OPTIONS, PUT` — the route exists, the
+        // bucket is simply empty. Treating that as an error would make every
+        // fresh account show a failure instead of empty settings.
+        try await emptyOnNotFound { AppSettings.shared(appKey: self.appKey) }
     }
 
     public func writeSharedSettings(_ bag: AppSettingsBag) async throws -> AppSettingsBag {
@@ -68,9 +82,23 @@ public final class AppSettingsService: AppSettingsServicing {
     // MARK: - Per-device settings
 
     public func deviceSettings(deviceID: String) async throws -> AppSettingsBag {
-        AppSettingsBag(
-            from: try await api.send(AppSettings.deviceSettings(appKey: appKey, deviceId: deviceID))
-        )
+        try await emptyOnNotFound {
+            AppSettings.deviceSettings(appKey: self.appKey, deviceId: deviceID)
+        }
+    }
+
+    /// Sends a settings read, mapping the "nothing stored yet" 404 to an empty
+    /// bag. Every other error still propagates — a 401 or a 500 is a real
+    /// failure and must reach the UI.
+    private func emptyOnNotFound(
+        _ build: @Sendable () -> Request<AppSettingsDTO>
+    ) async throws -> AppSettingsBag {
+        do {
+            return AppSettingsBag(from: try await api.send(build()))
+        } catch let error as APIError {
+            guard case .notFound = error else { throw error }
+            return AppSettingsBag()
+        }
     }
 
     public func writeDeviceSettings(

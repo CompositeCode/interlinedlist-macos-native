@@ -58,6 +58,11 @@ struct MessageRowActions {
     /// (work-consolidation.md G4).
     var onCreateGitHubIssue: ((Message) -> Void)?
 
+    /// Turn this message into a list, a document, or both
+    /// (work-consolidation.md G16). Ownership-independent: the source only
+    /// has to be readable, and what gets created belongs to the caller.
+    var onCreateFrom: ((Message) -> Void)?
+
     /// No handlers wired — the row renders read-only. Used by previews and
     /// by the search results list, where a hit is a navigation target
     /// rather than an action surface.
