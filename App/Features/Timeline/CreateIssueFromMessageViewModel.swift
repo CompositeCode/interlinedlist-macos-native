@@ -6,6 +6,11 @@
 // a link back to the post), and creates the issue in the chosen repo via the
 // domain `GitHubServicing` surface.
 //
+// The permalink woven into the issue body comes from the shared
+// `MessagePermalink` builder in `InterlinedDomain` (GitHub #27) rather than a
+// private copy here, so the row's Link action, Push & Comment, and this issue
+// body all agree on one URL shape.
+//
 // Like `GitHubIssuesViewModel`, the unlinked-account state is first-class:
 // `GitHubServiceError.notLinked` flips `linkState` so the view can show a
 // "Link GitHub" CTA instead of a raw error. Depends only on `GitHubServicing`
@@ -50,12 +55,12 @@ final class CreateIssueFromMessageViewModel {
     init(
         github: GitHubServicing,
         message: Message,
-        webBaseURL: URL = URL(string: "https://interlinedlist.com")!
+        webBaseURL: URL = MessagePermalink.defaultWebBaseURL
     ) {
         self.github = github
         self.message = message
         self.title = Self.suggestedTitle(from: message)
-        self.body = Self.suggestedBody(from: message, permalink: Self.permalink(for: message, base: webBaseURL))
+        self.body = Self.suggestedBody(from: message, permalink: message.permalink(base: webBaseURL))
     }
 
     // MARK: - Loading
@@ -137,10 +142,6 @@ final class CreateIssueFromMessageViewModel {
             parts.append("From @\(message.author.username) on InterlinedList")
         }
         return parts.joined(separator: "\n\n")
-    }
-
-    static func permalink(for message: Message, base: URL) -> URL? {
-        base.appendingPathComponent("messages").appendingPathComponent(message.id)
     }
 
     // MARK: - Helpers
