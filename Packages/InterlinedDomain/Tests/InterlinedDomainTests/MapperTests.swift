@@ -469,15 +469,60 @@ final class MapperTests: XCTestCase {
 
     // MARK: - LinkPreview display rules (feature-gaps §1.5)
 
-    // A recognised success status renders even when title/image are absent —
-    // the client is forward-compatible about which token means "ready".
-    func test_givenReadyFetchStatusWithoutTitleOrImage_whenEvaluated_thenIsRenderable() {
+    // RULE CHANGED in G21 (2026-09-07). A ready status with no resolved fields
+    // must NOT render. The old rule returned true here, and because the DTO was
+    // decoding the server's nested `metadata` object to all-nil, that made every
+    // link on the timeline render as a bordered card containing only its host.
+    // The status token is still parsed (and still matched case-insensitively);
+    // it just no longer substitutes for having something to show.
+    func test_givenReadyFetchStatusWithoutTitleOrImage_whenEvaluated_thenIsNotRenderable() {
         // Given
         let preview = LinkPreview(url: URL(string: "https://example.com")!, fetchStatus: "SUCCESS")
 
-        // Then — case-insensitive match on a known success token.
+        // Then — the status is recognised, but there is nothing to draw.
         XCTAssertTrue(preview.isFetchStatusReady)
+        XCTAssertFalse(preview.hasDisplayableContent)
+        XCTAssertFalse(preview.isRenderable)
+    }
+
+    // A description alone is displayable content, even with no title or image.
+    func test_givenDescriptionOnlyPreview_whenEvaluated_thenIsRenderable() {
+        // Given
+        let preview = LinkPreview(
+            url: URL(string: "https://example.com")!,
+            description: "A summary the card can show."
+        )
+
+        // Then
         XCTAssertTrue(preview.isRenderable)
+    }
+
+    // `didFetchFail` drives the "Retry link previews" affordance.
+    func test_givenFailedFetchStatus_whenEvaluated_thenDidFetchFailAndNotRenderable() {
+        // Given — the live shape for an unreachable URL: status only, no metadata.
+        let preview = LinkPreview(url: URL(string: "https://nope.example")!, fetchStatus: "failed")
+
+        // Then
+        XCTAssertTrue(preview.didFetchFail)
+        XCTAssertFalse(preview.isRenderable)
+    }
+
+    // The image proxy is Instagram-only; every other host loads directly.
+    func test_givenInstagramThumbnail_whenEvaluated_thenNeedsImageProxy() {
+        // Given
+        let instagram = LinkPreview(
+            url: URL(string: "https://instagram.com/p/x")!,
+            imageURL: URL(string: "https://scontent.cdninstagram.com/v/t51/a.jpg")!
+        )
+        let other = LinkPreview(
+            url: URL(string: "https://compositecode.blog/post")!,
+            imageURL: URL(string: "https://i0.wp.com/hero.png")!
+        )
+
+        // Then — routing `other` through the proxy would turn a working
+        // thumbnail into a 403.
+        XCTAssertTrue(instagram.needsImageProxy)
+        XCTAssertFalse(other.needsImageProxy)
     }
 
     // An image with no title still renders (image is a human-meaningful field).
