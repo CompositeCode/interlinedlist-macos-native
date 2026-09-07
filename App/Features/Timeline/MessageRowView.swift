@@ -61,8 +61,14 @@ struct MessageRowView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
-        .accessibilityAction(named: "Dig") {
+        .accessibilityAction(named: "I Dig!") {
             actions.onToggleDig?(message)
+        }
+        .accessibilityAction(named: "Reply") {
+            actions.onReply?(message)
+        }
+        .accessibilityAction(named: "Push") {
+            actions.onPush?(message)
         }
     }
 
@@ -186,23 +192,21 @@ struct MessageRowView: View {
         }
     }
 
+    /// The row's action bar. Order matches the web's message actions:
+    /// Reply, I Dig!, Push, Push & Comment, Link.
+    ///
+    /// Reply / Dig / Push degrade to a plain count label when the host wired
+    /// no handler (search results, previews), so a read-only row still shows
+    /// the numbers without offering a control that would do nothing. Link is
+    /// unconditional — it is a pure client-side permalink and needs no host
+    /// wiring, so it works everywhere the message has an id.
     private var footer: some View {
         HStack(spacing: 16) {
+            replyButton
             digButton
-
-            if message.repostCount > 0 {
-                Label("\(message.repostCount)", systemImage: "arrow.2.squarepath")
-                    .font(.ilMono(10))
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("\(message.repostCount) reposts")
-            }
-
-            if let count = message.replyCount, count > 0 {
-                Label("\(count)", systemImage: "bubble.left")
-                    .font(.ilMono(10))
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel("\(count) replies")
-            }
+            pushButton
+            pushAndCommentButton
+            linkButton
 
             if message.visibility == .private {
                 Label("Private", systemImage: "lock")
@@ -212,6 +216,96 @@ struct MessageRowView: View {
             }
 
             Spacer()
+        }
+    }
+
+    /// Shared shape for every action-bar item: an icon with an optional
+    /// count beside it. `nil` count renders icon-only rather than an empty
+    /// title, so a zero never reads as a stray glyph.
+    @ViewBuilder
+    private func actionLabel(count: Int?, systemImage: String, tint: Color) -> some View {
+        if let count, count > 0 {
+            Label("\(count)", systemImage: systemImage)
+                .font(.ilMono(10))
+                .foregroundStyle(tint)
+        } else {
+            Image(systemName: systemImage)
+                .font(.ilMono(10))
+                .foregroundStyle(tint)
+        }
+    }
+
+    /// Reply. Routes to the message-detail composer via the host rather than
+    /// opening a second write surface.
+    @ViewBuilder
+    private var replyButton: some View {
+        let count = message.replyCount ?? 0
+        if let onReply = actions.onReply {
+            Button {
+                onReply(message)
+            } label: {
+                actionLabel(count: count, systemImage: "arrowshape.turn.up.left", tint: .secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(count > 0 ? "Reply \u{2014} \(count) replies" : "Reply")
+            .help("Reply to this post")
+        } else if count > 0 {
+            actionLabel(count: count, systemImage: "arrowshape.turn.up.left", tint: .secondary)
+                .accessibilityLabel("\(count) replies")
+        }
+    }
+
+    /// Bare, one-tap Push (repost with no commentary).
+    @ViewBuilder
+    private var pushButton: some View {
+        if let onPush = actions.onPush {
+            Button {
+                onPush(message)
+            } label: {
+                actionLabel(count: message.repostCount, systemImage: "arrow.2.squarepath", tint: .secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                message.repostCount > 0
+                    ? "Push \u{2014} \(message.repostCount) pushes"
+                    : "Push"
+            )
+            .help("Push this post to your followers")
+        } else if message.repostCount > 0 {
+            actionLabel(count: message.repostCount, systemImage: "arrow.2.squarepath", tint: .secondary)
+                .accessibilityLabel("\(message.repostCount) pushes")
+        }
+    }
+
+    /// Push with commentary — opens the host's repost sheet.
+    @ViewBuilder
+    private var pushAndCommentButton: some View {
+        if let onRepost = actions.onRepost {
+            Button {
+                onRepost(message)
+            } label: {
+                actionLabel(count: nil, systemImage: "quote.bubble", tint: .secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Push and comment")
+            .help("Push this post with your own commentary")
+        }
+    }
+
+    /// Link to this specific post. `SwiftUI.ShareLink` (disambiguated from
+    /// `InterlinedDomain.ShareLink`) opens the system share sheet, which
+    /// includes Copy \u{2014} no `NSPasteboard`, no AppKit in the App target.
+    @ViewBuilder
+    private var linkButton: some View {
+        if let url = message.permalink() {
+            SwiftUI.ShareLink(item: url) {
+                Image(systemName: "link")
+                    .font(.ilMono(10))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Link to this post")
+            .help("Share or copy a link to this post")
         }
     }
 
@@ -248,12 +342,40 @@ struct MessageRowView: View {
 
     @ViewBuilder
     private var contextMenuItems: some View {
+        // Every action-bar affordance is mirrored here so both discovery
+        // paths (visible bar, right-click) offer the same set.
+        if let onReply = actions.onReply {
+            Button {
+                onReply(message)
+            } label: {
+                Label("Reply", systemImage: "arrowshape.turn.up.left")
+            }
+        }
+
+        if let onPush = actions.onPush {
+            Button {
+                onPush(message)
+            } label: {
+                Label("Push", systemImage: "arrow.2.squarepath")
+            }
+        }
+
         if let onRepost = actions.onRepost {
             Button {
                 onRepost(message)
             } label: {
-                Label("Repost", systemImage: "arrow.2.squarepath")
+                Label("Push & Comment\u{2026}", systemImage: "quote.bubble")
             }
+        }
+
+        if let url = message.permalink() {
+            SwiftUI.ShareLink(item: url) {
+                Label("Link", systemImage: "link")
+            }
+        }
+
+        if actions.onReply != nil || actions.onPush != nil || actions.onRepost != nil {
+            Divider()
         }
 
         if let onCreateGitHubIssue = actions.onCreateGitHubIssue {
@@ -342,6 +464,12 @@ struct MessageRowView: View {
             parts.append("Also cross-posted to \(names)")
         }
         parts.append("\(message.digCount) digs")
+        if message.repostCount > 0 {
+            parts.append("\(message.repostCount) pushes")
+        }
+        if let replies = message.replyCount, replies > 0 {
+            parts.append("\(replies) replies")
+        }
         return parts.joined(separator: ". ")
     }
 

@@ -54,6 +54,13 @@ struct TimelineRootView: View {
     // existing call site parameter-free.
     @Binding private var pendingDeepLinkMessageID: String?
 
+    // GitHub #27 — row-level Reply. Tapping Reply navigates to the message's
+    // detail screen and asks it to open its composer already expanded, so
+    // there is exactly one reply write surface rather than two. The detail
+    // view nils this out once consumed, so a later plain tap on the same row
+    // does not re-open the composer.
+    @State private var pendingReplyMessageID: String?
+
     init(pendingDeepLinkMessageID: Binding<String?> = .constant(nil)) {
         self._pendingDeepLinkMessageID = pendingDeepLinkMessageID
     }
@@ -69,7 +76,10 @@ struct TimelineRootView: View {
             }
             .navigationTitle("Messages Timeline")
             .navigationDestination(for: Message.ID.self) { id in
-                MessageDetailView(messageID: id)
+                MessageDetailView(
+                    messageID: id,
+                    pendingReplyMessageID: $pendingReplyMessageID
+                )
             }
         }
         .task {
@@ -78,7 +88,10 @@ struct TimelineRootView: View {
             // `init`, so deferred construction inside `.task` is the
             // canonical pattern.
             if viewModel == nil, let environment {
-                let model = TimelineViewModel(messages: environment.messages)
+                let model = TimelineViewModel(
+                    messages: environment.messages,
+                    eventBus: environment.composerEventBus
+                )
                 viewModel = model
                 await model.initialLoad()
             }
@@ -399,6 +412,15 @@ struct TimelineRootView: View {
         MessageRowActions(
             onToggleDig: { tapped in
                 Task { await viewModel.toggleDig(on: tapped) }
+            },
+            onReply: { tapped in
+                // Navigate to the thread and open its composer, rather than
+                // introducing a second inline reply surface on the feed.
+                pendingReplyMessageID = tapped.id
+                selection = tapped.id
+            },
+            onPush: { tapped in
+                Task { await viewModel.push(tapped) }
             },
             onRepost: { tapped in
                 repostTarget = tapped
