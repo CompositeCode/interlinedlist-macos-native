@@ -38,10 +38,11 @@ public struct TrendingTagDTO: Decodable, Sendable, Equatable {
 
 /// `GET /api/tags/autocomplete` response — prefix matches over public messages.
 ///
-/// The gap definition does not pin this shape, so the decoder accepts the three
-/// plausible forms rather than guessing one: a bare string array
-/// (`["swift","swiftui"]`), a bare object array (`[{"tag":"swift"}]`), or either
-/// wrapped under `tags`. All collapse to `[String]`.
+/// **Verified live 2026-09-06:** the server returns the wrapped form,
+/// `{"tags":[...]}`. The decoder still accepts a bare string array
+/// (`["swift","swiftui"]`) and a bare object array (`[{"tag":"swift"}]`) as
+/// well, since those cost nothing and this API has been seen to wrap some
+/// collections and not others. All collapse to `[String]`.
 public struct TagSuggestionsResponse: Decodable, Sendable, Equatable {
     public let tags: [String]
 
