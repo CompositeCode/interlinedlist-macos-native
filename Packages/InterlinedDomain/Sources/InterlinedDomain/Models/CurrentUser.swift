@@ -56,6 +56,13 @@ public struct CurrentUser: Sendable, Equatable, Identifiable {
     public let customerStatus: CustomerStatus
     public let isEmailVerified: Bool
     public let isPrivateAccount: Bool
+    /// The account's "new posts are public by default" preference. Carried here
+    /// — rather than fetched separately — because it arrives on the very same
+    /// `GET /api/user` payload this model already maps, alongside the sibling
+    /// preference `isPrivateAccount`. That gives the composer a session-cached
+    /// default with no extra round-trip: `CurrentUserStore` already refreshes
+    /// this on sign-in, sign-out, and restore.
+    public let defaultPubliclyVisible: Bool
     public let createdAt: Date
 
     public var id: String { summary.id }
@@ -63,12 +70,18 @@ public struct CurrentUser: Sendable, Equatable, Identifiable {
     public var displayName: String { summary.displayName }
     public var avatarURL: URL? { summary.avatarURL }
 
+    /// The visibility a brand-new composer draft should open on, projected from
+    /// `defaultPubliclyVisible`. Reusing `Visibility.init(publiclyVisible:)`
+    /// keeps the bool→enum rule in exactly one place.
+    public var defaultVisibility: Visibility { Visibility(publiclyVisible: defaultPubliclyVisible) }
+
     public init(
         summary: UserSummary,
         email: String,
         customerStatus: CustomerStatus,
         isEmailVerified: Bool,
         isPrivateAccount: Bool,
+        defaultPubliclyVisible: Bool = true,
         createdAt: Date
     ) {
         self.summary = summary
@@ -76,6 +89,7 @@ public struct CurrentUser: Sendable, Equatable, Identifiable {
         self.customerStatus = customerStatus
         self.isEmailVerified = isEmailVerified
         self.isPrivateAccount = isPrivateAccount
+        self.defaultPubliclyVisible = defaultPubliclyVisible
         self.createdAt = createdAt
     }
 }

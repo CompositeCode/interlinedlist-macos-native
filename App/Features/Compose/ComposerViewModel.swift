@@ -77,7 +77,9 @@ final class ComposerViewModel {
     /// re-normalisation.
     var tagsInput: String
 
-    /// Public or private visibility.
+    /// Public or private visibility. Seeded for a new draft from the account's
+    /// `defaultPubliclyVisible` preference (via `initialVisibility`); an edit
+    /// seeds from the message being edited.
     var visibility: Visibility
 
     // MARK: - M6 editable state
@@ -225,7 +227,8 @@ final class ComposerViewModel {
         onSubscriberLapse: (@MainActor () async -> Void)? = nil,
         userService: UserServicing? = nil,
         contentLimits: ContentLimitsProviding? = nil,
-        linkedIn: LinkedInServicing? = nil
+        linkedIn: LinkedInServicing? = nil,
+        initialVisibility: Visibility = .public
     ) {
         self.messages = messages
         self.eventBus = eventBus
@@ -241,7 +244,10 @@ final class ComposerViewModel {
         case .newPost:
             self.body = ""
             self.tagsInput = ""
-            self.visibility = .public
+            // The account's "new posts are public by default" preference,
+            // resolved by the composition root. Defaults to `.public` when no
+            // account has resolved yet, matching `UserSettings.default`.
+            self.visibility = initialVisibility
         case .edit(_, let original):
             self.body = original.text
             self.tagsInput = original.tags.joined(separator: " ")

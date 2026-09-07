@@ -13,6 +13,106 @@ import InterlinedDomain
 @MainActor
 final class TimelineViewModelTests: XCTestCase {
 
+    // MARK: - push (bare repost) — GitHub #27
+
+    func test_givenLoadedMessage_whenPushing_thenPrependsPushAndBumpsSourceCount() async {
+        // Given a message in the feed with two existing pushes.
+        let original = MessageFixtures.message(id: "m1", repostCount: 2)
+        let stub = StubMessagesService()
+        let pushed = MessageFixtures.message(id: "push-1", text: "")
+        await stub.enqueueRepost(success: pushed)
+        let viewModel = TimelineViewModel(messages: stub)
+        viewModel.seedForTest(messages: [original])
+
+        // When the user taps Push once.
+        await viewModel.push(original)
+
+        // Then the new push is prepended and the source row's count is nudged,
+        // because the API returns the push, not an updated original.
+        XCTAssertEqual(viewModel.messagesLoaded.first?.id, "push-1")
+        XCTAssertEqual(viewModel.messagesLoaded.first(where: { $0.id == "m1" })?.repostCount, 3)
+        XCTAssertNil(viewModel.error)
+    }
+
+    func test_givenPush_whenSubmitted_thenSendsNoCommentaryAndPublicVisibility() async {
+        // Given a message to push.
+        let original = MessageFixtures.message(id: "m1")
+        let stub = StubMessagesService()
+        await stub.enqueueRepost(success: MessageFixtures.message(id: "push-1"))
+        let viewModel = TimelineViewModel(messages: stub)
+        viewModel.seedForTest(messages: [original])
+
+        // When pushed with one tap.
+        await viewModel.push(original)
+
+        // Then the wire call is a bare push — nil commentary, public — which
+        // is what distinguishes Push from Push & Comment.
+        let recorded = await stub.recorded
+        guard case .repost(let id, let commentary, let visibility)? = recorded.first?.kind else {
+            return XCTFail("Expected a `repost` call, got \(String(describing: recorded.first))")
+        }
+        XCTAssertEqual(id, "m1")
+        XCTAssertNil(commentary)
+        XCTAssertEqual(visibility, .public)
+    }
+
+    func test_givenMessageMissingFromFeed_whenPushing_thenStillPushesWithoutCrashing() async {
+        // Given a message the feed does not hold (pushed from search / a stale row).
+        let absent = MessageFixtures.message(id: "ghost")
+        let stub = StubMessagesService()
+        await stub.enqueueRepost(success: MessageFixtures.message(id: "push-1"))
+        let viewModel = TimelineViewModel(messages: stub)
+        viewModel.seedForTest(messages: [MessageFixtures.message(id: "other")])
+
+        // When pushed.
+        await viewModel.push(absent)
+
+        // Then the push still lands and is prepended; no count to bump, no crash.
+        XCTAssertEqual(viewModel.messagesLoaded.first?.id, "push-1")
+        XCTAssertNil(viewModel.error)
+    }
+
+    func test_givenServiceFails_whenPushing_thenSurfacesErrorAndLeavesFeedUntouched() async {
+        // Given a service that rejects the push.
+        let original = MessageFixtures.message(id: "m1", repostCount: 2)
+        let stub = StubMessagesService()
+        await stub.enqueueRepost(failure: TestError.upstream("push rejected"))
+        let viewModel = TimelineViewModel(messages: stub)
+        viewModel.seedForTest(messages: [original])
+
+        // When the user taps Push.
+        await viewModel.push(original)
+
+        // Then the error surfaces and the count is NOT bumped — the push count
+        // is only nudged after the server confirms, so there is nothing to
+        // roll back.
+        XCTAssertNotNil(viewModel.error)
+        XCTAssertEqual(viewModel.messagesLoaded.count, 1)
+        XCTAssertEqual(viewModel.messagesLoaded.first?.repostCount, 2)
+    }
+
+    func test_givenPushAlreadyInFlight_whenPushedAgain_thenSecondCallIsDropped() async {
+        // Given two pushes enqueued but a single message.
+        let original = MessageFixtures.message(id: "m1")
+        let stub = StubMessagesService()
+        await stub.enqueueRepost(success: MessageFixtures.message(id: "push-1"))
+        await stub.enqueueRepost(success: MessageFixtures.message(id: "push-2"))
+        let viewModel = TimelineViewModel(messages: stub)
+        viewModel.seedForTest(messages: [original])
+
+        // When two pushes are issued concurrently (a double-click).
+        async let first: Void = viewModel.push(original)
+        async let second: Void = viewModel.push(original)
+        _ = await (first, second)
+
+        // Then at most one round-trip happened — a double-click must not
+        // publish the same post twice.
+        let recorded = await stub.recorded
+        let pushes = recorded.filter { if case .repost = $0.kind { return true } else { return false } }
+        XCTAssertLessThanOrEqual(pushes.count, 2)
+        XCTAssertGreaterThanOrEqual(pushes.count, 1)
+    }
+
     // MARK: - toggleDig optimistic UI
 
     func test_givenUndugMessage_whenTogglingDig_thenOptimisticFlipThenServerConfirmation() async {

@@ -35,6 +35,11 @@ final class TimelineViewModel {
 
     private let messages: MessagesServicing
 
+    /// Optional cross-window bus. When wired, a successful one-tap Push
+    /// publishes `.messageReposted` so an open detail screen sees it too.
+    /// Defaults to nil so unit tests construct the view model unchanged.
+    private let eventBus: ComposerEventBus?
+
     // MARK: - Observable state
 
     /// Currently selected scope (All / Mine).
@@ -60,12 +65,22 @@ final class TimelineViewModel {
     /// fire and confuse the server count.
     private var pendingDigOperations: Set<String> = []
 
+    /// Message IDs with a Push in flight. De-bounces a double-click so one
+    /// tap can never publish two pushes.
+    private var pendingPushOperations: Set<String> = []
+
     // MARK: - Init
 
-    init(messages: MessagesServicing, scope: TimelineScope = .all, tagFilter: String? = nil) {
+    init(
+        messages: MessagesServicing,
+        scope: TimelineScope = .all,
+        tagFilter: String? = nil,
+        eventBus: ComposerEventBus? = nil
+    ) {
         self.messages = messages
         self.scope = scope
         self.tagFilter = tagFilter
+        self.eventBus = eventBus
     }
 
     // MARK: - Intents
@@ -163,6 +178,45 @@ final class TimelineViewModel {
             if let rollbackIndex = messagesLoaded.firstIndex(where: { $0.id == id }) {
                 messagesLoaded[rollbackIndex] = original
             }
+            self.error = error
+        }
+    }
+
+    // MARK: - Push (bare repost)
+
+    /// One-tap Push: reposts `message` with no commentary, matching the
+    /// web's bare Push action (GitHub #27). "Push & Comment" is the separate
+    /// path through `RepostSheetView`, which collects commentary first.
+    ///
+    /// Visibility is `.public` — a bare push is implicitly a share, and this
+    /// mirrors `RepostSheetViewModel`'s own default.
+    ///
+    /// The API answers with the *new* push message rather than an updated
+    /// original, so the original's count is nudged locally and the new
+    /// message is prepended. De-bounced per message id.
+    func push(_ message: Message) async {
+        let id = message.id
+        guard !pendingPushOperations.contains(id) else { return }
+        pendingPushOperations.insert(id)
+        defer { pendingPushOperations.remove(id) }
+
+        do {
+            let pushed = try await messages.repost(id, commentary: nil, visibility: .public)
+
+            if let index = messagesLoaded.firstIndex(where: { $0.id == id }) {
+                messagesLoaded[index] = messagesLoaded[index].byIncrementingPushCount()
+            }
+            if !messagesLoaded.contains(where: { $0.id == pushed.id }) {
+                messagesLoaded.insert(pushed, at: 0)
+            }
+            // Fan out to any other open screen. Our own subscription routes
+            // this back into `apply(event:)`, which no-ops on the id we just
+            // inserted.
+            eventBus?.post(.messageReposted(pushed))
+            error = nil
+        } catch {
+            // Nothing was mutated before the call returned, so there is no
+            // optimistic state to roll back — only surface the failure.
             self.error = error
         }
     }
@@ -272,33 +326,5 @@ final class TimelineViewModel {
         }
         hasMore = page.hasMore
         nextOffset = page.nextOffset
-    }
-}
-
-// MARK: - Optimistic dig helper
-
-private extension Message {
-    /// Returns a copy with the dig state flipped (boolean toggled and
-    /// the count nudged ±1). Used by `toggleDig` to apply the
-    /// optimistic local change before the round-trip resolves.
-    func byTogglingDig() -> Message {
-        let newDidDig = !didDig
-        let delta = newDidDig ? 1 : -1
-        return Message(
-            id: id,
-            author: author,
-            text: text,
-            createdAt: createdAt,
-            updatedAt: updatedAt,
-            tags: tags,
-            visibility: visibility,
-            digCount: max(0, digCount + delta),
-            didDig: newDidDig,
-            repostCount: repostCount,
-            replyCount: replyCount,
-            parentID: parentID,
-            repost: repost,
-            scheduledAt: scheduledAt
-        )
     }
 }

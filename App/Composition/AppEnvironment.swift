@@ -58,6 +58,21 @@ final class AppEnvironment: ObservableObject {
         EntitlementsService(user: currentUserStore.currentUser)
     }
 
+    /// The visibility a new-message composer draft opens on — the signed-in
+    /// account's "new posts are public by default" preference. Derived live from
+    /// `currentUserStore.currentUser`, exactly like `liveEntitlements` above, so
+    /// it is cached for the session and re-resolved whenever the store refreshes
+    /// (sign-in, sign-out, restore, or an explicit `restore()` after the
+    /// Preferences pane saves). Falls back to `.public` when signed out or not
+    /// yet resolved, matching `UserSettings.default`.
+    ///
+    /// The return type is module-qualified because this file also imports
+    /// SwiftUI, which declares an unrelated `Visibility` (the `.hidden` /
+    /// `.visible` modifier type).
+    var defaultComposeVisibility: InterlinedDomain.Visibility {
+        currentUserStore.currentUser?.defaultVisibility ?? .public
+    }
+
     /// Re-resolves the signed-in account's `customerStatus` (PLAN.md §8 — a
     /// gated call returning 403 means the subscription lapsed mid-session, so
     /// the UI must re-gate). The composer calls this when a gated `createPost`
@@ -250,6 +265,13 @@ final class AppEnvironment: ObservableObject {
         )
     }
 
+    /// Crash reporting (GitHub issue #29). Reads the breadcrumb the previous
+    /// run's signal handler left and the tail of the rotating `AppLog` file —
+    /// both `InterlinedKit` concerns, which is exactly why the service lives
+    /// in `InterlinedDomain` and reaches the App layer as this protocol
+    /// (decision 0003: `App/Features/**` may not import Kit).
+    let crashReports: CrashReportServicing
+
     /// The shared kit-layer API client retained so `sharing` can rebuild the
     /// sharing service with live entitlements on each access.
     private let sharingAPI: APIClientProtocol
@@ -292,6 +314,7 @@ final class AppEnvironment: ObservableObject {
         github: GitHubServicing,
         directMessages: DirectMessagesServicing,
         directMessagesEventBus: DirectMessagesEventBus,
+        crashReports: CrashReportServicing,
         sharingAPI: APIClientProtocol,
         shareBaseURL: URL,
         appSettings: AppSettingsServicing? = nil,
@@ -331,6 +354,7 @@ final class AppEnvironment: ObservableObject {
         self.github = github
         self.directMessages = directMessages
         self.directMessagesEventBus = directMessagesEventBus
+        self.crashReports = crashReports
         self.sharingAPI = sharingAPI
         self.shareBaseURL = shareBaseURL
         self.appSettings = appSettings
@@ -548,6 +572,25 @@ final class AppEnvironment: ObservableObject {
             baseURL: InterlinedKit.defaultBaseURL
         )
         let userPreferences = UserPreferencesStore(userService: userService)
+        // Crash reporting (GitHub issue #29). Two things happen here, in this
+        // order, and the order matters:
+        //
+        //   1. Build the service, which knows where the breadcrumb lives.
+        //   2. Install the signal handler, which **truncates** that file.
+        //
+        // Reading therefore has to happen between the two — see
+        // `installCrashHandler(breadcrumbURL:)`, which snapshots the previous
+        // run's breadcrumb before handing the path to the handler.
+        //
+        // Installing from here rather than from `applicationDidFinishLaunching`
+        // is deliberate: that method lives in `AppDelegate.swift`, the single
+        // sanctioned AppKit file, which decision 0005 says not to extend.
+        // `live()` runs at `@StateObject` init in `InterlinedListApp`, the
+        // earliest pure-SwiftUI point in the process. Capture is installed
+        // unconditionally; the Settings toggle gates only the prompt, so a user
+        // who opts in *after* a crash still has a report to send.
+        let crashReportService = CrashReportService()
+        Self.installCrashHandler(service: crashReportService)
         return AppEnvironment(
             messages: messages,
             lists: lists,
@@ -577,6 +620,7 @@ final class AppEnvironment: ObservableObject {
             github: github,
             directMessages: directMessages,
             directMessagesEventBus: directMessagesEventBus,
+            crashReports: crashReportService,
             // Share Links (work-consolidation.md G3) reuse the same kit-layer
             // `APIClient`; the API client is retained on the environment so
             // `sharing` can rebuild the service with live entitlements per
@@ -591,6 +635,27 @@ final class AppEnvironment: ObservableObject {
             tags: tags,
             linkMetadata: linkMetadata,
             userPreferences: userPreferences
+        )
+    }
+
+    // MARK: - Crash reporting
+
+    /// Installs the crash breadcrumb writers, tagging the breadcrumb with this
+    /// build's identity so a report names the version that actually crashed.
+    ///
+    /// Call order matters: `CrashReportService.init` snapshots the previous
+    /// run's breadcrumb, and installing here opens that same file with
+    /// `O_TRUNC`. Install before the service is built and no crash would ever
+    /// be reported, because every read would find an empty file.
+    private static func installCrashHandler(service: CrashReportService) {
+        guard let breadcrumbURL = service.breadcrumbURL else { return }
+        let info = Bundle.main.infoDictionary
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+        CrashSignalHandler.install(
+            breadcrumbURL: breadcrumbURL,
+            appVersion: info?["CFBundleShortVersionString"] as? String ?? "unknown",
+            build: info?["CFBundleVersion"] as? String ?? "unknown",
+            osVersion: "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
         )
     }
 

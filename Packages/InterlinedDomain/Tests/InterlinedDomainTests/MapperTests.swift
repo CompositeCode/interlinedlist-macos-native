@@ -205,16 +205,61 @@ final class MapperTests: XCTestCase {
         )
     }
 
-    private func makeUserDTO(customerStatus: String) -> UserDTO {
+    private func makeUserDTO(
+        customerStatus: String,
+        defaultPubliclyVisible: Bool? = nil
+    ) -> UserDTO {
         UserDTO(
             id: "u1",
             email: "ada@example.com",
             username: "ada",
             displayName: "Ada",
             emailVerified: true,
+            defaultPubliclyVisible: defaultPubliclyVisible,
             customerStatus: customerStatus,
             createdAt: date
         )
+    }
+
+    // MARK: CurrentUser · defaultPubliclyVisible
+
+    func test_givenPrivateDefaultOnDTO_whenMappingCurrentUser_thenVisibilityIsPrivate() {
+        // Happy path: the account opts new posts out of public.
+        let user = CurrentUser(from: makeUserDTO(customerStatus: "free", defaultPubliclyVisible: false))
+
+        XCTAssertFalse(user.defaultPubliclyVisible)
+        XCTAssertEqual(user.defaultVisibility, .private)
+    }
+
+    func test_givenAbsentDefaultOnDTO_whenMappingCurrentUser_thenFallsBackToPublic() {
+        // Invalid / absent: the server omitted the field. Must land on the same
+        // fallback `UserSettings.default` uses, not on `false`.
+        let user = CurrentUser(from: makeUserDTO(customerStatus: "free", defaultPubliclyVisible: nil))
+
+        XCTAssertTrue(user.defaultPubliclyVisible)
+        XCTAssertEqual(user.defaultVisibility, .public)
+    }
+
+    func test_givenPublicDefaultOnDTO_whenMappingCurrentUser_thenVisibilityIsPublic() {
+        // Upstream shape: an explicit `true` round-trips through the enum.
+        let user = CurrentUser(from: makeUserDTO(customerStatus: "free", defaultPubliclyVisible: true))
+
+        XCTAssertEqual(user.defaultVisibility, .public)
+    }
+
+    func test_givenOneDTO_whenMappedBothWays_thenCurrentUserAndUserSettingsAgree() {
+        // Boundary: the same payload is read by two models. They must never
+        // disagree about the preference, or the composer and the Preferences
+        // pane would show different things.
+        for flag in [true, false] {
+            let dto = makeUserDTO(customerStatus: "free", defaultPubliclyVisible: flag)
+
+            XCTAssertEqual(
+                CurrentUser(from: dto).defaultPubliclyVisible,
+                UserSettings(from: dto).defaultPubliclyVisible,
+                "CurrentUser and UserSettings disagreed for defaultPubliclyVisible == \(flag)"
+            )
+        }
     }
 
     // MARK: FollowAction mapper (FollowActionResponse → FollowAction)

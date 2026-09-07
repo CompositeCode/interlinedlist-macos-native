@@ -11,6 +11,83 @@ import InterlinedDomain
 @MainActor
 final class MessageDetailViewModelTests: XCTestCase {
 
+    // MARK: - push (bare repost) — GitHub #27
+
+    func test_givenRootMessage_whenPushing_thenBumpsPushCountInPlace() async {
+        // Given a loaded thread whose root has one push.
+        let stub = StubMessagesService()
+        await stub.enqueueMessage(success: MessageFixtures.message(id: "m1", repostCount: 1))
+        await stub.enqueueReplies(success: [])
+        let viewModel = MessageDetailViewModel(messages: stub, messageID: "m1")
+        await viewModel.load()
+        await stub.enqueueRepost(success: MessageFixtures.message(id: "push-1"))
+
+        // When the header row is pushed.
+        guard let root = viewModel.message else { return XCTFail("Expected a loaded root") }
+        await viewModel.push(root)
+
+        // Then the count is nudged in place. The push itself belongs on the
+        // feed, not in this thread, so nothing is appended to `replies`.
+        XCTAssertEqual(viewModel.message?.repostCount, 2)
+        XCTAssertTrue(viewModel.replies.isEmpty)
+        XCTAssertNil(viewModel.error)
+    }
+
+    func test_givenReplyRow_whenPushing_thenThatReplyCountIsBumped() async {
+        // Given a thread with one reply carrying no pushes.
+        let stub = StubMessagesService()
+        await stub.enqueueMessage(success: MessageFixtures.message(id: "m1"))
+        await stub.enqueueReplies(success: [MessageFixtures.message(id: "r1", repostCount: 0, parentID: "m1")])
+        let viewModel = MessageDetailViewModel(messages: stub, messageID: "m1")
+        await viewModel.load()
+        await stub.enqueueRepost(success: MessageFixtures.message(id: "push-1"))
+
+        // When the reply row is pushed.
+        guard let reply = viewModel.replies.first else { return XCTFail("Expected a reply") }
+        await viewModel.push(reply)
+
+        // Then the reply's own count moves, not the root's — each row pushes
+        // independently.
+        XCTAssertEqual(viewModel.replies.first?.repostCount, 1)
+        XCTAssertEqual(viewModel.message?.repostCount, 0)
+    }
+
+    func test_givenServiceFails_whenPushing_thenSurfacesErrorAndLeavesCountUnchanged() async {
+        // Given a loaded thread and a service that rejects the push.
+        let stub = StubMessagesService()
+        await stub.enqueueMessage(success: MessageFixtures.message(id: "m1", repostCount: 4))
+        await stub.enqueueReplies(success: [])
+        let viewModel = MessageDetailViewModel(messages: stub, messageID: "m1")
+        await viewModel.load()
+        await stub.enqueueRepost(failure: TestError.upstream("push rejected"))
+
+        // When pushed.
+        guard let root = viewModel.message else { return XCTFail("Expected a loaded root") }
+        await viewModel.push(root)
+
+        // Then the failure surfaces and the count is untouched.
+        XCTAssertNotNil(viewModel.error)
+        XCTAssertEqual(viewModel.message?.repostCount, 4)
+    }
+
+    func test_givenUnknownMessage_whenPushing_thenPushesWithoutMutatingThread() async {
+        // Given a loaded thread and a message that is not part of it (boundary:
+        // a stale row handed in by a host).
+        let stub = StubMessagesService()
+        await stub.enqueueMessage(success: MessageFixtures.message(id: "m1", repostCount: 1))
+        await stub.enqueueReplies(success: [])
+        let viewModel = MessageDetailViewModel(messages: stub, messageID: "m1")
+        await viewModel.load()
+        await stub.enqueueRepost(success: MessageFixtures.message(id: "push-1"))
+
+        // When a foreign message is pushed.
+        await viewModel.push(MessageFixtures.message(id: "ghost"))
+
+        // Then the round-trip happens but this thread is untouched.
+        XCTAssertEqual(viewModel.message?.repostCount, 1)
+        XCTAssertNil(viewModel.error)
+    }
+
     // MARK: - postReply
 
     func test_givenValidBody_whenPostingReply_thenAppendsToRepliesArray() async throws {

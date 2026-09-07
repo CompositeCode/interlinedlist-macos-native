@@ -181,6 +181,90 @@ final class ComposerViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.error as? TestError, failure)
     }
 
+    // MARK: - Default visibility (account preference)
+    //
+    // The composer seeds a new draft from the account's
+    // `defaultPubliclyVisible` preference, resolved by the composition root and
+    // handed in as `initialVisibility`. Quartet: happy (private default is
+    // honoured end-to-end), invalid/absent (no preference resolved), scope
+    // guard (an edit ignores it), boundary (an explicit user choice wins).
+
+    func test_givenPrivateAccountDefault_whenOpeningNewPost_thenSeedsPrivateAndPostsPrivately() async throws {
+        // Given — the account prefers private new posts.
+        let stub = StubMessagesService()
+        await stub.enqueueCreatePost(success: MessageFixtures.message(id: "m-1", text: "hi"))
+        let viewModel = ComposerViewModel(
+            messages: stub,
+            eventBus: ComposerEventBus(),
+            mode: .newPost,
+            initialVisibility: .private
+        )
+
+        // Then — the picker opens on private before any interaction.
+        XCTAssertEqual(viewModel.visibility, .private)
+
+        // When — publishing without touching the picker.
+        viewModel.body = "hi"
+        await viewModel.submit()
+
+        // Then — the seeded default reached the wire, not just the UI.
+        let recorded = await stub.recorded
+        guard case .createPost(_, _, let visibility, _, _, _, _, _, _, _) = recorded.first?.kind else {
+            return XCTFail("Expected a `createPost` call, got \(String(describing: recorded.first))")
+        }
+        XCTAssertEqual(visibility, .private)
+    }
+
+    func test_givenNoResolvedAccount_whenOpeningNewPost_thenFallsBackToPublic() {
+        // Invalid / absent input: signed out, or the session hasn't resolved yet.
+        // The omitted parameter is the same path `AppEnvironment` takes when
+        // `currentUser` is nil, and matches `UserSettings.default`.
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(),
+            eventBus: ComposerEventBus(),
+            mode: .newPost
+        )
+
+        XCTAssertEqual(viewModel.visibility, .public)
+    }
+
+    func test_givenPrivateAccountDefault_whenEditingExistingMessage_thenUsesTheMessagesOwnVisibility() {
+        // Scope guard: the preference governs *new* messages only. Editing a
+        // public message must not silently flip it private on open.
+        let original = MessageFixtures.message(id: "m-2", text: "already public")
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(),
+            eventBus: ComposerEventBus(),
+            mode: .edit(messageID: "m-2", original: original),
+            initialVisibility: .private
+        )
+
+        XCTAssertEqual(viewModel.visibility, original.visibility)
+        XCTAssertEqual(viewModel.visibility, .public)
+    }
+
+    func test_givenSeededPrivate_whenUserPicksPublic_thenTheUserChoiceIsWhatPosts() async throws {
+        // Boundary: the seed is a default, not a lock. An explicit pick wins.
+        let stub = StubMessagesService()
+        await stub.enqueueCreatePost(success: MessageFixtures.message(id: "m-3", text: "override"))
+        let viewModel = ComposerViewModel(
+            messages: stub,
+            eventBus: ComposerEventBus(),
+            mode: .newPost,
+            initialVisibility: .private
+        )
+
+        viewModel.body = "override"
+        viewModel.setVisibility(.public)
+        await viewModel.submit()
+
+        let recorded = await stub.recorded
+        guard case .createPost(_, _, let visibility, _, _, _, _, _, _, _) = recorded.first?.kind else {
+            return XCTFail("Expected a `createPost` call, got \(String(describing: recorded.first))")
+        }
+        XCTAssertEqual(visibility, .public)
+    }
+
     // MARK: - Tag normalisation
 
     func test_givenCommaAndSpaceSeparated_whenNormalising_thenReturnsTokenList() {
