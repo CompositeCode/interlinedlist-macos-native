@@ -23,6 +23,10 @@ import InterlinedDomain
 
 struct MessageRowView: View {
 
+    /// Read for the account's link-preview preference and the image-proxy
+    /// decision (G21). The row stays otherwise passive.
+    @EnvironmentObject private var environment: AppEnvironment
+
     let message: Message
 
     /// Whether the current viewer is the author and the row should
@@ -129,14 +133,28 @@ struct MessageRowView: View {
     /// The subset of `message.linkPreviews` the domain deems worth showing
     /// (feature-gaps §1.5). A bare URL with no resolved metadata is filtered
     /// out here — the row degrades to no card rather than an empty one.
+    ///
+    /// Gated on the account's "Show link previews" preference (G21). That
+    /// toggle shipped in Settings ▸ Preferences with no reader outside the
+    /// Settings pane, so turning it off had no effect anywhere; this is the
+    /// reader. `showLinkPreviews` defaults to true, matching the server
+    /// default, so a row renders normally before preferences have loaded.
     private var renderablePreviews: [LinkPreview] {
-        message.linkPreviews.filter(\.isRenderable)
+        guard environment.userPreferences.showLinkPreviews else { return [] }
+        return message.linkPreviews.filter(\.isRenderable)
     }
 
     private var linkPreviews: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(renderablePreviews) { preview in
-                LinkPreviewCardView(preview: preview)
+                LinkPreviewCardView(
+                    preview: preview,
+                    // Instagram thumbnails must go through the server proxy
+                    // (their CDN blocks hotlinking); everything else loads
+                    // directly. The service owns that host test.
+                    imageURL: environment.linkMetadata?.displayImageURL(for: preview)
+                        ?? preview.imageURL
+                )
             }
         }
     }

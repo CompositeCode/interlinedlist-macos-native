@@ -230,10 +230,13 @@ public struct LinkPreview: Sendable, Equatable, Identifiable {
     /// Source platform label the server attached (e.g. "youtube", "github"),
     /// when it recognised one.
     public let platform: String?
-    /// The server's fetch-state string for this preview. The exact vocabulary
-    /// (which value means "ready") is **not documented** in the API reference
-    /// as of 2026-07-18 — see `isFetchStatusReady`. Kept as the raw string so
-    /// no information is lost and the client stays forward-compatible.
+    /// The server's fetch-state string for this preview.
+    ///
+    /// Vocabulary **confirmed live 2026-09-07** (G21 probe, closing the P3-F
+    /// "value set the client guessed" question): `"success"` when the fetch
+    /// resolved, `"failed"` when the server could not reach the URL. Kept as
+    /// the raw string so an unrecognised future value loses no information —
+    /// see `isFetchStatusReady` and `didFetchFail`.
     public let fetchStatus: String?
     public let title: String?
     public let description: String?
@@ -260,13 +263,11 @@ public struct LinkPreview: Sendable, Equatable, Identifiable {
     /// Whether `fetchStatus` names a state the client recognises as a completed,
     /// successful fetch.
     ///
-    /// NOTE (backend question, feature-gaps §1.5): the API reference does not
-    /// document the `fetchStatus` vocabulary, so we cannot be certain which
-    /// string means "ready". This matches a small, case-insensitive set of the
-    /// conventional success tokens. It is intentionally **not** the sole gate on
-    /// rendering — `isRenderable` also renders whenever a title or image is
-    /// present — so an unknown-but-successful status string never hides an
-    /// otherwise-complete card.
+    /// The live server sends `"success"` (confirmed 2026-09-07). The remaining
+    /// tokens are kept as forward-compatible synonyms: matching a superset costs
+    /// nothing and protects against a server-side rename. Deliberately **not**
+    /// the sole gate on rendering — `isRenderable` also passes on a title or
+    /// image — so an unknown-but-successful status never hides a complete card.
     public var isFetchStatusReady: Bool {
         guard let status = fetchStatus?.lowercased() else { return false }
         return ["ready", "success", "succeeded", "ok", "complete", "completed", "fetched"].contains(status)
@@ -278,10 +279,45 @@ public struct LinkPreview: Sendable, Equatable, Identifiable {
     /// with no resolved metadata returns `false` — the UI degrades to nothing
     /// (or a minimal chip) rather than an empty card.
     public var isRenderable: Bool {
-        if isFetchStatusReady { return true }
+        // A ready status alone is NOT enough. Before G21 it was, and because the
+        // DTO decoded the server's nested metadata to all-nil, every link on the
+        // timeline rendered as a bordered card containing nothing but its host.
+        // Require something a human can actually read.
+        hasDisplayableContent
+    }
+
+    /// Whether the preview carries a field worth putting on screen — a
+    /// non-blank title, a description, or an image. This is the real gate:
+    /// a preview with a ready status but no resolved fields renders nothing.
+    public var hasDisplayableContent: Bool {
         if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-        if imageURL != nil { return true }
-        return false
+        if let description, !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        return imageURL != nil
+    }
+
+    /// Whether the server tried to resolve this link and could not. Drives the
+    /// "Retry link previews" affordance, which calls
+    /// `POST /api/messages/{id}/metadata` to re-fetch.
+    public var didFetchFail: Bool {
+        guard let status = fetchStatus?.lowercased() else { return false }
+        return ["failed", "failure", "error"].contains(status)
+    }
+
+    /// Whether `imageURL` must be loaded through `GET /api/images/proxy` rather
+    /// than fetched directly.
+    ///
+    /// The proxy is **not** a general-purpose image fetcher: the live route
+    /// answers `403 {"error":"Only Instagram image URLs are allowed"}` for any
+    /// other host (verified 2026-09-07). It exists because Instagram's CDN
+    /// blocks hotlinking, so route Instagram thumbnails through it and load
+    /// everything else directly — sending a non-Instagram URL there would turn
+    /// a working thumbnail into a 403.
+    public var needsImageProxy: Bool {
+        guard let host = imageURL?.host?.lowercased() else { return false }
+        return host == "cdninstagram.com"
+            || host.hasSuffix(".cdninstagram.com")
+            || host == "fbcdn.net"
+            || host.hasSuffix(".fbcdn.net")
     }
 
     /// The host component shown as the card subtitle (e.g. "github.com"),

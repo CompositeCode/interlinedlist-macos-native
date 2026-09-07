@@ -21,10 +21,19 @@ final class PreferencesViewModel {
 
     private let userService: UserServicing
 
+    /// App-wide preferences store to write through to, so a toggle takes
+    /// effect on the timeline immediately rather than at the next launch
+    /// (G21). Optional so existing tests construct the view model unchanged.
+    private weak var preferencesStore: UserPreferencesStore?
+
     /// The session-cached account projection. A successful save re-resolves it
     /// so anything reading a preference off `CurrentUser` — today the composer's
     /// default visibility — picks the change up without an app restart. Optional
     /// so existing tests and previews construct the view model unchanged.
+    ///
+    /// Distinct from `preferencesStore` on purpose: this one carries
+    /// `CurrentUser` (composer default visibility), that one carries
+    /// `UserSettings` (link previews). A save has to refresh both.
     private let currentUserStore: CurrentUserStore?
 
     /// The working copy bound directly to the pane's controls. `save()`
@@ -48,8 +57,13 @@ final class PreferencesViewModel {
     /// Drives the Save button's enabled state.
     var hasChanges: Bool { settings != lastSaved }
 
-    init(userService: UserServicing, currentUserStore: CurrentUserStore? = nil) {
+    init(
+        userService: UserServicing,
+        preferencesStore: UserPreferencesStore? = nil,
+        currentUserStore: CurrentUserStore? = nil
+    ) {
         self.userService = userService
+        self.preferencesStore = preferencesStore
         self.currentUserStore = currentUserStore
     }
 
@@ -64,6 +78,7 @@ final class PreferencesViewModel {
             let loaded = try await userService.settings()
             settings = loaded
             lastSaved = loaded
+            preferencesStore?.adopt(loaded)
         } catch {
             self.error = error
         }
@@ -81,11 +96,13 @@ final class PreferencesViewModel {
             let updated = try await userService.updateSettings(settings)
             settings = updated
             lastSaved = updated
-            // Re-resolve the cached account so preference-derived UI elsewhere
-            // (the composer's default visibility) reflects the change now rather
-            // than at next launch. Mirrors `AccountViewModel`'s post-mutation
-            // refresh; the error is swallowed because the save itself succeeded
-            // and a failed re-read must not be reported as a failed save.
+            // Two independent caches read preferences, so a save refreshes
+            // both: `UserSettings` for the timeline's link-preview gate (G21)
+            // and `CurrentUser` for the composer's default visibility (#34).
+            preferencesStore?.adopt(updated)
+            // The error is swallowed because the save itself succeeded and a
+            // failed re-read must not be reported as a failed save. Mirrors
+            // `AccountViewModel`'s post-mutation refresh.
             _ = try? await currentUserStore?.restore()
         } catch {
             self.error = error

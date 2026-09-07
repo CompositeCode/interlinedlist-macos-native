@@ -19,7 +19,17 @@ struct LinkPreviewCardView: View {
 
     let preview: LinkPreview
 
+    /// The URL to actually load the thumbnail from — `preview.imageURL` for
+    /// most hosts, or a `/api/images/proxy` URL for Instagram thumbnails whose
+    /// CDN blocks hotlinking (G21). The host resolves this via
+    /// `LinkMetadataServicing.displayImageURL(for:)`; defaulting to the
+    /// preview's own image keeps existing call sites and previews working.
+    var imageURL: URL? = nil
+
     @Environment(\.openURL) private var openURL
+
+    /// The thumbnail source, preferring the host-resolved URL.
+    private var thumbnailURL: URL? { imageURL ?? preview.imageURL }
 
     var body: some View {
         Button {
@@ -36,14 +46,24 @@ struct LinkPreviewCardView: View {
 
     private var cardBody: some View {
         HStack(alignment: .top, spacing: 10) {
-            if let imageURL = preview.imageURL {
-                thumbnail(imageURL)
+            if let thumbnailURL {
+                thumbnail(thumbnailURL)
             }
             VStack(alignment: .leading, spacing: 3) {
                 if let title = trimmedTitle {
                     Text(title)
                         .font(.ilBodyMedium())
                         .foregroundStyle(ILColor.text)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // The server sends a description alongside the title; before
+                // G21 it decoded to nil and never had anything to show.
+                if let description = trimmedDescription {
+                    Text(description)
+                        .font(.ilBody(11))
+                        .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -97,6 +117,14 @@ struct LinkPreviewCardView: View {
         guard let title = preview.title?.trimmingCharacters(in: .whitespacesAndNewlines),
               !title.isEmpty else { return nil }
         return title
+    }
+
+    /// The description with surrounding whitespace removed, or `nil` when the
+    /// server sent none or a whitespace-only one.
+    private var trimmedDescription: String? {
+        guard let text = preview.description?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return nil }
+        return text
     }
 
     private var accessibilityLabel: String {

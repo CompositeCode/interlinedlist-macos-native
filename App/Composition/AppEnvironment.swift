@@ -228,6 +228,17 @@ final class AppEnvironment: ObservableObject {
     /// Tag trending + autocomplete (work-consolidation.md G20).
     let tags: TagsServicing?
 
+    /// Link metadata / rich previews (work-consolidation.md G21) — resolves a
+    /// URL for the composer, reads and refreshes a message's stored metadata,
+    /// and decides when a thumbnail must go through the server's Instagram
+    /// image proxy.
+    let linkMetadata: LinkMetadataServicing?
+
+    /// App-wide projection of the account's reading preferences, so surfaces
+    /// outside Settings can honour them (G21: "Show link previews" had no
+    /// reader beyond the Settings pane itself).
+    let userPreferences: UserPreferencesStore
+
     /// The Direct Messages surface the Messages feature binds against
     /// (work-consolidation.md G1). Exposed as the protocol so test doubles
     /// substitute in. Wraps the `/api/messages/*` DM endpoints (folders,
@@ -309,7 +320,11 @@ final class AppEnvironment: ObservableObject {
         appSettings: AppSettingsServicing? = nil,
         notificationPreferences: NotificationPreferencesServicing? = nil,
         sessions: SessionsServicing? = nil,
-        tags: TagsServicing? = nil
+        tags: TagsServicing? = nil,
+        linkMetadata: LinkMetadataServicing? = nil,
+        // Defaults to a store over the injected `userService`, so the many
+        // test/preview call sites that predate G21 need no change.
+        userPreferences: UserPreferencesStore? = nil
     ) {
         self.messages = messages
         self.lists = lists
@@ -346,6 +361,8 @@ final class AppEnvironment: ObservableObject {
         self.notificationPreferences = notificationPreferences
         self.sessions = sessions
         self.tags = tags
+        self.linkMetadata = linkMetadata
+        self.userPreferences = userPreferences ?? UserPreferencesStore(userService: userService)
     }
 
     /// The app-settings namespace this client stores its settings under
@@ -548,6 +565,13 @@ final class AppEnvironment: ObservableObject {
         let notificationPreferences = NotificationPreferencesService(api: api)
         let sessions = SessionsService(api: api)
         let tags = TagsService(api: api)
+        // G21. `shareBaseURL` doubles as the origin for /api/images/proxy URLs,
+        // which AsyncImage needs as an absolute URL rather than a Request.
+        let linkMetadata = LinkMetadataService(
+            api: api,
+            baseURL: InterlinedKit.defaultBaseURL
+        )
+        let userPreferences = UserPreferencesStore(userService: userService)
         // Crash reporting (GitHub issue #29). Two things happen here, in this
         // order, and the order matters:
         //
@@ -608,7 +632,9 @@ final class AppEnvironment: ObservableObject {
             appSettings: appSettings,
             notificationPreferences: notificationPreferences,
             sessions: sessions,
-            tags: tags
+            tags: tags,
+            linkMetadata: linkMetadata,
+            userPreferences: userPreferences
         )
     }
 
