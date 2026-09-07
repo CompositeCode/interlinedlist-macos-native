@@ -21,6 +21,11 @@ final class PreferencesViewModel {
 
     private let userService: UserServicing
 
+    /// App-wide preferences store to write through to, so a toggle takes
+    /// effect on the timeline immediately rather than at the next launch
+    /// (G21). Optional so existing tests construct the view model unchanged.
+    private weak var preferencesStore: UserPreferencesStore?
+
     /// The working copy bound directly to the pane's controls. `save()`
     /// persists it; a successful load/save resets `lastSaved` to match.
     var settings: UserSettings = .default
@@ -42,8 +47,9 @@ final class PreferencesViewModel {
     /// Drives the Save button's enabled state.
     var hasChanges: Bool { settings != lastSaved }
 
-    init(userService: UserServicing) {
+    init(userService: UserServicing, preferencesStore: UserPreferencesStore? = nil) {
         self.userService = userService
+        self.preferencesStore = preferencesStore
     }
 
     /// Loads the current settings from the server. On failure surfaces the
@@ -57,6 +63,7 @@ final class PreferencesViewModel {
             let loaded = try await userService.settings()
             settings = loaded
             lastSaved = loaded
+            preferencesStore?.adopt(loaded)
         } catch {
             self.error = error
         }
@@ -74,6 +81,7 @@ final class PreferencesViewModel {
             let updated = try await userService.updateSettings(settings)
             settings = updated
             lastSaved = updated
+            preferencesStore?.adopt(updated)
         } catch {
             self.error = error
         }

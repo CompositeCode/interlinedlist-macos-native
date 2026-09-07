@@ -16,8 +16,24 @@ final class TagCompletionViewModelTests: XCTestCase {
     }
 
     /// Lets the debounced lookup task run to completion.
-    private func settle() async {
-        for _ in 0..<10 { await Task.yield() }
+    ///
+    /// The lookup suspends on `Task.sleep(for: debounce)`, which goes through
+    /// the clock even at `.zero` — so a fixed number of `Task.yield()`s is not
+    /// a barrier, and the original ten-yield version lost the race
+    /// intermittently when the whole suite ran under load. Poll on a real
+    /// (short) sleep and stop as soon as the model settles.
+    private func settle(
+        until condition: (@MainActor () -> Bool)? = nil
+    ) async {
+        // A condition can exit early, so it can afford a generous ceiling. With
+        // no condition the assertion is that something did NOT happen, so the
+        // loop always runs to the end — keep that window short.
+        let iterations = condition == nil ? 25 : 400
+        for _ in 0..<iterations {
+            await Task.yield()
+            if let condition, condition() { return }
+            try? await Task.sleep(for: .milliseconds(1))
+        }
     }
 
     // MARK: - Token parsing
@@ -136,7 +152,7 @@ final class TagCompletionViewModelTests: XCTestCase {
         stub.enqueueSuggestions(success: ["swift"])
         let viewModel = makeViewModel(stub)
         viewModel.input(changed: "swi")
-        await settle()
+        await settle(until: { viewModel.isShowing })
         XCTAssertTrue(viewModel.isShowing)
 
         viewModel.dismiss()
