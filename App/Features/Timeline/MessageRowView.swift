@@ -30,38 +30,11 @@ struct MessageRowView: View {
     /// asking `TimelineViewModel.canEdit(message:currentUserID:)`.
     var canEdit: Bool = false
 
-    /// Optional dig-toggle handler. When `nil`, the dig glyph renders
-    /// as plain text (no button) — used in preview / static contexts.
-    var onToggleDig: ((Message) -> Void)? = nil
-
-    /// Optional repost handler. When `nil`, the "Repost" menu item is
-    /// hidden.
-    var onRepost: ((Message) -> Void)? = nil
-
-    /// Optional edit handler. Only invoked when `canEdit` is true.
-    var onEdit: ((Message) -> Void)? = nil
-
-    /// Optional delete handler. Only invoked when `canEdit` is true.
-    /// The host is responsible for the confirmation dialog.
-    var onDelete: ((Message) -> Void)? = nil
-
-    /// Optional block handler (work-consolidation.md G2). When non-nil, a "Block
-    /// author" item is added to the overflow menu. The host performs the
-    /// moderation call and refreshes the timeline.
-    var onBlock: ((Message) -> Void)? = nil
-
-    /// Optional mute handler. When non-nil, a "Mute author" item is added.
-    var onMute: ((Message) -> Void)? = nil
-
-    /// Optional report handler. When non-nil, a "Report…" item opens the
-    /// host's report sheet for this message. Replaces the old
-    /// support-URL fallback so reporting is a real backend action.
-    var onReport: ((Message) -> Void)? = nil
-
-    /// Optional "Create GitHub issue" handler (work-consolidation.md G4). When
-    /// non-nil, a "Create GitHub Issue…" item opens the host's create-issue
-    /// sheet pre-filled from this message.
-    var onCreateGitHubIssue: ((Message) -> Void)? = nil
+    /// Every optional action the host wires in — dig, reply, push, edit,
+    /// delete, moderation, and "create GitHub issue". Defaults to `.none`
+    /// so preview and read-only contexts (search results) render the row
+    /// with no interactive affordances at all.
+    var actions: MessageRowActions = .none
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -89,7 +62,7 @@ struct MessageRowView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
         .accessibilityAction(named: "Dig") {
-            onToggleDig?(message)
+            actions.onToggleDig?(message)
         }
     }
 
@@ -246,7 +219,7 @@ struct MessageRowView: View {
     /// otherwise the static label used in preview contexts.
     @ViewBuilder
     private var digButton: some View {
-        if let onToggleDig {
+        if let onToggleDig = actions.onToggleDig {
             Button {
                 onToggleDig(message)
             } label: {
@@ -275,7 +248,7 @@ struct MessageRowView: View {
 
     @ViewBuilder
     private var contextMenuItems: some View {
-        if let onRepost {
+        if let onRepost = actions.onRepost {
             Button {
                 onRepost(message)
             } label: {
@@ -283,7 +256,7 @@ struct MessageRowView: View {
             }
         }
 
-        if let onCreateGitHubIssue {
+        if let onCreateGitHubIssue = actions.onCreateGitHubIssue {
             Button {
                 onCreateGitHubIssue(message)
             } label: {
@@ -295,14 +268,14 @@ struct MessageRowView: View {
         // (`canEdit == false`), the menu items are simply absent so
         // the user never sees an enabled-but-broken affordance.
         if canEdit {
-            if let onEdit {
+            if let onEdit = actions.onEdit {
                 Button {
                     onEdit(message)
                 } label: {
                     Label("Edit", systemImage: "pencil")
                 }
             }
-            if let onDelete {
+            if let onDelete = actions.onDelete {
                 Button(role: .destructive) {
                     onDelete(message)
                 } label: {
@@ -317,24 +290,24 @@ struct MessageRowView: View {
         // Guideline 1.2: User-Generated Content requires a report
         // mechanism). Each item renders only when its handler is wired so
         // static / preview contexts stay clean; no AppKit involvement.
-        if onBlock != nil || onMute != nil || onReport != nil {
+        if actions.onBlock != nil || actions.onMute != nil || actions.onReport != nil {
             Divider()
         }
-        if let onBlock {
+        if let onBlock = actions.onBlock {
             Button {
                 onBlock(message)
             } label: {
                 Label("Block @\(message.author.username)", systemImage: "hand.raised")
             }
         }
-        if let onMute {
+        if let onMute = actions.onMute {
             Button {
                 onMute(message)
             } label: {
                 Label("Mute @\(message.author.username)", systemImage: "speaker.slash")
             }
         }
-        if let onReport {
+        if let onReport = actions.onReport {
             Button(role: .destructive) {
                 onReport(message)
             } label: {

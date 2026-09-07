@@ -147,12 +147,7 @@ struct MessageDetailView: View {
                     MessageRowView(
                         message: message,
                         canEdit: viewModel.canEdit(message, currentUserID: currentUserID),
-                        onToggleDig: { tapped in
-                            Task { await viewModel.toggleDig(on: tapped) }
-                        },
-                        onRepost: { tapped in repostTarget = tapped },
-                        onEdit: { tapped in editTarget = tapped },
-                        onDelete: { tapped in deleteTarget = tapped }
+                        actions: rowActions(viewModel: viewModel)
                     )
                     .padding(.horizontal, 16)
                     Divider()
@@ -178,6 +173,19 @@ struct MessageDetailView: View {
         }
     }
 
+    /// Shared action set for the header row and every reply row, so both
+    /// behave identically (each reply can be dug, pushed, edited, deleted).
+    private func rowActions(viewModel: MessageDetailViewModel) -> MessageRowActions {
+        MessageRowActions(
+            onToggleDig: { tapped in
+                Task { await viewModel.toggleDig(on: tapped) }
+            },
+            onRepost: { tapped in repostTarget = tapped },
+            onEdit: { tapped in editTarget = tapped },
+            onDelete: { tapped in deleteTarget = tapped }
+        )
+    }
+
     @ViewBuilder
     private func repliesSection(viewModel: MessageDetailViewModel, currentUserID: String?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -194,12 +202,7 @@ struct MessageDetailView: View {
                     MessageRowView(
                         message: reply,
                         canEdit: viewModel.canEdit(reply, currentUserID: currentUserID),
-                        onToggleDig: { tapped in
-                            Task { await viewModel.toggleDig(on: tapped) }
-                        },
-                        onRepost: { tapped in repostTarget = tapped },
-                        onEdit: { tapped in editTarget = tapped },
-                        onDelete: { tapped in deleteTarget = tapped }
+                        actions: rowActions(viewModel: viewModel)
                     )
                     .padding(.horizontal, 16)
                     Divider()

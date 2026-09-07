@@ -291,34 +291,7 @@ struct TimelineRootView: View {
                     MessageRowView(
                         message: message,
                         canEdit: viewModel.canEdit(message, currentUserID: currentUserID),
-                        onToggleDig: { tapped in
-                            Task { await viewModel.toggleDig(on: tapped) }
-                        },
-                        onRepost: { tapped in
-                            repostTarget = tapped
-                        },
-                        onEdit: { tapped in
-                            editTarget = tapped
-                        },
-                        onDelete: { tapped in
-                            deleteTarget = tapped
-                        },
-                        onBlock: { tapped in
-                            moderateBlock(author: tapped.author.username)
-                        },
-                        onMute: { tapped in
-                            moderateMute(author: tapped.author.username)
-                        },
-                        onReport: { tapped in
-                            reportActionVM = ModerationActionViewModel(
-                                username: tapped.author.username,
-                                messageID: tapped.id,
-                                service: environment?.moderation ?? NoopModerationService()
-                            )
-                        },
-                        onCreateGitHubIssue: { tapped in
-                            createIssueTarget = tapped
-                        }
+                        actions: rowActions(viewModel: viewModel)
                     )
                 }
                 .onAppear {
@@ -418,6 +391,42 @@ struct TimelineRootView: View {
     }
 
     // MARK: - Helpers
+
+    /// Builds the row's action set once so the three call sites in this
+    /// file stay short. Every handler routes into `TimelineViewModel` or
+    /// flips this view's sheet / dialog state — the row itself stays passive.
+    private func rowActions(viewModel: TimelineViewModel) -> MessageRowActions {
+        MessageRowActions(
+            onToggleDig: { tapped in
+                Task { await viewModel.toggleDig(on: tapped) }
+            },
+            onRepost: { tapped in
+                repostTarget = tapped
+            },
+            onEdit: { tapped in
+                editTarget = tapped
+            },
+            onDelete: { tapped in
+                deleteTarget = tapped
+            },
+            onBlock: { tapped in
+                moderateBlock(author: tapped.author.username)
+            },
+            onMute: { tapped in
+                moderateMute(author: tapped.author.username)
+            },
+            onReport: { tapped in
+                reportActionVM = ModerationActionViewModel(
+                    username: tapped.author.username,
+                    messageID: tapped.id,
+                    service: environment?.moderation ?? NoopModerationService()
+                )
+            },
+            onCreateGitHubIssue: { tapped in
+                createIssueTarget = tapped
+            }
+        )
+    }
 
     private func shouldLoadMore(for message: Message, in loaded: [Message]) -> Bool {
         guard let index = loaded.firstIndex(where: { $0.id == message.id }) else { return false }
