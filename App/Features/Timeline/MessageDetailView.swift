@@ -218,7 +218,7 @@ struct MessageDetailView: View {
             onPush: { tapped in
                 Task { await viewModel.push(tapped) }
             },
-            onRepost: { tapped in repostTarget = tapped },
+            onPushAndComment: { tapped in repostTarget = tapped },
             onEdit: { tapped in editTarget = tapped },
             onDelete: { tapped in deleteTarget = tapped }
         )

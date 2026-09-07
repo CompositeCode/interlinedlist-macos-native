@@ -33,8 +33,8 @@ struct MessageRowActions {
     /// Bare, one-tap Push (repost with no commentary).
     var onPush: ((Message) -> Void)?
 
-    /// Push with commentary — the host opens the repost sheet.
-    var onRepost: ((Message) -> Void)?
+    /// Push with commentary — the host opens the Push & Comment sheet.
+    var onPushAndComment: ((Message) -> Void)?
 
     /// Edit. Only ever invoked when the row's `canEdit` is true.
     var onEdit: ((Message) -> Void)?

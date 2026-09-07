@@ -422,7 +422,7 @@ struct TimelineRootView: View {
             onPush: { tapped in
                 Task { await viewModel.push(tapped) }
             },
-            onRepost: { tapped in
+            onPushAndComment: { tapped in
                 repostTarget = tapped
             },
             onEdit: { tapped in

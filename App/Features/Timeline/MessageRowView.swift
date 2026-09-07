@@ -11,7 +11,7 @@
 // M2 additions:
 // - The dig label becomes a tappable button that flips the dig state
 //   optimistically via the host's `onToggleDig` closure.
-// - Context menu with "Repost", "Edit", "Delete". Edit / Delete
+// - Context menu with "Push", "Edit", "Delete". Edit / Delete
 //   render only when `canEdit` is true (ownership-gated per PLAN.md
 //   §6 M2 — never enabled-but-broken).
 // - Host wires the actions via closures so the row stays passive and
@@ -280,9 +280,9 @@ struct MessageRowView: View {
     /// Push with commentary — opens the host's repost sheet.
     @ViewBuilder
     private var pushAndCommentButton: some View {
-        if let onRepost = actions.onRepost {
+        if let onPushAndComment = actions.onPushAndComment {
             Button {
-                onRepost(message)
+                onPushAndComment(message)
             } label: {
                 actionLabel(count: nil, systemImage: "quote.bubble", tint: .secondary)
             }
@@ -321,7 +321,7 @@ struct MessageRowView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(
-                "\(message.didDig ? "Undig" : "Dig") — \(message.digCount) total"
+                "\(message.didDig ? "Undo I Dig!" : "I Dig!") — \(message.digCount) total"
             )
         } else {
             digLabel
@@ -360,9 +360,9 @@ struct MessageRowView: View {
             }
         }
 
-        if let onRepost = actions.onRepost {
+        if let onPushAndComment = actions.onPushAndComment {
             Button {
-                onRepost(message)
+                onPushAndComment(message)
             } label: {
                 Label("Push & Comment\u{2026}", systemImage: "quote.bubble")
             }
@@ -374,7 +374,7 @@ struct MessageRowView: View {
             }
         }
 
-        if actions.onReply != nil || actions.onPush != nil || actions.onRepost != nil {
+        if actions.onReply != nil || actions.onPush != nil || actions.onPushAndComment != nil {
             Divider()
         }
 
@@ -442,11 +442,11 @@ struct MessageRowView: View {
         HStack(spacing: 6) {
             Image(systemName: "arrow.2.squarepath")
                 .font(.ilMono(10))
-            Text("Reposted from @\(original.author.username)")
+            Text("Pushed from @\(original.author.username)")
                 .font(.ilMono(10))
         }
         .foregroundStyle(.secondary)
-        .accessibilityLabel("Reposted from @\(original.author.username)")
+        .accessibilityLabel("Pushed from @\(original.author.username)")
     }
 
     // MARK: - Helpers

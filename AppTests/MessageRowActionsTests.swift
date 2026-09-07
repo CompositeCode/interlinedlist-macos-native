@@ -24,7 +24,7 @@ final class MessageRowActionsTests: XCTestCase {
             onToggleDig: { received["dig"] = $0.id },
             onReply: { received["reply"] = $0.id },
             onPush: { received["push"] = $0.id },
-            onRepost: { received["repost"] = $0.id },
+            onPushAndComment: { received["repost"] = $0.id },
             onEdit: { received["edit"] = $0.id },
             onDelete: { received["delete"] = $0.id },
             onBlock: { received["block"] = $0.id },
@@ -38,7 +38,7 @@ final class MessageRowActionsTests: XCTestCase {
         actions.onToggleDig?(tapped)
         actions.onReply?(tapped)
         actions.onPush?(tapped)
-        actions.onRepost?(tapped)
+        actions.onPushAndComment?(tapped)
         actions.onEdit?(tapped)
         actions.onDelete?(tapped)
         actions.onBlock?(tapped)
@@ -62,7 +62,7 @@ final class MessageRowActionsTests: XCTestCase {
         XCTAssertNil(actions.onToggleDig)
         XCTAssertNil(actions.onReply)
         XCTAssertNil(actions.onPush)
-        XCTAssertNil(actions.onRepost)
+        XCTAssertNil(actions.onPushAndComment)
         XCTAssertNil(actions.onEdit)
         XCTAssertNil(actions.onDelete)
         XCTAssertNil(actions.onBlock)
@@ -91,12 +91,12 @@ final class MessageRowActionsTests: XCTestCase {
         // shape: dig / repost / edit / delete, no moderation).
         var pushed = false
         let actions = MessageRowActions(
-            onRepost: { _ in pushed = true },
+            onPushAndComment: { _ in pushed = true },
             onEdit: { _ in }
         )
 
         // When the wired one runs.
-        actions.onRepost?(message())
+        actions.onPushAndComment?(message())
 
         // Then it fired and the unwired ones are still absent — a partially
         // wired host never silently gains affordances it did not ask for.
