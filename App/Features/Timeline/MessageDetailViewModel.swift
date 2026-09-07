@@ -68,14 +68,23 @@ final class MessageDetailViewModel {
     /// resolves.
     private(set) var pendingMarkdownExport: MarkdownExportRequest?
 
+    /// The account's "new posts are public by default" preference, applied to
+    /// an inline reply. The reply composer has no visibility control of its own,
+    /// so this is the only thing standing between a private-by-default account
+    /// and a public reply. Falls back to `.public` when no account has resolved,
+    /// matching `UserSettings.default`.
+    private let defaultVisibility: Visibility
+
     init(
         messages: MessagesServicing,
         messageID: String,
-        eventBus: ComposerEventBus? = nil
+        eventBus: ComposerEventBus? = nil,
+        defaultVisibility: Visibility = .public
     ) {
         self.messages = messages
         self.messageID = messageID
         self.eventBus = eventBus
+        self.defaultVisibility = defaultVisibility
     }
 
     // MARK: - Read
@@ -152,10 +161,13 @@ final class MessageDetailViewModel {
     /// without a full refetch; on failure surfaces `replyError` so
     /// the composer's "Reply" button can show the error inline.
     @discardableResult
+    /// `visibility` defaults to `nil`, meaning "use the account preference"
+    /// (`defaultVisibility`). An explicit value still wins, so a caller that
+    /// needs a specific visibility — or a test asserting one — can pass it.
     func postReply(
         body: String,
         tags: [String] = [],
-        visibility: Visibility = .public
+        visibility: Visibility? = nil
     ) async -> Message? {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isPostingReply else { return nil }
@@ -169,7 +181,7 @@ final class MessageDetailViewModel {
                 to: messageID,
                 body: trimmed,
                 tags: tags,
-                visibility: visibility
+                visibility: visibility ?? defaultVisibility
             )
             replies.append(reply)
             return reply
