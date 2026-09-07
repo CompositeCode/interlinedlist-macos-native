@@ -69,7 +69,11 @@ struct ComposerWindowView: View {
                     contentLimits: environment.contentLimits,
                     // G11a: resolves the LinkedIn posting target when the user
                     // enables the LinkedIn cross-post toggle.
-                    linkedIn: environment.linkedIn
+                    linkedIn: environment.linkedIn,
+                    // The account's public/private default for new posts. Read
+                    // synchronously off the session-cached `CurrentUser`, so the
+                    // picker opens on the right value with no fetch and no flicker.
+                    initialVisibility: environment.defaultComposeVisibility
                 )
                 // Pull the live limits once; the provider falls back to the
                 // built-in default, so this never leaves the counter unset.

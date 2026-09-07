@@ -27,7 +27,10 @@ struct PreferencesView: View {
         }
         .task {
             if viewModel == nil, let environment {
-                let model = PreferencesViewModel(userService: environment.userService)
+                let model = PreferencesViewModel(
+                    userService: environment.userService,
+                    currentUserStore: environment.currentUserStore
+                )
                 viewModel = model
                 await model.load()
             }

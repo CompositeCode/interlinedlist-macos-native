@@ -54,7 +54,8 @@ enum MessageFixtures {
 
     static func currentUser(
         id: String = "user-ada",
-        username: String = "ada"
+        username: String = "ada",
+        defaultPubliclyVisible: Bool = true
     ) -> CurrentUser {
         CurrentUser(
             summary: author(id: id, username: username),
@@ -62,6 +63,7 @@ enum MessageFixtures {
             customerStatus: .subscriber,
             isEmailVerified: true,
             isPrivateAccount: false,
+            defaultPubliclyVisible: defaultPubliclyVisible,
             createdAt: Date(timeIntervalSince1970: 1_700_000_000)
         )
     }

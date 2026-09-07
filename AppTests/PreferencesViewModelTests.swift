@@ -108,4 +108,76 @@ final class PreferencesViewModelTests: XCTestCase {
         XCTAssertNotNil(viewModel.error)
         XCTAssertTrue(viewModel.hasChanges, "A failed save leaves the edits dirty so the user can retry")
     }
+
+    // MARK: - Cached-account invalidation
+    //
+    // A successful save re-resolves `CurrentUserStore` so preference-derived UI
+    // elsewhere — today the composer's default visibility — reflects the change
+    // without an app restart. Quartet: happy, no-op, upstream failure, and the
+    // no-store boundary.
+
+    func test_givenSaveSucceeds_whenSaving_thenRefreshesTheCachedAccount() async {
+        // Given — the server will report the account now prefers private posts.
+        let stub = StubUserService()
+        stub.enqueueUpdateSettings(success: settings(defaultPubliclyVisible: false))
+        let session = StubSessionManaging()
+        let refreshed = MessageFixtures.currentUser(defaultPubliclyVisible: false)
+        await session.enqueueRestore(success: .signedIn(refreshed))
+        let store = CurrentUserStore(session: session)
+        let viewModel = PreferencesViewModel(userService: stub, currentUserStore: store)
+        viewModel.settings = settings(defaultPubliclyVisible: false)
+
+        // When
+        await viewModel.save()
+
+        // Then — the cached account carries the new preference, so
+        // `AppEnvironment.defaultComposeVisibility` now resolves to `.private`.
+        XCTAssertNil(viewModel.error)
+        XCTAssertEqual(store.currentUser?.defaultPubliclyVisible, false)
+        XCTAssertEqual(store.currentUser?.defaultVisibility, .private)
+    }
+
+    func test_givenNoChanges_whenSaving_thenDoesNotRefreshTheCachedAccount() async {
+        // No-op: `save()` bails on `hasChanges`, so nothing should be re-read.
+        let stub = StubUserService()
+        let session = StubSessionManaging()
+        await session.enqueueRestore(success: .signedIn(MessageFixtures.currentUser()))
+        let store = CurrentUserStore(session: session)
+        let viewModel = PreferencesViewModel(userService: stub, currentUserStore: store)
+
+        await viewModel.save()
+
+        XCTAssertNil(store.currentUser, "An unchanged pane must not re-resolve the account")
+    }
+
+    func test_givenSaveFailure_whenSaving_thenDoesNotRefreshTheCachedAccount() async {
+        // Upstream failure: the write never landed, so refreshing the cache
+        // would only re-read the *old* value and imply success.
+        let stub = StubUserService()
+        stub.enqueueUpdateSettings(failure: TestError.upstream("save failed"))
+        let session = StubSessionManaging()
+        await session.enqueueRestore(success: .signedIn(MessageFixtures.currentUser()))
+        let store = CurrentUserStore(session: session)
+        let viewModel = PreferencesViewModel(userService: stub, currentUserStore: store)
+        viewModel.settings = settings(defaultPubliclyVisible: false)
+
+        await viewModel.save()
+
+        XCTAssertNotNil(viewModel.error)
+        XCTAssertNil(store.currentUser, "A failed save must not re-resolve the account")
+    }
+
+    func test_givenNoCachedAccountStore_whenSaving_thenStillSucceeds() async {
+        // Boundary: the store is optional, so previews and existing callers that
+        // omit it must keep working.
+        let stub = StubUserService()
+        stub.enqueueUpdateSettings(success: settings(defaultPubliclyVisible: false))
+        let viewModel = PreferencesViewModel(userService: stub)
+        viewModel.settings = settings(defaultPubliclyVisible: false)
+
+        await viewModel.save()
+
+        XCTAssertNil(viewModel.error)
+        XCTAssertFalse(viewModel.settings.defaultPubliclyVisible)
+    }
 }
