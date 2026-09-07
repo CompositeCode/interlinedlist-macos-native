@@ -88,14 +88,35 @@ public enum Messages {
         Request(method: .post, path: "/api/messages", body: .json(body), auth: .bearer)
     }
 
-    /// `PUT /api/messages/[id]` — edit an existing message.
+    /// `PATCH /api/messages/[id]` — move a **future scheduled** post to a new
+    /// send time. Returns a bare `MessageDTO`.
     ///
-    /// Uses the same `MessageWriteResponse` wrapper as `create` for symmetry.
-    /// NOTE: live `PUT /api/messages/[id]` currently returns **HTTP 405**
-    /// (observed 2026-08-17) — the edit method drifted and needs a backend
-    /// confirmation of the correct verb (see work-consolidation.md §2 · P2-I).
-    public static func update(id: String, _ body: CreateMessageRequest) -> Request<MessageWriteResponse> {
-        Request(method: .put, path: "/api/messages/\(id)", body: .json(body), auth: .bearer)
+    /// VERIFIED live 2026-09-06 (work-consolidation.md §1c · V1). This replaces
+    /// the old `update(id:_:)`, which sent `PUT` (**405** live) and decoded the
+    /// `MessageWriteResponse` envelope (the reply is a bare DTO). The rename is
+    /// deliberate and is the substantive half of the finding: `PATCH` is a
+    /// **reschedule** route, not a message-edit route. The live handler accepts
+    /// only `scheduledAt`, rejects a content/tags/visibility body with
+    /// `400 "No valid updates provided"`, silently drops `content` when it is
+    /// sent alongside `scheduledAt`, and refuses any already-published message
+    /// with `400 "Can only edit scheduled posts that are in the future"`.
+    /// See `RescheduleMessageRequest` for the probe transcript.
+    ///
+    /// Editing a published message has **no route on the live API** — see
+    /// `MessagesServicing.update` for how that is surfaced to callers.
+    public static func reschedule(id: String, _ body: RescheduleMessageRequest) -> Request<MessageDTO> {
+        Request(method: .patch, path: "/api/messages/\(id)", body: .json(body), auth: .bearer)
+    }
+
+    /// `POST /api/messages/[id]/reply-counts` — re-poll the cross-post targets
+    /// and return fresh per-platform reply tallies (work-consolidation.md G27).
+    ///
+    /// VERIFIED live 2026-09-06: `OPTIONS` reports `Allow: OPTIONS, POST`, and a
+    /// real refresh on an owned message returned HTTP 200 with
+    /// `{ replyCounts: [...], repliesCheckedAt }`. The body is empty — the id in
+    /// the path is the whole request.
+    public static func refreshReplyCounts(id: String) -> Request<MessageReplyCountsResponse> {
+        Request(method: .post, path: "/api/messages/\(id)/reply-counts", auth: .bearer)
     }
 
     /// `DELETE /api/messages/[id]` — delete a message. The body is not

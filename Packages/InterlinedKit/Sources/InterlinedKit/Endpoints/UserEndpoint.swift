@@ -30,13 +30,35 @@ public enum User {
         Request(method: .get, path: "/api/user/organizations", auth: .session)
     }
 
+    /// `GET /api/user/engagement` — lifetime dig/push totals on your own
+    /// messages, plus a recent-events feed (work-consolidation.md G27).
+    ///
+    /// **Session-only, and that is now settled.** The 2026-09-05 pass saw a 401
+    /// under Bearer and left it flagged "confirm before building". Re-probed
+    /// 2026-09-06: `OPTIONS` reports `Allow: GET, HEAD, OPTIONS`, Bearer still
+    /// returns `401 {"error":"Unauthorized","code":"unauthorized"}`, and the
+    /// same request over a cookie session returns **HTTP 200** with the totals.
+    /// So the route is real and reachable — it just does not accept the bearer
+    /// token, hence `auth: .session` (the transport establishes the cookie
+    /// lazily, per decision 0001).
+    public static func engagement() -> Request<UserEngagementResponse> {
+        Request(method: .get, path: "/api/user/engagement", auth: .session)
+    }
+
     // MARK: - Write
 
-    /// `POST /api/user/update` — patch profile / preference fields. Returns the
+    /// `PATCH /api/user/update` — patch profile / preference fields. Returns the
     /// updated account under the same `{ "user": { ... } }` envelope as
-    /// `current()`.
+    /// `current()` (the live body is `{ "message": "User updated successfully",
+    /// "user": { ... } }`; the extra `message` key is ignored).
+    ///
+    /// VERIFIED live 2026-09-06 (work-consolidation.md §1c · V2): the verb is
+    /// `PATCH`. `OPTIONS` reports `Allow: OPTIONS, PATCH` and the `POST` this
+    /// shipped with returns **405**, so Settings ▸ Preferences could never save
+    /// against production. Confirmed end-to-end with a real `PATCH` on the test
+    /// account, which returned HTTP 200 and the envelope above.
     public static func update(_ body: UpdateUserRequest) -> Request<UserResponse> {
-        Request(method: .post, path: "/api/user/update", body: .json(body), auth: .bearer)
+        Request(method: .patch, path: "/api/user/update", body: .json(body), auth: .bearer)
     }
 
     /// `POST /api/user/avatar/upload` — upload avatar image bytes and receive

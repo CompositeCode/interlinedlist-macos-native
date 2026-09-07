@@ -155,4 +155,66 @@ final class ContractTests: XCTestCase {
             "thread otherUser must match the requested username"
         )
     }
+    // MARK: - §1c live-verb defects (V1–V7)
+
+    /// The drift alarm for the verb fixes made on 2026-09-06.
+    ///
+    /// Each of these routes shipped with a verb the live server rejects, so the
+    /// feature behind it failed in production. This asserts the corrected verb
+    /// is still the one the server advertises, by reading the `Allow` header
+    /// from a real authenticated `OPTIONS` — the same evidence the fixes were
+    /// built on. It is read-only: `OPTIONS` mutates nothing, so this is safe to
+    /// run against the live account on every CI pass.
+    ///
+    /// A failure means the live API moved again. Re-probe before editing the
+    /// expectation, and fix the builder rather than this test.
+    func test_givenLiveCredentials_whenOptioningFixedRoutes_thenAllowHeadersStillMatch() async throws {
+        guard let credentials = credentialsFromEnvironment() else {
+            throw XCTSkip("Live credentials not set — skipping contract test.")
+        }
+
+        let store = InMemoryTokenStore()
+        let (_, service) = makeLiveStack(tokenStore: store)
+        let token = try await service.signIn(
+            email: credentials.email,
+            password: credentials.password
+        )
+
+        // (path, the verb the client now sends). Ids are placeholders — the
+        // route table answers OPTIONS without resolving the resource.
+        let expectations: [(path: String, verb: String)] = [
+            ("/api/messages/probe", "PATCH"),                       // V1
+            ("/api/user/update", "PATCH"),                          // V2
+            ("/api/lists/probe/data/probe", "PUT"),                 // V3
+            ("/api/organizations/probe", "PUT"),                    // V4
+            ("/api/documents/folders/probe", "PUT"),                // V5
+            ("/api/follow/probe/remove", "DELETE"),                 // V6
+            ("/api/github/issues/owner/repo/1", "PATCH"),           // V7
+            ("/api/github/issues/owner/repo/1/comments", "POST")    // V7
+        ]
+
+        for expectation in expectations {
+            var request = URLRequest(url: liveBaseURL.appendingPathComponent(expectation.path))
+            request.httpMethod = "OPTIONS"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let http = try XCTUnwrap(response as? HTTPURLResponse)
+            let allow = try XCTUnwrap(
+                http.value(forHTTPHeaderField: "Allow"),
+                "no Allow header for \(expectation.path)"
+            )
+
+            let verbs = Set(
+                allow.split(separator: ",").map {
+                    $0.trimmingCharacters(in: .whitespaces).uppercased()
+                }
+            )
+            XCTAssertTrue(
+                verbs.contains(expectation.verb),
+                "\(expectation.path) no longer allows \(expectation.verb) — live Allow is \(allow)"
+            )
+        }
+    }
+
 }

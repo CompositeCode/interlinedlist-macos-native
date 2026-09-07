@@ -28,7 +28,8 @@ final class OrganizationsEndpointTests: XCTestCase {
 
         XCTAssertEqual(Organizations.create(CreateOrganizationRequest(name: "Acme", description: "d", isPublic: true)).method, .post)
         XCTAssertEqual(Organizations.get(id: "o1").path, "/api/organizations/o1")
-        XCTAssertEqual(Organizations.update(id: "o1", UpdateOrganizationRequest(name: "x")).method, .patch)
+        // PUT, not PATCH — PATCH is 405 live (work-consolidation.md §1c · V4).
+        XCTAssertEqual(Organizations.update(id: "o1", UpdateOrganizationRequest(name: "x")).method, .put)
 
         XCTAssertEqual(Organizations.members(id: "o1").path, "/api/organizations/o1/members")
         XCTAssertEqual(Organizations.members(id: "o1").paginationKey, "members")

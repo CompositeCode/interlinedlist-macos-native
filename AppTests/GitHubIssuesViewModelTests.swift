@@ -182,29 +182,22 @@ final class GitHubIssuesViewModelTests: XCTestCase {
         XCTAssertEqual(vm.assignableUsers.map(\.login), ["octocat"])
     }
 
-    func test_givenOpenIssue_whenTogglingState_thenClosesAndSwapsReturnedCopy() async {
+    // The former `toggleState` close/reopen tests are gone with the method: the
+    // live API has no route that changes an issue's state
+    // (work-consolidation.md §1c · V7). `GitHubServiceTests` covers the refusal
+    // at the service boundary instead.
+
+    func test_givenLabelUpdate_whenApplied_thenSwapsReturnedCopyIntoList() async {
         let stub = StubGitHubService()
         stub.issuesResult = .success([makeIssue(7, state: .open)])
-        stub.updateResult = .success(makeIssue(7, title: "T", state: .closed))
+        stub.updateResult = .success(makeIssue(7, title: "Relabelled", state: .open))
         let vm = GitHubIssuesViewModel(github: stub, repo: "o/r")
         await vm.load()
 
-        await vm.toggleState(makeIssue(7, state: .open))
+        await vm.setLabels(["bug"], on: makeIssue(7, state: .open))
 
-        XCTAssertEqual(vm.issues.first?.state, .closed)
+        XCTAssertEqual(vm.issues.first?.title, "Relabelled")
         XCTAssertEqual(stub.updates.first?.number, 7)
-        XCTAssertEqual(stub.updates.first?.update.state, .closed)
-    }
-
-    func test_givenClosedIssue_whenTogglingState_thenReopens() async {
-        let stub = StubGitHubService()
-        stub.issuesResult = .success([makeIssue(7, state: .closed)])
-        let vm = GitHubIssuesViewModel(github: stub, repo: "o/r")
-        await vm.load()
-
-        await vm.toggleState(makeIssue(7, state: .closed))
-
-        XCTAssertEqual(stub.updates.first?.update.state, .open)
     }
 
     func test_givenLabels_whenSetting_thenSendsLabelUpdate() async {
@@ -236,7 +229,7 @@ final class GitHubIssuesViewModelTests: XCTestCase {
         let vm = GitHubIssuesViewModel(github: stub, repo: "o/r")
         await vm.load()
 
-        await vm.toggleState(makeIssue(7))
+        await vm.setLabels(["bug"], on: makeIssue(7))
 
         XCTAssertEqual(vm.linkState, .notLinked)
     }

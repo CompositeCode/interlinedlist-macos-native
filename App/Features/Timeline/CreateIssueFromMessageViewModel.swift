@@ -149,6 +149,11 @@ final class CreateIssueFromMessageViewModel {
         switch error {
         case .notLinked:
             linkState = .notLinked
+        case .unsupportedIssueEdit:
+            // Not a linking problem — the live API simply has no route for this
+            // edit, so surface the message instead of showing a "Link GitHub"
+            // CTA the user has already satisfied.
+            self.error = error
         }
     }
 }

@@ -224,7 +224,8 @@ public final class DocumentsService: DocumentsServicing {
 
     public func document(id: String) async throws -> Document {
         do {
-            let dto = try await api.send(Documents.get(id: id))
+            // The live read answers `{ document }`; unwrap it.
+            let dto = try await api.send(Documents.get(id: id)).document
             return Document(from: dto)
         } catch let error as APIError {
             if case .notFound = error {
@@ -247,7 +248,8 @@ public final class DocumentsService: DocumentsServicing {
             relativePath: nil,
             isPublic: isPublic
         )
-        let dto = try await api.send(Documents.create(req))
+        // The live create answers `{ message, document }`; unwrap it.
+        let dto = try await api.send(Documents.create(req)).document
         return Document(from: dto)
     }
 
@@ -265,7 +267,8 @@ public final class DocumentsService: DocumentsServicing {
             isPublic: isPublic
         )
         do {
-            let dto = try await api.send(Documents.update(id: id, req))
+            // The live update answers `{ message, document }`; unwrap it.
+            let dto = try await api.send(Documents.update(id: id, req)).document
             return Document(from: dto)
         } catch let error as APIError {
             if case .notFound = error {
@@ -355,7 +358,8 @@ public final class DocumentsService: DocumentsServicing {
 
     public func folder(id: String) async throws -> FolderNode {
         do {
-            let dto = try await api.send(Documents.folder(id: id))
+            // The live read answers `{ folder }`; unwrap it.
+            let dto = try await api.send(Documents.folder(id: id)).folder
             return FolderNode(from: dto)
         } catch let error as APIError {
             if case .notFound = error {
@@ -367,14 +371,16 @@ public final class DocumentsService: DocumentsServicing {
 
     public func createFolder(name: String, parentId: String?) async throws -> FolderNode {
         let req = CreateDocumentFolderRequest(name: name, parentId: parentId)
-        let dto = try await api.send(Documents.createFolder(req))
+        // The live create answers `{ message, folder }`; unwrap it.
+        let dto = try await api.send(Documents.createFolder(req)).folder
         return FolderNode(from: dto)
     }
 
     public func renameFolder(id: String, to name: String) async throws -> FolderNode {
         let req = UpdateDocumentFolderRequest(name: name, parentId: nil)
         do {
-            let dto = try await api.send(Documents.updateFolder(id: id, req))
+            // The live update answers `{ message, folder }`; unwrap it.
+            let dto = try await api.send(Documents.updateFolder(id: id, req)).folder
             return FolderNode(from: dto)
         } catch let error as APIError {
             if case .notFound = error {

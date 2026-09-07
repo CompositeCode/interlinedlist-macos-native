@@ -160,6 +160,26 @@ enum Fixtures {
         """
     }
 
+    /// The single-row envelope the live API returns from
+    /// `GET`/`POST`/`PUT` on `/api/lists/[id]/data[/rowId]`:
+    /// `{ "message"?: …, "data": { …row… } }` (verified 2026-09-06 —
+    /// work-consolidation.md §1c · V3). The bare `listRowObject` stays for use
+    /// inside the paginated `rows` array, which is genuinely a list of bare rows.
+    static func listRowEnvelope(
+        id: String,
+        listId: String = "list-1",
+        title: String = "Dune",
+        year: Int = 1965,
+        message: String? = nil
+    ) -> String {
+        let messageJSON = message.map { "\"message\": \"\($0)\",\n  " } ?? ""
+        return """
+        {
+          \(messageJSON)"data": \(listRowObject(id: id, listId: listId, title: title, year: year))
+        }
+        """
+    }
+
     /// The paginated row envelope: `{ "rows": [...], "pagination": {...} }`.
     static func paginatedRows(
         ids: [String],
@@ -476,6 +496,38 @@ enum Fixtures {
     }
 
     /// A single `DocumentFolderDTO` object body.
+    /// The single-document envelope the live API returns from
+    /// `GET`/`POST`/`PATCH`/`PUT` on `/api/documents[/id]`:
+    /// `{ "message"?: …, "document": { … } }` (verified 2026-09-06). The bare
+    /// `documentObject` stays for use inside list and sync payloads, which
+    /// really are arrays of bare documents.
+    static func documentEnvelope(
+        id: String,
+        title: String = "Welcome",
+        content: String? = "# Hello",
+        folderId: String? = nil,
+        isPublic: Bool? = false,
+        updatedAt: String? = createdAtISO,
+        deleted: Bool? = nil,
+        message: String? = nil
+    ) -> String {
+        let messageJSON = message.map { "\"message\": \"\($0)\",\n  " } ?? ""
+        let object = documentObject(
+            id: id,
+            title: title,
+            content: content,
+            folderId: folderId,
+            isPublic: isPublic,
+            updatedAt: updatedAt,
+            deleted: deleted
+        )
+        return """
+        {
+          \(messageJSON)"document": \(object)
+        }
+        """
+    }
+
     static func folderObject(
         id: String,
         name: String = "Inbox",
@@ -492,6 +544,25 @@ enum Fixtures {
           "createdAt": "\(createdAtISO)",
           "updatedAt": "\(createdAtISO)",
           "deleted": \(deletedJSON)
+        }
+        """
+    }
+
+    /// The single-folder envelope the live API returns from
+    /// `GET`/`POST`/`PUT` on `/api/documents/folders[/id]`:
+    /// `{ "message"?: …, "folder": { … } }` (verified 2026-09-06 —
+    /// work-consolidation.md §1c · V5).
+    static func folderEnvelope(
+        id: String,
+        name: String = "Inbox",
+        parentId: String? = nil,
+        deleted: Bool? = nil,
+        message: String? = nil
+    ) -> String {
+        let messageJSON = message.map { "\"message\": \"\($0)\",\n  " } ?? ""
+        return """
+        {
+          \(messageJSON)"folder": \(folderObject(id: id, name: name, parentId: parentId, deleted: deleted))
         }
         """
     }
@@ -573,6 +644,33 @@ enum Fixtures {
           "name": "\(name)",
           "description": \(descJSON),
           "isPublic": \(isPublicJSON)\(timestamps)
+        }
+        """
+    }
+
+    /// The single-organization envelope the live API returns from
+    /// `GET`/`POST`/`PUT` on `/api/organizations[/id]`:
+    /// `{ "message"?: …, "organization": { … } }` (verified 2026-09-06 —
+    /// work-consolidation.md §1c · V4).
+    static func organizationEnvelope(
+        id: String,
+        name: String = "Acme",
+        description: String? = "We make things",
+        isPublic: Bool? = true,
+        includeTimestamps: Bool = true,
+        message: String? = nil
+    ) -> String {
+        let messageJSON = message.map { "\"message\": \"\($0)\",\n  " } ?? ""
+        let object = organizationObject(
+            id: id,
+            name: name,
+            description: description,
+            isPublic: isPublic,
+            includeTimestamps: includeTimestamps
+        )
+        return """
+        {
+          \(messageJSON)"organization": \(object)
         }
         """
     }

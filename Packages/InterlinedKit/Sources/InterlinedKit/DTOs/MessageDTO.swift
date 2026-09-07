@@ -317,6 +317,68 @@ public struct MessageWriteResponse: Decodable, Sendable, Equatable {
 /// Cross-post and scheduling fields are all optional and default to `nil`, so
 /// a plain text post is `CreateMessageRequest(content: "hi")`. Optional fields
 /// encode only when set (see `encode(to:)`), so the wire body stays minimal.
+/// One platform's row in a `POST /api/messages/[id]/reply-counts` refresh
+/// (work-consolidation.md G27).
+///
+/// VERIFIED live 2026-09-06: a real refresh returned
+/// `{"platform":"mastodon","count":0,"status":"success","checkedAt":"…"}` for
+/// the connected platforms and `{"platform":"twitter","status":"unsupported",
+/// "checkedAt":"…"}` for X — so `count` is **absent** when the platform cannot
+/// be polled, and `status` is the field that says whether the number is real.
+public struct MessageReplyCountDTO: Codable, Sendable, Equatable {
+    public let platform: String
+    /// Absent when `status` is not `"success"` — an unsupported platform
+    /// reports no number at all rather than a misleading zero.
+    public let count: Int?
+    /// `"success"` / `"unsupported"` observed live; treated as an open set.
+    public let status: String?
+    public let checkedAt: Date?
+
+    public init(platform: String, count: Int? = nil, status: String? = nil, checkedAt: Date? = nil) {
+        self.platform = platform
+        self.count = count
+        self.status = status
+        self.checkedAt = checkedAt
+    }
+}
+
+/// `POST /api/messages/[id]/reply-counts` response — the refreshed per-platform
+/// cross-post reply tallies plus the time the sweep ran.
+public struct MessageReplyCountsResponse: Codable, Sendable, Equatable {
+    public let replyCounts: [MessageReplyCountDTO]
+    public let repliesCheckedAt: Date?
+
+    public init(replyCounts: [MessageReplyCountDTO], repliesCheckedAt: Date? = nil) {
+        self.replyCounts = replyCounts
+        self.repliesCheckedAt = repliesCheckedAt
+    }
+}
+
+/// `PATCH /api/messages/[id]` body — the **only** field the live route honours.
+///
+/// VERIFIED live 2026-09-06 (work-consolidation.md §1c · V1). `PATCH` on a
+/// message is a **reschedule** route, not a general edit route:
+///   • it applies only to a scheduled post whose `scheduledAt` is still in the
+///     future — on a already-published message it returns
+///     `400 {"error":"Can only edit scheduled posts that are in the future"}`;
+///   • `scheduledAt` is the only accepted key. A body of `content`, `title`,
+///     `body`, `tags`, `publiclyVisible` or `visibility` — alone or in any
+///     combination — returns `400 {"error":"No valid updates provided"}`;
+///   • sending `content` *alongside* `scheduledAt` succeeds but the content is
+///     **silently discarded** (confirmed: the stored `content` was unchanged
+///     while `scheduledAt` moved), which is why this type deliberately cannot
+///     express a content edit.
+/// The reply is a **bare `MessageDTO`**, not the `MessageWriteResponse`
+/// envelope that `POST /api/messages` returns.
+public struct RescheduleMessageRequest: Encodable, Sendable, Equatable {
+    /// The new send time. Must be in the future.
+    public let scheduledAt: Date
+
+    public init(scheduledAt: Date) {
+        self.scheduledAt = scheduledAt
+    }
+}
+
 public struct CreateMessageRequest: Encodable, Sendable, Equatable {
     /// The message body. Markdown source is authored here; the server renders it.
     public let content: String

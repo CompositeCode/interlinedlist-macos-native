@@ -96,23 +96,44 @@ public enum Lists {
         )
     }
 
-    /// `POST /api/lists/[id]/data`
-    public static func createRow(listId: String, _ body: CreateListRowRequest) -> Request<ListRowDTO> {
+    /// `POST /api/lists/[id]/data` — append a row.
+    ///
+    /// VERIFIED live 2026-09-06: answers the `{ message, data }` envelope, not a
+    /// bare `ListRowDTO`. See `CreateListRowRequest` for the matching `data`
+    /// request-field correction — both were wrong, so row creation failed twice
+    /// over (work-consolidation.md §1c · V3).
+    public static func createRow(listId: String, _ body: CreateListRowRequest) -> Request<ListRowWriteResponse> {
         Request(method: .post, path: "/api/lists/\(listId)/data", body: .json(body), auth: .bearer)
     }
 
-    /// `GET /api/lists/[id]/data/[rowId]`
-    public static func row(listId: String, rowId: String) -> Request<ListRowDTO> {
+    /// `GET /api/lists/[id]/data/[rowId]` — one row.
+    ///
+    /// VERIFIED live 2026-09-06: answers `{ "data": { …row… } }` (no `message`
+    /// on the read), sharing the `ListRowWriteResponse` envelope. Was decoding a
+    /// bare `ListRowDTO`, so the row inspector never loaded a row.
+    public static func row(listId: String, rowId: String) -> Request<ListRowWriteResponse> {
         Request(method: .get, path: "/api/lists/\(listId)/data/\(rowId)", auth: .bearer)
     }
 
-    /// `PATCH /api/lists/[id]/data/[rowId]`
+    /// `PUT /api/lists/[id]/data/[rowId]` — replace a row's cell values.
+    ///
+    /// VERIFIED live 2026-09-06 (work-consolidation.md §1c · V3). This call was
+    /// wrong in **three** ways at once, all fixed here and each confirmed
+    /// against the test account:
+    ///   1. **Verb** — `OPTIONS` reports `Allow: DELETE, GET, HEAD, OPTIONS, PUT`
+    ///      and the shipped `PATCH` returns **405**.
+    ///   2. **Request field** — the body is `{ "data": … }`; the shipped
+    ///      `{ "rowData": … }` returns `400 "Data is required"` even on `PUT`.
+    ///   3. **Response shape** — the reply is `{ message, data }`, not a bare
+    ///      `ListRowDTO`.
+    /// A live `PUT` carrying the corrected body returned HTTP 200 and the
+    /// updated row.
     public static func updateRow(
         listId: String,
         rowId: String,
         _ body: UpdateListRowRequest
-    ) -> Request<ListRowDTO> {
-        Request(method: .patch, path: "/api/lists/\(listId)/data/\(rowId)", body: .json(body), auth: .bearer)
+    ) -> Request<ListRowWriteResponse> {
+        Request(method: .put, path: "/api/lists/\(listId)/data/\(rowId)", body: .json(body), auth: .bearer)
     }
 
     /// `DELETE /api/lists/[id]/data/[rowId]`

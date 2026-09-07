@@ -43,7 +43,8 @@ final class DocumentsEndpointTests: XCTestCase {
         XCTAssertEqual(Documents.folders().paginationKey, "folders")
         XCTAssertEqual(Documents.createFolder(CreateDocumentFolderRequest(name: "n")).method, .post)
         XCTAssertEqual(Documents.folder(id: "f1").path, "/api/documents/folders/f1")
-        XCTAssertEqual(Documents.updateFolder(id: "f1", UpdateDocumentFolderRequest(name: "n")).method, .patch)
+        // PUT, not PATCH — PATCH is 405 live (work-consolidation.md §1c · V5).
+        XCTAssertEqual(Documents.updateFolder(id: "f1", UpdateDocumentFolderRequest(name: "n")).method, .put)
         XCTAssertEqual(Documents.deleteFolder(id: "f1").method, .delete)
         XCTAssertEqual(Documents.folderDocuments(id: "f1").path, "/api/documents/folders/f1/documents")
         XCTAssertEqual(Documents.folderDocuments(id: "f1").paginationKey, "documents")

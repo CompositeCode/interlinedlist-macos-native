@@ -33,6 +33,9 @@ struct ComposerWindowView: View {
 
     /// Controls the `.fileImporter` sheet for picking media.
     @State private var isImporterPresented = false
+    /// Tag completion (work-consolidation.md G20). Owned by the view, not by
+    /// `ComposerViewModel`, so the publish path is untouched.
+    @State private var tagCompletion: TagCompletionViewModel?
 
     /// AI assistant (work-consolidation.md G15). Built alongside the composer
     /// view model so the menu can read availability as soon as the window opens.
@@ -519,11 +522,52 @@ struct ComposerWindowView: View {
                 .foregroundStyle(.secondary)
             TextField("Comma- or space-separated", text: Binding(
                 get: { viewModel.tagsInput },
-                set: { viewModel.tagsInput = $0 }
+                set: { newValue in
+                    viewModel.tagsInput = newValue
+                    // Completion tracks the token currently being typed
+                    // (work-consolidation.md G20).
+                    tagCompletion?.input(changed: newValue)
+                }
             ))
             .textFieldStyle(.roundedBorder)
             .accessibilityLabel("Tags")
+
+            if let tagCompletion, tagCompletion.isShowing {
+                tagSuggestions(tagCompletion, viewModel: viewModel)
+            }
         }
+        .task {
+            if tagCompletion == nil {
+                tagCompletion = TagCompletionViewModel(service: environment?.tags)
+            }
+        }
+    }
+
+    /// The completion row. A plain wrapping row rather than a `.popover` so it
+    /// never steals focus from the field the user is still typing in.
+    @ViewBuilder
+    private func tagSuggestions(
+        _ completion: TagCompletionViewModel,
+        viewModel: ComposerViewModel
+    ) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(completion.suggestions, id: \.self) { suggestion in
+                    Button {
+                        viewModel.tagsInput = completion.apply(suggestion, to: viewModel.tagsInput)
+                    } label: {
+                        Text("#\(suggestion)")
+                            .font(.ilMono(10))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(.tint.opacity(0.12), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add tag \(suggestion)")
+                }
+            }
+        }
+        .frame(maxHeight: 28)
     }
 
     @ViewBuilder
