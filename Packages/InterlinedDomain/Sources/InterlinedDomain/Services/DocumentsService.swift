@@ -8,6 +8,15 @@ import InterlinedKit
 /// domain-layer error cases the kit cannot express.
 public enum DocumentsError: Error, Sendable, Equatable {
 
+    /// Creating a document requires an active subscription. Raised before any
+    /// HTTP call so a free account sees an upgrade prompt instead of an opaque
+    /// server 403 (GitHub #40).
+    ///
+    /// **Creation only** — reading, editing, and deleting an existing document
+    /// stay free, because a lapsed subscription keeps existing documents "fully
+    /// usable".
+    case subscriberRequired(Feature)
+
     /// The requested document id was not found.
     case notFound
 
@@ -34,6 +43,8 @@ extension DocumentsError: LocalizedError, CustomStringConvertible {
 
     public var description: String {
         switch self {
+        case .subscriberRequired(let feature):
+            return feature.upgradeMessage
         case .notFound:
             return "Document not found."
         case .conflict(let localId, let serverVersion):
@@ -147,6 +158,13 @@ public final class DocumentsService: DocumentsServicing {
     /// G14 tail). When present, `uploadImage` enforces the live `GET /api/limits`
     /// image ceilings; when `nil` the built-in `ImagePrep` constants apply.
     private let contentLimits: ContentLimitsProviding?
+    /// The subscriber gate consulted by `create`, and only by `create`.
+    ///
+    /// A provider rather than a stored value: this service is built once at
+    /// launch, but the account's tier can change mid-session (sign-in, an
+    /// upgrade, a 403-triggered re-fetch). Evaluating at call time keeps the
+    /// gate live; a snapshot would freeze a signed-out user's tier forever.
+    private let entitlements: @Sendable () -> EntitlementsService
 
     /// - Parameters:
     ///   - api: networking seam (a stub in tests).
@@ -167,13 +185,15 @@ public final class DocumentsService: DocumentsServicing {
         sync: DocumentSyncCoordinating? = nil,
         store: DocumentStore? = nil,
         decoder: JSONDecoder = JSONCoders.makeDecoder(),
-        contentLimits: ContentLimitsProviding? = nil
+        contentLimits: ContentLimitsProviding? = nil,
+        entitlements: @escaping @Sendable () -> EntitlementsService = { EntitlementsService(customerStatus: .subscriber) }
     ) {
         self.api = api
         self.sync = sync
         self.store = store
         self.decoder = decoder
         self.contentLimits = contentLimits
+        self.entitlements = entitlements
     }
 
     // MARK: - Documents
@@ -241,6 +261,9 @@ public final class DocumentsService: DocumentsServicing {
         folderId: String?,
         isPublic: Bool
     ) async throws -> Document {
+        guard entitlements().isEnabled(.documentCreation) else {
+            throw DocumentsError.subscriberRequired(.documentCreation)
+        }
         let req = CreateDocumentRequest(
             title: title,
             content: body,

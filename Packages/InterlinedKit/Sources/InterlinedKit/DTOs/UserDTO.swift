@@ -97,6 +97,15 @@ public struct UserDTO: Decodable, Sendable, Equatable {
     public let openaiApiKey: String?
     public let anthropicApiKey: String?
     public let customerStatus: String
+    /// The account's lifecycle status (`new` / `active` / `restricted` /
+    /// `suspended` / `banned`), verified live 2026-09-09 on `GET /api/user`.
+    ///
+    /// Optional and kept as a raw `String` on purpose. The OpenAPI schema
+    /// declares this as a bare `{"type":"string"}` with **no** enum, so the
+    /// server may introduce a value this client has never seen — decoding it
+    /// loosely means an unknown status can never fail the whole account decode.
+    /// `InterlinedDomain.AccountStatus` narrows it and fails open.
+    public let accountStatus: String?
     public let stripeCustomerId: String?
     public let notificationTrayLimit: Int?
     public let createdAt: Date
@@ -126,6 +135,7 @@ public struct UserDTO: Decodable, Sendable, Equatable {
         openaiApiKey: String? = nil,
         anthropicApiKey: String? = nil,
         customerStatus: String,
+        accountStatus: String? = nil,
         stripeCustomerId: String? = nil,
         notificationTrayLimit: Int? = nil,
         createdAt: Date,
@@ -154,6 +164,7 @@ public struct UserDTO: Decodable, Sendable, Equatable {
         self.openaiApiKey = openaiApiKey
         self.anthropicApiKey = anthropicApiKey
         self.customerStatus = customerStatus
+        self.accountStatus = accountStatus
         self.stripeCustomerId = stripeCustomerId
         self.notificationTrayLimit = notificationTrayLimit
         self.createdAt = createdAt
@@ -316,7 +327,8 @@ public struct LinkedIdentityDTO: Decodable, Sendable, Equatable {
 
 // MARK: - Organizations (user membership view)
 
-/// Envelope for `GET /api/user/organizations` (session-only):
+/// Envelope for `GET /api/user/organizations` (`x-auth-type: sync-token` —
+/// Bearer-reachable; probed 2026-09-09, correcting an earlier "session-only" note):
 /// `{ "organizations": [...] }`. Each entry carries the caller's membership
 /// `role` and `joinedAt` alongside the organization fields.
 public struct UserOrganizationsResponse: Decodable, Sendable, Equatable {

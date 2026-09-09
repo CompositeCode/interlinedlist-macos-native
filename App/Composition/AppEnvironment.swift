@@ -58,6 +58,17 @@ final class AppEnvironment: ObservableObject {
         EntitlementsService(user: currentUserStore.currentUser)
     }
 
+    /// The composed capability gate — account status, email verification, and
+    /// subscription tier answered as one question (GitHub #40 / #41 / #42).
+    ///
+    /// Features should prefer this over `liveEntitlements`: a subscriber who is
+    /// `restricted`, or who has not verified their email, is entitled but still
+    /// cannot post, and only the composed gate knows that. Derived live from
+    /// `currentUserStore.currentUser`, exactly like `liveEntitlements`.
+    var liveCapabilities: CapabilityGate {
+        CapabilityGate(user: currentUserStore.currentUser)
+    }
+
     /// The visibility a new-message composer draft opens on — the signed-in
     /// account's "new posts are public by default" preference. Derived live from
     /// `currentUserStore.currentUser`, exactly like `liveEntitlements` above, so
@@ -487,7 +498,9 @@ final class AppEnvironment: ObservableObject {
             // deltas stay consistent (stale-while-revalidate paint).
             store: documentStore,
             // Live image ceilings for `uploadImage` prep (G14 tail).
-            contentLimits: contentLimits
+            contentLimits: contentLimits,
+            // Subscriber gate for document *creation* only (GitHub #40).
+            entitlements: { liveEntitlements.current() }
         )
         // Server document templates (work-consolidation.md G12). Reuses the same
         // kit-layer `APIClient` like the other services do — the
@@ -517,7 +530,8 @@ final class AppEnvironment: ObservableObject {
         // decision-0001 session allowlist, both already routed by the shared
         // `authTransport`. `UserService` takes the default production base URL
         // for the browser-handoff OAuth link flow.
-        let orgService = OrgService(api: api)
+        // Subscriber gate for organization *creation* only (GitHub #40).
+        let orgService = OrgService(api: api, entitlements: { liveEntitlements.current() })
         // Org-memberships cache (work-consolidation.md) — the Organizations switcher's
         // initial-view data. On-disk in Application Support with disposable /
         // auto-rebuild semantics; falls back to `NullOrgStore` if the container

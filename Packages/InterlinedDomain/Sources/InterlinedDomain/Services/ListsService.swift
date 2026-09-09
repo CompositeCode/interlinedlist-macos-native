@@ -8,10 +8,15 @@ import InterlinedKit
 /// domain-layer error cases the kit cannot express.
 public enum ListsError: Error, Sendable, Equatable {
 
-    /// The current account is not entitled to manage lists. Raised when
-    /// `EntitlementsService.canManageLists == false`, before any HTTP call
-    /// is made. M3 ships this gate defensively per the M3 brief; M6 wires
-    /// the real subscriber check.
+    /// Creating a list requires an active subscription. Raised when
+    /// `EntitlementsService.canManageLists == false`, before any HTTP call is
+    /// made.
+    ///
+    /// **Creation only.** Reading a list, editing one, adding or editing rows,
+    /// managing watchers, and managing connections stay free — the published
+    /// matrix says a lapsed subscriber keeps existing lists "fully usable" and
+    /// that "adding rows to an existing list is free". Do not reintroduce this
+    /// gate on those paths (GitHub #40).
     case subscriberRequired
 
     /// The schema DSL returned by the API failed to parse. The raw string
@@ -42,11 +47,14 @@ extension ListsError: LocalizedError, CustomStringConvertible {
 /// `publicRows` against `/api/users/[username]/lists*`. No auth, no
 /// subscriber gating.
 ///
-/// **M3 surface (authenticated owned-list management).** `myLists` / `detail`
-/// / `create` / `update` / `delete`, the schema reads/writes, row CRUD,
-/// watcher management, and the connections graph. Every M3 write method
-/// consults `EntitlementsService.canManageLists` before making the HTTP
-/// call; on `false` it throws `ListsError.subscriberRequired`.
+/// **Authenticated owned-list management.** `myLists` / `detail` / `create` /
+/// `update` / `delete`, the schema reads/writes, row CRUD, watcher management,
+/// and the connections graph.
+///
+/// Only `create` is subscriber-gated: it consults
+/// `EntitlementsService.canManageLists` before making the HTTP call and throws
+/// `ListsError.subscriberRequired` on `false`. Everything else is free, because
+/// the subscription gates creation and nothing else (GitHub #40).
 ///
 /// Follows the same DI shape as `MessagesServicing`: takes its
 /// `APIClientProtocol` and `EntitlementsService` as parameters so unit
@@ -201,10 +209,11 @@ public final class ListsService: ListsServicing {
 
     /// - Parameters:
     ///   - api: the networking seam (a stub in tests).
-    ///   - entitlements: subscriber gate. M3 ships this defensively; M6
-    ///     wires the real source. Defaults to a permissive (`free`-status)
-    ///     instance because `canManageLists` is currently permissive by
-    ///     decision (see `EntitlementsService.canManageLists`).
+    ///   - entitlements: the subscriber gate consulted by `create`. The
+    ///     default is deliberately permissive: an un-injected gate is a
+    ///     composition-root wiring defect, and the server remains the real
+    ///     authority, so failing open here beats locking a paying user out.
+    ///     `AppEnvironment` injects the signed-in account's entitlements.
     ///   - store: optional lists cache port. When `nil`, the service fetches
     ///     live with no caching (the default keeps existing `ListsService(api:)`
     ///     call sites source-compatible).
@@ -212,7 +221,7 @@ public final class ListsService: ListsServicing {
     ///     `JSONCoders` decoder so dates parse identically to the client.
     public init(
         api: APIClientProtocol,
-        entitlements: EntitlementsService = EntitlementsService(customerStatus: .free),
+        entitlements: EntitlementsService = EntitlementsService(customerStatus: .subscriber),
         store: ListsStore? = nil,
         decoder: JSONDecoder = JSONCoders.makeDecoder()
     ) {
@@ -279,7 +288,6 @@ public final class ListsService: ListsServicing {
     // MARK: - M3 owned list CRUD
 
     public func myLists(limit: Int, offset: Int) async throws -> OwnedListsPage {
-        try requireListManagement()
         do {
             let request = Lists.list(limit: limit, offset: offset)
             let (data, _) = try await api.sendRaw(request)
@@ -317,7 +325,6 @@ public final class ListsService: ListsServicing {
     }
 
     public func detail(listId: String) async throws -> OwnedList {
-        try requireListManagement()
         let dto = try await api.send(Lists.get(id: listId))
         return OwnedList(from: dto)
     }
@@ -348,7 +355,6 @@ public final class ListsService: ListsServicing {
         isPublic: Bool?,
         parentId: String?
     ) async throws -> OwnedList {
-        try requireListManagement()
         let request = UpdateListRequest(
             title: title,
             description: description,
@@ -360,20 +366,17 @@ public final class ListsService: ListsServicing {
     }
 
     public func delete(listId: String) async throws {
-        try requireListManagement()
         try await api.sendVoid(Lists.delete(id: listId))
     }
 
     // MARK: - M3 schema
 
     public func schema(of listId: String) async throws -> ListSchema {
-        try requireListManagement()
         let dto = try await api.send(Lists.schema(id: listId))
         return try parseSchema(dto.schema)
     }
 
     public func updateSchema(of listId: String, schema: ListSchema) async throws -> ListSchema {
-        try requireListManagement()
         let dsl = SchemaDSL.serialize(schema)
         let request = UpdateListSchemaRequest(schema: dsl)
         let dto = try await api.send(Lists.updateSchema(id: listId, request))
@@ -383,7 +386,6 @@ public final class ListsService: ListsServicing {
     // MARK: - M3 refresh
 
     public func refresh(listId: String) async throws -> OwnedList {
-        try requireListManagement()
         let dto = try await api.send(Lists.refresh(id: listId))
         return OwnedList(from: dto)
     }
@@ -391,7 +393,6 @@ public final class ListsService: ListsServicing {
     // MARK: - M3 row CRUD
 
     public func rows(of listId: String, limit: Int, offset: Int) async throws -> RowsPage {
-        try requireListManagement()
         let request = Lists.rows(listId: listId, limit: limit, offset: offset)
         let (data, _) = try await api.sendRaw(request)
         let key = request.paginationKey ?? "data"
@@ -405,14 +406,12 @@ public final class ListsService: ListsServicing {
     }
 
     public func row(listId: String, rowId: String) async throws -> ListRow {
-        try requireListManagement()
         // The live read answers `{ data }`; unwrap it.
         let dto = try await api.send(Lists.row(listId: listId, rowId: rowId)).data
         return ListRow(from: dto)
     }
 
     public func createRow(listId: String, data: [String: ListCellValue]) async throws -> ListRow {
-        try requireListManagement()
         let wire = data.mapValues(ListJSONValue.init(from:))
         let request = CreateListRowRequest(rowData: wire)
         // The live create answers `{ message, data }`; unwrap it.
@@ -425,7 +424,6 @@ public final class ListsService: ListsServicing {
         rowId: String,
         data: [String: ListCellValue]
     ) async throws -> ListRow {
-        try requireListManagement()
         let wire = data.mapValues(ListJSONValue.init(from:))
         let request = UpdateListRowRequest(rowData: wire)
         // The live update answers `{ message, data }`; unwrap it.
@@ -434,26 +432,22 @@ public final class ListsService: ListsServicing {
     }
 
     public func deleteRow(listId: String, rowId: String) async throws {
-        try requireListManagement()
         try await api.sendVoid(Lists.deleteRow(listId: listId, rowId: rowId))
     }
 
     // MARK: - M3 watchers
 
     public func watchers(of listId: String) async throws -> [ListWatcher] {
-        try requireListManagement()
         let dtos = try await api.send(Lists.watchers(listId: listId))
         return dtos.map(ListWatcher.init(from:))
     }
 
     public func myWatcherStatus(of listId: String) async throws -> WatcherStatus {
-        try requireListManagement()
         let dto = try await api.send(Lists.myWatcherStatus(listId: listId))
         return WatcherStatus(from: dto)
     }
 
     public func watcherUsers(of listId: String) async throws -> [ListWatcher] {
-        try requireListManagement()
         let dtos = try await api.send(Lists.watcherUsers(listId: listId))
         return dtos.map(ListWatcher.init(from:))
     }
@@ -463,21 +457,18 @@ public final class ListsService: ListsServicing {
         userId: String,
         role: WatcherRole
     ) async throws -> ListWatcher {
-        try requireListManagement()
         let request = UpdateListWatcherRequest(role: role.wireToken)
         let dto = try await api.send(Lists.setWatcher(listId: listId, userId: userId, request))
         return ListWatcher(from: dto)
     }
 
     public func removeWatcher(listId: String, userId: String) async throws {
-        try requireListManagement()
         try await api.sendVoid(Lists.removeWatcher(listId: listId, userId: userId))
     }
 
     // MARK: - M3 connections
 
     public func connections(of listId: String?) async throws -> [ListConnection] {
-        try requireListManagement()
         let response = try await api.send(Lists.connections())
         let all = response.connections.map(ListConnection.init(from:))
         guard let listId else { return all }
@@ -489,7 +480,6 @@ public final class ListsService: ListsServicing {
         toListId: String,
         label: String?
     ) async throws -> ListConnection {
-        try requireListManagement()
         let request = CreateListConnectionRequest(
             fromListId: fromListId,
             toListId: toListId,
@@ -500,16 +490,16 @@ public final class ListsService: ListsServicing {
     }
 
     public func removeConnection(connectionId: String) async throws {
-        try requireListManagement()
         try await api.sendVoid(Lists.deleteConnection(id: connectionId))
     }
 
     // MARK: - Internals
 
-    /// The single entitlement gate every M3 write method routes through.
-    /// Throws `ListsError.subscriberRequired` when the account is not
-    /// entitled to manage lists. M3 ships this defensively; the actual
-    /// `canManageLists` body becomes restrictive in M6.
+    /// The subscriber gate for list **creation**, and only creation.
+    ///
+    /// Throws `ListsError.subscriberRequired` before any HTTP call when the
+    /// account may not create lists. Reads, edits, row CRUD, watchers, and
+    /// connections deliberately do not call this (GitHub #40).
     private func requireListManagement() throws {
         guard entitlements.canManageLists else {
             throw ListsError.subscriberRequired

@@ -11,22 +11,24 @@ import InterlinedKit
 /// floor for every public method.
 final class OwnedListsServiceTests: XCTestCase {
 
-    // MARK: - Subscriber gating (defensive M3 gate)
+    // MARK: - Subscriber gating (create-only — GitHub #40)
 
-    func test_givenEntitlementsBlockManagement_whenCallingMyLists_thenThrowsSubscriberRequiredWithoutHittingAPI() async throws {
-        // Given — a manage-blocking entitlements stub.
+    /// Reading your own lists is free on every tier. The published matrix says
+    /// a lapsed subscriber keeps existing lists "fully usable", so the gate
+    /// must not stand between a free account and its own data.
+    func test_givenEntitlementsBlockCreation_whenCallingMyLists_thenReadIsUngatedAndHitsAPI() async throws {
+        // Given — an entitlement that blocks list *creation*.
         let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.paginatedLists(ids: ["l-1"]))
         let service = ListsService(api: api, entitlements: BlockingEntitlements.shared)
 
-        // When / Then
-        do {
-            _ = try await service.myLists(limit: 20, offset: 0)
-            XCTFail("Expected ListsError.subscriberRequired")
-        } catch let error as ListsError {
-            XCTAssertEqual(error, .subscriberRequired)
-        }
+        // When
+        let page = try await service.myLists(limit: 20, offset: 0)
+
+        // Then — the read went through untouched by the gate.
+        XCTAssertEqual(page.lists.map(\.id), ["l-1"])
         let recorded = await api.recorded
-        XCTAssertTrue(recorded.isEmpty, "Gated calls must not hit the API.")
+        XCTAssertEqual(recorded.first?.path, "/api/lists")
     }
 
     func test_givenEntitlementsBlockManagement_whenCreatingList_thenThrowsSubscriberRequiredWithoutHittingAPI() async throws {
@@ -51,21 +53,22 @@ final class OwnedListsServiceTests: XCTestCase {
         XCTAssertTrue(recorded.isEmpty)
     }
 
-    func test_givenEntitlementsBlockManagement_whenDeletingRow_thenThrowsSubscriberRequiredWithoutHittingAPI() async throws {
-        // Given — covers a void-returning write to confirm the gate fires
-        // on every M3 method, not just the value-returning ones.
+    /// Row writes are explicitly free: *"Adding rows to an existing list is
+    /// free, even without a subscription."* Deleting one is the same class of
+    /// edit, so the creation gate must not fire here either.
+    func test_givenEntitlementsBlockCreation_whenDeletingRow_thenRowWriteIsUngatedAndHitsAPI() async throws {
+        // Given
         let api = StubAPIClient()
+        await api.enqueue(json: "{}")
         let service = ListsService(api: api, entitlements: BlockingEntitlements.shared)
 
-        // When / Then
-        do {
-            try await service.deleteRow(listId: "list-1", rowId: "row-1")
-            XCTFail("Expected ListsError.subscriberRequired")
-        } catch let error as ListsError {
-            XCTAssertEqual(error, .subscriberRequired)
-        }
+        // When
+        try await service.deleteRow(listId: "list-1", rowId: "row-1")
+
+        // Then
         let recorded = await api.recorded
-        XCTAssertTrue(recorded.isEmpty)
+        XCTAssertEqual(recorded.first?.method, "DELETE")
+        XCTAssertEqual(recorded.first?.path, "/api/lists/list-1/data/row-1")
     }
 
     func test_givenPermissiveEntitlements_whenCallingPublicBrowse_thenSubscriberGateDoesNotApply() async throws {

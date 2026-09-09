@@ -50,14 +50,8 @@ extension MessagesError: LocalizedError, CustomStringConvertible {
     public var description: String {
         switch self {
         case .subscriberRequired(let feature):
-            switch feature {
-            case .mediaAttachments:
-                return "Attaching media requires an active subscription."
-            case .scheduledPosts:
-                return "Scheduling messages requires an active subscription."
-            case .crossPosting:
-                return "Cross-posting requires an active subscription."
-            }
+            // Shared copy — see `Feature.upgradeMessage`.
+            return feature.upgradeMessage
         case .mediaTooLarge(let byteCount, let limit):
             return "This file is \(byteCount) bytes, over the \(limit)-byte limit."
         case .editingNotSupported:

@@ -219,6 +219,15 @@ struct TimelineRootView: View {
     @ViewBuilder
     private func timelineBody(viewModel: TimelineViewModel) -> some View {
         VStack(spacing: 0) {
+            // Account-status banner (GitHub #42). Renders nothing for an
+            // `active` — or unrecognised — status, so it costs no space in the
+            // common case.
+            if let user = environment?.currentUserStore.currentUser {
+                AccountStatusBanner(
+                    status: user.accountStatus,
+                    isEmailVerified: user.isEmailVerified
+                )
+            }
             toolbar(viewModel: viewModel)
             // Trending tags (work-consolidation.md G20). Hides itself when the
             // list is empty or unavailable, so it costs no space by default.

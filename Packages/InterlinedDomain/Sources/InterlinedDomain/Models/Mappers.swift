@@ -36,6 +36,9 @@ extension CurrentUser {
             ),
             email: dto.email,
             customerStatus: CustomerStatus(raw: dto.customerStatus),
+            // Absent or unrecognised status maps to `.active` — see the
+            // fail-open rule on `AccountStatus`.
+            accountStatus: AccountStatus(raw: dto.accountStatus),
             isEmailVerified: dto.emailVerified,
             isPrivateAccount: dto.isPrivateAccount ?? false,
             // Absent field falls back to `true`, matching `UserSettings.default`

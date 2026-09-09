@@ -1,6 +1,31 @@
 import Foundation
 import InterlinedKit
 
+// MARK: - OrgError
+
+/// Domain-level errors surfaced by `OrgService`.
+public enum OrgError: Error, Sendable, Equatable {
+
+    /// Creating an organization requires an active subscription. Raised before
+    /// any HTTP call so a free account sees an upgrade prompt rather than an
+    /// opaque server 403 (GitHub #40).
+    ///
+    /// **Creation only.** Joining an organization is free on every tier, and a
+    /// lapsed subscriber keeps their existing organizations fully usable.
+    case subscriberRequired(Feature)
+}
+
+extension OrgError: LocalizedError, CustomStringConvertible {
+    public var errorDescription: String? { description }
+
+    public var description: String {
+        switch self {
+        case .subscriberRequired(let feature):
+            return feature.upgradeMessage
+        }
+    }
+}
+
 // MARK: - OrgServicing
 
 /// The organizations surface the App layer codes against (PLAN.md §1
@@ -78,18 +103,28 @@ public final class OrgService: OrgServicing {
 
     private let api: APIClientProtocol
     private let decoder: JSONDecoder
+    /// The subscriber gate consulted by `create`, and only by `create`.
+    /// A provider, not a snapshot — see `DocumentsService` for why.
+    private let entitlements: @Sendable () -> EntitlementsService
 
     /// - Parameters:
     ///   - api: the networking seam (a stub in tests).
     ///   - decoder: shared kit JSON configuration, used to split the paginated
     ///     envelope. Defaults to the kit's `JSONCoders` decoder so dates parse
     ///     identically to the client.
+    ///   - entitlements: the subscriber gate for `create`. The default is
+    ///     deliberately permissive: an un-injected gate is a composition-root
+    ///     wiring defect, and the server remains the real authority, so failing
+    ///     open here beats locking a paying user out. `AppEnvironment` injects
+    ///     the signed-in account's entitlements in production.
     public init(
         api: APIClientProtocol,
-        decoder: JSONDecoder = JSONCoders.makeDecoder()
+        decoder: JSONDecoder = JSONCoders.makeDecoder(),
+        entitlements: @escaping @Sendable () -> EntitlementsService = { EntitlementsService(customerStatus: .subscriber) }
     ) {
         self.api = api
         self.decoder = decoder
+        self.entitlements = entitlements
     }
 
     // MARK: Org CRUD
@@ -127,6 +162,9 @@ public final class OrgService: OrgServicing {
         description: String,
         isPublic: Bool
     ) async throws -> Organization {
+        guard entitlements().isEnabled(.organizationCreation) else {
+            throw OrgError.subscriberRequired(.organizationCreation)
+        }
         let body = CreateOrganizationRequest(name: name, description: description, isPublic: isPublic)
         // The live create answers `{ message, organization }`; unwrap it.
         let dto = try await api.send(Organizations.create(body)).organization

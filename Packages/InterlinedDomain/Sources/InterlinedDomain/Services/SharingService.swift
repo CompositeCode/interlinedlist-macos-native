@@ -90,7 +90,7 @@ public final class SharingService: SharingServicing {
     }
 
     public func createListShareLink(listId: String, role: ShareRole, expiresAt: Date?) async throws -> ShareLink {
-        guard entitlements.isSubscriber else { throw SharingError.subscriberRequired }
+        guard entitlements.isEnabled(.shareLinkCreation) else { throw SharingError.subscriberRequired }
         let dto = try await api.send(
             Sharing.createListShareLink(listId: listId, CreateShareLinkRequest(role: role.rawValue, expiresAt: expiresAt))
         )
@@ -119,7 +119,7 @@ public final class SharingService: SharingServicing {
     }
 
     public func createDocumentShareLink(documentId: String, role: ShareRole, expiresAt: Date?) async throws -> ShareLink {
-        guard entitlements.isSubscriber else { throw SharingError.subscriberRequired }
+        guard entitlements.isEnabled(.shareLinkCreation) else { throw SharingError.subscriberRequired }
         let dto = try await api.send(
             Sharing.createDocumentShareLink(documentId: documentId, CreateShareLinkRequest(role: role.rawValue, expiresAt: expiresAt))
         )
@@ -153,14 +153,14 @@ public final class SharingService: SharingServicing {
     }
 
     public func addDocumentCollaborator(documentId: String, userId: String, role: ShareRole, notify: Bool) async throws {
-        guard entitlements.isSubscriber else { throw SharingError.subscriberRequired }
+        guard entitlements.isEnabled(.sharingWithPeople) else { throw SharingError.subscriberRequired }
         _ = try await api.send(
             Sharing.addDocumentCollaborator(documentId: documentId, AddCollaboratorRequest(userId: userId, role: role.rawValue, notify: notify))
         )
     }
 
     public func setDocumentCollaboratorRole(documentId: String, userId: String, role: ShareRole, notify: Bool) async throws {
-        guard entitlements.isSubscriber else { throw SharingError.subscriberRequired }
+        guard entitlements.isEnabled(.sharingWithPeople) else { throw SharingError.subscriberRequired }
         _ = try await api.send(
             Sharing.setDocumentCollaboratorRole(documentId: documentId, userId: userId, SetCollaboratorRoleRequest(role: role.rawValue, notify: notify))
         )
@@ -179,7 +179,7 @@ public final class SharingService: SharingServicing {
     }
 
     public func createDocumentInvite(documentId: String, email: String, role: ShareRole, expiresAt: Date?) async throws -> SentInvite {
-        guard entitlements.isSubscriber else { throw SharingError.subscriberRequired }
+        guard entitlements.isEnabled(.emailInvites) else { throw SharingError.subscriberRequired }
         let dto = try await api.send(
             Sharing.createDocumentInvite(documentId: documentId, CreateInviteRequest(email: email, role: role.rawValue, expiresAt: expiresAt))
         )
@@ -197,7 +197,7 @@ public final class SharingService: SharingServicing {
     }
 
     public func createListInvite(listId: String, email: String, role: ShareRole, expiresAt: Date?) async throws -> SentInvite {
-        guard entitlements.isSubscriber else { throw SharingError.subscriberRequired }
+        guard entitlements.isEnabled(.emailInvites) else { throw SharingError.subscriberRequired }
         let dto = try await api.send(
             Sharing.createListInvite(listId: listId, CreateInviteRequest(email: email, role: role.rawValue, expiresAt: expiresAt))
         )
