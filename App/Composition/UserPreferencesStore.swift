@@ -35,6 +35,19 @@ final class UserPreferencesStore {
     /// Settings ▸ Preferences ▸ Reading ▸ "Show link previews".
     var showLinkPreviews: Bool { settings.showPreviews }
 
+    /// The feed slice the account asked for, mapped to the timeline's own scope
+    /// vocabulary. Seeds a newly-opened timeline window so an account whose
+    /// viewing preference was set on the web sees that filter honoured on
+    /// launch (G35 / issue #43 acceptance criterion).
+    var defaultTimelineScope: TimelineScope { settings.viewingPreference.defaultScope }
+
+    /// How many rows the notification bell tray renders (10...40, default 20).
+    var notificationTrayLimit: Int { settings.notificationTrayLimit }
+
+    /// Whether the composer opens with its advanced post options (media /
+    /// schedule / cross-post) already revealed — the web's "gear" preference.
+    var showAdvancedPostSettings: Bool { settings.showAdvancedPostSettings }
+
     init(userService: UserServicing) {
         self.userService = userService
     }

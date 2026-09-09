@@ -86,9 +86,20 @@ public protocol UserServicing: Sendable {
     /// (work-consolidation.md — settings storage). Maps `GET /api/user`.
     func settings() async throws -> UserSettings
 
-    /// Persists a settings snapshot via `POST /api/user/update` and returns the
+    /// Persists a settings snapshot via `PATCH /api/user/update` and returns the
     /// server's authoritative post-update settings.
     func updateSettings(_ settings: UserSettings) async throws -> UserSettings
+
+    /// Persists **only** the "show advanced post options" preference and returns
+    /// the server's authoritative post-update settings.
+    ///
+    /// Exists because the composer's gear toggles this preference mid-compose
+    /// and must not carry a whole `UserSettings` snapshot with it — a stale
+    /// snapshot from another window would clobber a page size or viewing
+    /// preference the user changed in Settings a moment earlier. Mirrors the
+    /// web client, which PATCHes the single key `{ showAdvancedPostSettings }`
+    /// from its own gear button (verified against the live bundle 2026-09-09).
+    func setShowAdvancedPostSettings(_ enabled: Bool) async throws -> UserSettings
 
     // MARK: - User search / lookup (NW-1)
 
@@ -287,6 +298,15 @@ public final class UserService: UserServicing {
 
     public func updateSettings(_ settings: UserSettings) async throws -> UserSettings {
         let response = try await api.send(User.update(settings.updateRequest))
+        return UserSettings(from: response.user)
+    }
+
+    public func setShowAdvancedPostSettings(_ enabled: Bool) async throws -> UserSettings {
+        // Single-key body on purpose — `UpdateUserRequest` omits nil fields, so
+        // nothing else on the account is touched.
+        let response = try await api.send(
+            User.update(UpdateUserRequest(showAdvancedPostSettings: enabled))
+        )
         return UserSettings(from: response.user)
     }
 

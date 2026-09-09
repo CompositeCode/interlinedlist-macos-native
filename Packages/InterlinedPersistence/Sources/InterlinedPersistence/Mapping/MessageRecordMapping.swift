@@ -101,9 +101,11 @@ extension TimelineScope {
         switch self {
         case .all:       return "all"
         case .mine:      return "mine"
-        // Following has no API backing yet; a stable key is still needed so
-        // any future cache entries survive enum expansion without corruption.
+        // Neither follower scope has API backing yet; stable keys are still
+        // needed so any future cache entries survive enum expansion without
+        // corruption.
         case .following: return "following"
+        case .followers: return "followers"
         }
     }
 }

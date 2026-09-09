@@ -34,6 +34,24 @@ final class NotificationsEndpointTests: XCTestCase {
         XCTAssertEqual(Notifications.markAllRead().path, "/api/notifications/mark-all-read")
     }
 
+    // MARK: - Tray limit (G35 / issue #43)
+
+    func test_givenTrayLimit_whenTrayBuilt_thenSendsItAlongsideScope() {
+        // Happy path: the account's `notificationTrayLimit` reaches the wire.
+        let request = Notifications.tray(limit: 25)
+
+        XCTAssertEqual(request.query.first(where: { $0.name == "scope" })?.value, "tray")
+        XCTAssertEqual(request.query.first(where: { $0.name == "limit" })?.value, "25")
+    }
+
+    func test_givenNoTrayLimit_whenTrayBuilt_thenOmitsTheParameter() {
+        // Boundary: `nil` must leave the page size to the server rather than
+        // sending `limit=` and risking a zero-row tray.
+        let request = Notifications.tray()
+
+        XCTAssertNil(request.query.first(where: { $0.name == "limit" })?.value)
+    }
+
     // MARK: - Happy path
 
     func test_givenTrayBody_whenTraySent_thenDecodesUnreadCountAndItems() async throws {

@@ -32,6 +32,8 @@ struct RecordedUserCall: Sendable, Equatable {
         case linkIdentityNative(provider: String, code: String, state: String)
         case settings
         case updateSettings
+        /// The composer gear's single-field write, with the value it sent.
+        case setShowAdvancedPostSettings(enabled: Bool)
     }
     let kind: Kind
 }
@@ -54,6 +56,7 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     private var linkIdentityNativeOutcomes: [Result<LinkedIdentity, Error>] = []
     private var settingsOutcomes: [Result<UserSettings, Error>] = []
     private var updateSettingsOutcomes: [Result<UserSettings, Error>] = []
+    private var setShowAdvancedPostSettingsOutcomes: [Result<UserSettings, Error>] = []
 
     /// The settings snapshot passed to the most recent `updateSettings` call,
     /// so a test can assert what was sent.
@@ -179,6 +182,15 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func enqueueUpdateSettings(failure error: Error) {
         lock.lock(); defer { lock.unlock() }
         updateSettingsOutcomes.append(.failure(error))
+    }
+
+    func enqueueSetShowAdvancedPostSettings(success settings: UserSettings) {
+        lock.lock(); defer { lock.unlock() }
+        setShowAdvancedPostSettingsOutcomes.append(.success(settings))
+    }
+    func enqueueSetShowAdvancedPostSettings(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        setShowAdvancedPostSettingsOutcomes.append(.failure(error))
     }
 
     /// The settings snapshot passed to the most recent `updateSettings` call.
@@ -323,6 +335,14 @@ final class StubUserService: UserServicing, @unchecked Sendable {
         recordLastUpdatedSettings(settings)
         return try perform(label: "updateSettings", record: .updateSettings) { $0.updateSettingsOutcomes }
             set: { $0.updateSettingsOutcomes = $1 }
+    }
+
+    func setShowAdvancedPostSettings(_ enabled: Bool) async throws -> UserSettings {
+        try perform(
+            label: "setShowAdvancedPostSettings",
+            record: .setShowAdvancedPostSettings(enabled: enabled)
+        ) { $0.setShowAdvancedPostSettingsOutcomes }
+            set: { $0.setShowAdvancedPostSettingsOutcomes = $1 }
     }
 
     /// Synchronous lock-guarded write so the `async` `updateSettings` never
