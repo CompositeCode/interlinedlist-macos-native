@@ -102,6 +102,16 @@ public enum Messages {
     /// with `400 "Can only edit scheduled posts that are in the future"`.
     /// See `RescheduleMessageRequest` for the probe transcript.
     ///
+    /// RE-CONFIRMED read-only 2026-09-09 (GitHub #55): `OPTIONS` on this path
+    /// reports `Allow: DELETE, GET, HEAD, OPTIONS, PATCH`, so `PATCH` is the
+    /// **only** update verb a message has. There is no dedicated scheduled-post
+    /// editor route either — `/api/messages/scheduled/[id]` and
+    /// `/api/messages/[id]/schedule` both 404, and `OPTIONS
+    /// /api/messages/scheduled` reports `Allow: GET, HEAD, OPTIONS` (read-only).
+    /// The deployed web client agrees: it issues no `PATCH /api/messages/[id]`
+    /// anywhere in its bundles, so the scheduled-post content/destination editor
+    /// its help page describes is not something the live product actually ships.
+    ///
     /// Editing a published message has **no route on the live API** — see
     /// `MessagesServicing.update` for how that is surfaced to callers.
     public static func reschedule(id: String, _ body: RescheduleMessageRequest) -> Request<MessageDTO> {

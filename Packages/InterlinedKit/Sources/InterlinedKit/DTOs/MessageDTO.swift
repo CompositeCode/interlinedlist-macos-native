@@ -32,6 +32,22 @@ public struct MessageDTO: Decodable, Sendable, Equatable {
     public let dugByMe: Bool
     public let crossPosts: [CrossPostResultDTO]?
 
+    /// The cross-post destinations a **queued scheduled post** will fan out to
+    /// when it fires (GitHub #55).
+    ///
+    /// VERIFIED live 2026-09-09: `scheduledCrossPostConfig` is a real key on
+    /// every message the API returns — it is `null` on an already-published
+    /// message and carries the selection on a future-dated one. Its field names
+    /// are taken from the web client's own badge component, which reads
+    /// `mastodonProviderIds`, `crossPostToBluesky` and `crossPostToLinkedIn` off
+    /// this object to render the destination icons on a scheduled row.
+    ///
+    /// Distinct from both sibling cross-post fields: `crossPosts` is the
+    /// write-time fan-out *outcome* and `crossPostUrls` is the durable
+    /// "where it landed" permalink list. This is the *intent*, readable before
+    /// the post has gone anywhere.
+    public let scheduledCrossPostConfig: ScheduledCrossPostConfigDTO?
+
     public init(
         id: String,
         content: String,
@@ -52,7 +68,8 @@ public struct MessageDTO: Decodable, Sendable, Equatable {
         user: UserSummaryDTO,
         pushedMessage: PushedMessageBox? = nil,
         dugByMe: Bool,
-        crossPosts: [CrossPostResultDTO]? = nil
+        crossPosts: [CrossPostResultDTO]? = nil,
+        scheduledCrossPostConfig: ScheduledCrossPostConfigDTO? = nil
     ) {
         self.id = id
         self.content = content
@@ -74,6 +91,52 @@ public struct MessageDTO: Decodable, Sendable, Equatable {
         self.pushedMessage = pushedMessage
         self.dugByMe = dugByMe
         self.crossPosts = crossPosts
+        self.scheduledCrossPostConfig = scheduledCrossPostConfig
+    }
+}
+
+// MARK: - ScheduledCrossPostConfigDTO
+
+/// The cross-post destinations selected for a **scheduled** post, as the API
+/// returns them under `MessageDTO.scheduledCrossPostConfig`.
+///
+/// VERIFIED live 2026-09-09 (GitHub #55 recon):
+///  • `GET /api/messages` returns `scheduledCrossPostConfig` on every message —
+///    `null` for an already-published one.
+///  • The key names below are lifted from the deployed web client's badge
+///    component, which branches on exactly `mastodonProviderIds.length > 0`,
+///    `crossPostToBluesky === true` and `crossPostToLinkedIn === true` to decide
+///    which destination icons to draw on a scheduled row.
+///
+/// `crossPostToTwitter` is modelled **speculatively**: `POST /api/messages`
+/// accepts it when scheduling (confirmed in the web composer's create body), but
+/// the web's badge component does not read it back, so whether the server echoes
+/// it here is unconfirmed. Decoding it optionally costs nothing and means an X
+/// selection is not silently lost if the server does send it — see
+/// `ScheduledDestinations.twitter` in `InterlinedDomain` for how the UI treats it.
+///
+/// Every field is optional: the server omits keys for unselected networks, so a
+/// config object with no destinations at all decodes to all-nil rather than
+/// failing.
+public struct ScheduledCrossPostConfigDTO: Decodable, Sendable, Equatable {
+    /// The Mastodon provider ids the post will publish to. Absent or empty when
+    /// Mastodon is not a destination.
+    public let mastodonProviderIds: [String]?
+    public let crossPostToBluesky: Bool?
+    public let crossPostToLinkedIn: Bool?
+    /// See the type-level note — accepted on create, unconfirmed on read.
+    public let crossPostToTwitter: Bool?
+
+    public init(
+        mastodonProviderIds: [String]? = nil,
+        crossPostToBluesky: Bool? = nil,
+        crossPostToLinkedIn: Bool? = nil,
+        crossPostToTwitter: Bool? = nil
+    ) {
+        self.mastodonProviderIds = mastodonProviderIds
+        self.crossPostToBluesky = crossPostToBluesky
+        self.crossPostToLinkedIn = crossPostToLinkedIn
+        self.crossPostToTwitter = crossPostToTwitter
     }
 }
 
@@ -332,7 +395,8 @@ public extension MessageDTO {
             user: user,
             pushedMessage: pushedMessage,
             dugByMe: dugByMe,
-            crossPosts: crossPosts
+            crossPosts: crossPosts,
+            scheduledCrossPostConfig: scheduledCrossPostConfig
         )
     }
 }

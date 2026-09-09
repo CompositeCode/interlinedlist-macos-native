@@ -35,7 +35,7 @@ struct RecordedMessagesCall: Sendable, Equatable {
         case uploadImage(byteCount: Int)
         case uploadVideo(byteCount: Int, contentType: String)
         case cancelScheduled(messageId: String)
-        case reschedule(messageId: String, newDate: Date)
+        case updateScheduled(messageId: String, edit: ScheduledPostEdit)
     }
     let kind: Kind
 }
@@ -63,7 +63,7 @@ actor StubMessagesService: MessagesServicing {
     private var uploadImageOutcomes: [Result<String, Error>] = []
     private var uploadVideoOutcomes: [Result<String, Error>] = []
     private var cancelScheduledOutcomes: [Result<Void, Error>] = []
-    private var rescheduleOutcomes: [Result<Message, Error>] = []
+    private var updateScheduledOutcomes: [Result<Message, Error>] = []
 
     /// Cache-first read surface (PLAN.md §5 SWR). Default `[]` so unprepared
     /// paths behave like a cold cache; set a value to prime a paint-first test
@@ -120,8 +120,8 @@ actor StubMessagesService: MessagesServicing {
 
     func enqueueCancelScheduledSuccess() { cancelScheduledOutcomes.append(.success(())) }
     func enqueueCancelScheduled(failure error: Error) { cancelScheduledOutcomes.append(.failure(error)) }
-    func enqueueReschedule(success message: Message) { rescheduleOutcomes.append(.success(message)) }
-    func enqueueReschedule(failure error: Error) { rescheduleOutcomes.append(.failure(error)) }
+    func enqueueUpdateScheduled(success message: Message) { updateScheduledOutcomes.append(.success(message)) }
+    func enqueueUpdateScheduled(failure error: Error) { updateScheduledOutcomes.append(.failure(error)) }
 
     // MARK: MessagesServicing — reads
 
@@ -266,9 +266,9 @@ actor StubMessagesService: MessagesServicing {
         let _: Void = try take(&cancelScheduledOutcomes, label: "cancelScheduled")
     }
 
-    func reschedule(messageId: String, newDate: Date) async throws -> Message {
-        recorded.append(.init(kind: .reschedule(messageId: messageId, newDate: newDate)))
-        return try take(&rescheduleOutcomes, label: "reschedule")
+    func updateScheduled(messageId: String, edit: ScheduledPostEdit) async throws -> Message {
+        recorded.append(.init(kind: .updateScheduled(messageId: messageId, edit: edit)))
+        return try take(&updateScheduledOutcomes, label: "updateScheduled")
     }
 
     // MARK: - Internals

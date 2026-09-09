@@ -80,6 +80,19 @@ public struct Message: Sendable, Equatable, Identifiable {
     /// when a row is rendered purely from the local cache before a refresh.
     public let linkPreviews: [LinkPreview]
 
+    /// The cross-post destinations a **queued scheduled post** will fan out to
+    /// when it fires (GitHub #55). `nil` when the server sent no
+    /// `scheduledCrossPostConfig` for this message — which is the normal case
+    /// for anything already published.
+    ///
+    /// SCOPE DECISION (mirrors `linkPreviews` and `crossPostLocations`): the
+    /// destinations are a fetch-time projection and are **not** persisted in
+    /// SwiftData (`MessageRecord`). They are re-derived from the DTO on every
+    /// load, so a row painted purely from the on-disk cache before the first
+    /// revalidation shows no destination chips; they appear as soon as the
+    /// background refresh lands. This deliberately avoids a schema migration.
+    public let scheduledDestinations: ScheduledDestinations?
+
     public init(
         id: String,
         author: UserSummary,
@@ -97,7 +110,8 @@ public struct Message: Sendable, Equatable, Identifiable {
         scheduledAt: Date? = nil,
         crossPostResults: [CrossPostResult] = [],
         crossPostLocations: [CrossPostLocation] = [],
-        linkPreviews: [LinkPreview] = []
+        linkPreviews: [LinkPreview] = [],
+        scheduledDestinations: ScheduledDestinations? = nil
     ) {
         self.id = id
         self.author = author
@@ -116,6 +130,7 @@ public struct Message: Sendable, Equatable, Identifiable {
         self.crossPostResults = crossPostResults
         self.crossPostLocations = crossPostLocations
         self.linkPreviews = linkPreviews
+        self.scheduledDestinations = scheduledDestinations
     }
 }
 
@@ -129,6 +144,70 @@ public indirect enum Repost: Sendable, Equatable {
         switch self {
         case .message(let message): return message
         }
+    }
+}
+
+// MARK: - ScheduledDestinations (GitHub #55)
+
+/// Which networks a queued scheduled post will publish to when it fires.
+///
+/// The domain projection of `ScheduledCrossPostConfigDTO`. Where the DTO has
+/// four independent optionals (the server omits keys for unselected networks),
+/// this resolves them to definite values so the UI never branches on `nil`:
+/// an absent key means "not a destination".
+///
+/// Deliberately *not* the same type as `CrossPostLocation`: that models where a
+/// published message actually landed and always carries a live permalink. This
+/// models a stated intent for a post that has not gone anywhere yet, so it has
+/// no URLs to offer — only names.
+public struct ScheduledDestinations: Sendable, Equatable {
+    /// The Mastodon provider ids selected. Empty when Mastodon is not a
+    /// destination. Kept as ids (not names) because resolving an id to an
+    /// instance name needs the account's linked-identity list, which the
+    /// message payload does not carry.
+    public let mastodonProviderIds: [String]
+    public let bluesky: Bool
+    public let linkedIn: Bool
+    /// X / Twitter. See `ScheduledCrossPostConfigDTO.crossPostToTwitter` — the
+    /// server accepts this on create but is not confirmed to echo it back, so in
+    /// practice this is usually `false` even for a post scheduled with X
+    /// selected. Modelled so the value is carried the moment the server does
+    /// send it.
+    public let twitter: Bool
+
+    public init(
+        mastodonProviderIds: [String] = [],
+        bluesky: Bool = false,
+        linkedIn: Bool = false,
+        twitter: Bool = false
+    ) {
+        self.mastodonProviderIds = mastodonProviderIds
+        self.bluesky = bluesky
+        self.linkedIn = linkedIn
+        self.twitter = twitter
+    }
+
+    /// No network selected — the post publishes to InterlinedList only.
+    public static let none = ScheduledDestinations()
+
+    /// True when the post fans out nowhere beyond InterlinedList. The UI shows
+    /// "InterlinedList only" rather than an empty chip row, so a reader can tell
+    /// "no destinations" apart from "destinations not loaded yet".
+    public var isEmpty: Bool {
+        mastodonProviderIds.isEmpty && !bluesky && !linkedIn && !twitter
+    }
+
+    /// Human-facing destination labels, in the order the web lists them
+    /// (Mastodon, Bluesky, LinkedIn, X). Mastodon collapses to a single label
+    /// regardless of how many provider ids are selected — matching the web
+    /// badge, which draws one Mastodon icon per config, not one per id.
+    public var displayNames: [String] {
+        var names: [String] = []
+        if !mastodonProviderIds.isEmpty { names.append("Mastodon") }
+        if bluesky { names.append("Bluesky") }
+        if linkedIn { names.append("LinkedIn") }
+        if twitter { names.append("X") }
+        return names
     }
 }
 

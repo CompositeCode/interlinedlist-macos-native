@@ -32,13 +32,24 @@ extension Message {
         replacing(repostCount: repostCount + 1)
     }
 
+    /// A copy moved to a new publish time, for the optimistic reschedule of a
+    /// queued post (GitHub #55). Routing through `replacing(...)` is the point:
+    /// the scheduled list previously built its optimistic copy by hand and
+    /// omitted `crossPostResults`, `crossPostLocations`, `linkPreviews` — and,
+    /// once it existed, `scheduledDestinations` — so rescheduling a post wiped
+    /// its destination chips until the next refetch.
+    func byRescheduling(to newDate: Date) -> Message {
+        replacing(scheduledAt: newDate)
+    }
+
     /// Field-wise copy. Only the named counters vary; everything else —
     /// including the fetch-time-only `linkPreviews` and `crossPostLocations`
     /// — is carried across untouched.
     private func replacing(
         digCount: Int? = nil,
         didDig: Bool? = nil,
-        repostCount: Int? = nil
+        repostCount: Int? = nil,
+        scheduledAt: Date? = nil
     ) -> Message {
         Message(
             id: id,
@@ -54,10 +65,11 @@ extension Message {
             replyCount: replyCount,
             parentID: parentID,
             repost: repost,
-            scheduledAt: scheduledAt,
+            scheduledAt: scheduledAt ?? self.scheduledAt,
             crossPostResults: crossPostResults,
             crossPostLocations: crossPostLocations,
-            linkPreviews: linkPreviews
+            linkPreviews: linkPreviews,
+            scheduledDestinations: scheduledDestinations
         )
     }
 }

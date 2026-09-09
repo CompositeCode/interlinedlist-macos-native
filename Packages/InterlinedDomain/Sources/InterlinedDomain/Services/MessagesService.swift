@@ -42,6 +42,23 @@ public enum MessagesError: Error, Sendable, Equatable {
     /// work-consolidation.md §1c · V1). Throwing here keeps the failure honest
     /// and local instead of letting the UI believe an edit was saved.
     case editingNotSupported
+
+    /// A scheduled-post edit asked to change something the live API cannot
+    /// change — the message body and/or its cross-post destinations
+    /// (GitHub #55). `fields` names them so the UI can say exactly what was
+    /// refused. See `ScheduledPostEdit` for the probe record; the short version
+    /// is that `PATCH /api/messages/[id]` honours `scheduledAt` alone and
+    /// silently discards a `content` sent beside it, and the web client ships no
+    /// message `PATCH` at all.
+    case scheduledEditNotSupported(fields: [String])
+
+    /// A reschedule targeted a time at or before now. Rejected client-side —
+    /// the server requires a future time, and catching it here gives the user an
+    /// immediate, specific message instead of a round-trip and a generic 400.
+    case scheduledDateNotInFuture
+
+    /// A scheduled-post edit requested no change at all.
+    case noScheduledChanges
 }
 
 extension MessagesError: LocalizedError, CustomStringConvertible {
@@ -63,6 +80,15 @@ extension MessagesError: LocalizedError, CustomStringConvertible {
         case .editingNotSupported:
             return "InterlinedList does not support editing a message after it is posted. "
                 + "You can reschedule a post that has not gone out yet, or delete this one and post again."
+        case .scheduledEditNotSupported(let fields):
+            let list = ListFormatter.localizedString(byJoining: fields)
+            return "InterlinedList can only change a scheduled post's publish time — "
+                + "its \(list) cannot be edited once scheduled. "
+                + "Cancel this post and schedule a new one to change that."
+        case .scheduledDateNotInFuture:
+            return "Pick a time in the future. A scheduled post can't be moved to a time that has already passed."
+        case .noScheduledChanges:
+            return "Nothing to update — no changes were made to this scheduled post."
         }
     }
 }
@@ -265,11 +291,90 @@ public protocol MessagesServicing: Sendable {
     /// (the server treats it as gone once published).
     func cancelScheduled(messageId: String) async throws
 
-    /// Reschedules a pending post to `newDate`. Re-fetches the existing body
-    /// first so the update call can supply the full content (the PUT requires
-    /// a complete body, not a patch). Returns the authoritative updated
-    /// `Message` (with `scheduledAt == newDate`).
-    func reschedule(messageId: String, newDate: Date) async throws -> Message
+    /// Applies an edit to a **queued** scheduled post — the single entry point
+    /// for changing anything about a post that has not gone out yet
+    /// (GitHub #55), replacing the narrower `reschedule`.
+    ///
+    /// Only `edit.scheduledAt` reaches the network. `edit.content` and
+    /// `edit.destinations` are rejected **before** the request is built, because
+    /// the live API cannot apply them (see `ScheduledPostEdit` for the probe
+    /// record). Failing here rather than sending the fields keeps the client
+    /// honest: the server's behaviour for a content body is either a `400` or,
+    /// worse, a silent discard that would leave the UI showing an edit that was
+    /// never saved.
+    ///
+    /// Validation order — all client-side, none of it issues a request:
+    ///  1. an edit that asks for nothing → `MessagesError.noScheduledChanges`;
+    ///  2. an edit carrying content or destinations →
+    ///     `MessagesError.scheduledEditNotSupported(fields:)`;
+    ///  3. a `scheduledAt` at or before now →
+    ///     `MessagesError.scheduledDateNotInFuture`.
+    ///
+    /// Returns the authoritative updated `Message` (with `scheduledAt` moved),
+    /// written through to the cache.
+    func updateScheduled(messageId: String, edit: ScheduledPostEdit) async throws -> Message
+}
+
+// MARK: - ScheduledPostEdit (GitHub #55)
+
+/// A requested change to a queued scheduled post.
+///
+/// Every field is optional and `nil` means "leave alone", so the caller states
+/// only what it wants changed. The type can express a content or destination
+/// edit even though the live API cannot perform one — deliberately: the UI needs
+/// to be able to *ask*, so that `updateScheduled` can answer with a specific,
+/// typed refusal naming the fields instead of the call silently doing nothing.
+///
+/// LIVE API REALITY (probed read-only 2026-09-09, GitHub #55; write behaviour
+/// from the 2026-09-06 §1c · V1 sweep):
+///  • `PATCH /api/messages/[id]` is the only update verb a message has
+///    (`OPTIONS` → `Allow: DELETE, GET, HEAD, OPTIONS, PATCH`).
+///  • There is no scheduled-post editor route: `/api/messages/scheduled/[id]`
+///    and `/api/messages/[id]/schedule` both 404, and `/api/messages/scheduled`
+///    allows `GET, HEAD, OPTIONS` only.
+///  • That `PATCH` honours `scheduledAt` and nothing else — a content, tags or
+///    visibility body returns `400 "No valid updates provided"`, and `content`
+///    sent alongside `scheduledAt` is accepted but **silently discarded**.
+///  • The deployed web client issues no `PATCH /api/messages/[id]` at all, so
+///    the content/destination editor its help page describes is not shipped
+///    there either. This is an upstream gap, not a macOS one.
+public struct ScheduledPostEdit: Sendable, Equatable {
+
+    /// The new publish time. Must be in the future.
+    public var scheduledAt: Date?
+
+    /// A new message body. **Not applicable on the live API** — supplying it
+    /// makes `updateScheduled` throw `.scheduledEditNotSupported`.
+    public var content: String?
+
+    /// A new cross-post destination set. **Not applicable on the live API** —
+    /// supplying it makes `updateScheduled` throw `.scheduledEditNotSupported`.
+    public var destinations: ScheduledDestinations?
+
+    public init(
+        scheduledAt: Date? = nil,
+        content: String? = nil,
+        destinations: ScheduledDestinations? = nil
+    ) {
+        self.scheduledAt = scheduledAt
+        self.content = content
+        self.destinations = destinations
+    }
+
+    /// The names of the requested changes the live API cannot apply, in a
+    /// stable order so the error message is deterministic. Empty when the edit
+    /// only moves the publish time.
+    public var unsupportedFields: [String] {
+        var fields: [String] = []
+        if content != nil { fields.append("content") }
+        if destinations != nil { fields.append("destinations") }
+        return fields
+    }
+
+    /// True when the edit asks for no change at all.
+    public var isEmpty: Bool {
+        scheduledAt == nil && content == nil && destinations == nil
+    }
 }
 
 // MARK: - MessagesService
@@ -696,9 +801,23 @@ public final class MessagesService: MessagesServicing {
         await store?.remove(id: messageId)
     }
 
-    public func reschedule(messageId: String, newDate: Date) async throws -> Message {
+    public func updateScheduled(messageId: String, edit: ScheduledPostEdit) async throws -> Message {
+        // Every guard below runs before the request is built, so a rejected
+        // edit costs no round-trip and cannot half-apply.
+        guard !edit.isEmpty else { throw MessagesError.noScheduledChanges }
+
+        let unsupported = edit.unsupportedFields
+        guard unsupported.isEmpty else {
+            throw MessagesError.scheduledEditNotSupported(fields: unsupported)
+        }
+
+        // `isEmpty` is false and nothing unsupported was asked for, so the edit
+        // must carry a date.
+        guard let newDate = edit.scheduledAt else { throw MessagesError.noScheduledChanges }
+        guard newDate > Date() else { throw MessagesError.scheduledDateNotInFuture }
+
         // `scheduledAt` is the only key the live PATCH honours, so send just
-        // that. The previous implementation round-tripped the whole message
+        // that. An earlier implementation round-tripped the whole message
         // through `CreateMessageRequest`, which cost an extra GET and shipped
         // content/tags/visibility fields the server discards.
         let request = RescheduleMessageRequest(scheduledAt: newDate)

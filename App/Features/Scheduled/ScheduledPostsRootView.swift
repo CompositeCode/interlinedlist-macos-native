@@ -7,9 +7,18 @@
 // behavior without touching SwiftUI.
 //
 // Rows support cancel (DELETE /api/messages/[id]) and reschedule
-// (PUT /api/messages/[id] with a new `scheduledAt`). Both operations
+// (PATCH /api/messages/[id] with a new `scheduledAt`). Both operations
 // use the optimistic-UI pattern (NW-3): the list is updated locally
 // before the network call and rolled back on failure.
+//
+// GitHub #55: each row now shows the cross-post destinations the post will fan
+// out to, so they are readable without opening anything. The reschedule sheet
+// became `EditScheduledPostSheet`, which shows the post's content and
+// destinations alongside the (editable) publish time. Those two are read-only on
+// purpose, not by oversight: the live API has no route that edits them —
+// `PATCH /api/messages/[id]` honours `scheduledAt` alone and silently discards a
+// `content` sent beside it, and the web client ships no message `PATCH` at all.
+// The sheet says so plainly rather than offering a control that cannot save.
 //
 // Per Decision 0003 the view consumes only `InterlinedDomain`.
 
@@ -27,7 +36,7 @@ struct ScheduledPostsRootView: View {
     @Environment(\.openWindow) private var openWindow
 
     @State private var viewModel: ScheduledPostsViewModel?
-    @State private var reschedulingPost: Message? = nil
+    @State private var editingPost: Message? = nil
 
     var body: some View {
         NavigationStack {
@@ -65,10 +74,10 @@ struct ScheduledPostsRootView: View {
                 }
             }
         }
-        .sheet(item: $reschedulingPost) { post in
-            RescheduleSheet(post: post) { newDate in
+        .sheet(item: $editingPost) { post in
+            EditScheduledPostSheet(post: post) { newDate in
                 Task { await viewModel?.reschedule(post: post, to: newDate) }
-                reschedulingPost = nil
+                editingPost = nil
             }
         }
         .task {
@@ -119,13 +128,23 @@ struct ScheduledPostsRootView: View {
                 ForEach(viewModel.posts) { post in
                     ScheduledPostRow(post: post)
                         .contextMenu {
-                            Button("Reschedule\u{2026}") {
-                                reschedulingPost = post
+                            Button("Edit\u{2026}") {
+                                editingPost = post
                             }
                             Button("Cancel Post", role: .destructive) {
                                 Task { await viewModel.cancel(post: post) }
                             }
                         }
+                }
+            } header: {
+                // A failed cancel / reschedule is reported here rather than
+                // replacing the list: the rows are still valid, only the last
+                // mutation was not applied.
+                if let actionError = viewModel.actionError {
+                    actionErrorBanner(
+                        message: actionError.localizedDescription,
+                        onDismiss: { viewModel.clearActionError() }
+                    )
                 }
             }
         }
@@ -133,6 +152,29 @@ struct ScheduledPostsRootView: View {
         .refreshable {
             await viewModel.load()
         }
+    }
+
+    private func actionErrorBanner(
+        message: String,
+        onDismiss: @escaping () -> Void
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Color.accentColor)
+            Text(message)
+                .font(.ilMono(10))
+                .foregroundStyle(.secondary)
+                .textCase(nil)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Button("Dismiss", action: onDismiss)
+                .buttonStyle(.link)
+                .font(.ilMono(10))
+                .textCase(nil)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Scheduled post action failed. \(message)")
     }
 
     // MARK: - States
@@ -203,55 +245,140 @@ struct ScheduledPostsRootView: View {
     }
 }
 
-// MARK: - RescheduleSheet
+// MARK: - EditScheduledPostSheet
 
-private struct RescheduleSheet: View {
+/// The editor for a queued post (GitHub #55).
+///
+/// The publish time is editable and is the one change the live API accepts. The
+/// body and the cross-post destinations are shown but not editable — see the
+/// file header: no live route can change them, so offering a text field here
+/// would let the user type an edit that silently never saves. Showing them
+/// read-only still answers the question the sheet exists to answer ("what is
+/// this post, and where is it going?") and the footnote says why they are
+/// fixed.
+private struct EditScheduledPostSheet: View {
     let post: Message
     let onReschedule: (Date) -> Void
 
     @State private var selectedDate: Date
     @Environment(\.dismiss) private var dismiss
 
+    /// How far ahead of now the earliest selectable time sits. A minute of
+    /// slack, rather than `Date()` exactly, so a sheet left open for a moment
+    /// cannot submit a time that went stale between render and click.
+    private static let minimumLeadTime: TimeInterval = 60
+
     init(post: Message, onReschedule: @escaping (Date) -> Void) {
         self.post = post
         self.onReschedule = onReschedule
-        _selectedDate = State(initialValue: post.scheduledAt ?? Date().addingTimeInterval(3600))
+        // Boundary: a post about to fire (or one whose time has just passed
+        // while the list sat on screen) would seed a selection outside the
+        // picker's own range. Clamp it forward so the sheet opens on a valid,
+        // submittable time instead of relying on SwiftUI to silently fix it.
+        let floorDate = Date().addingTimeInterval(Self.minimumLeadTime)
+        let seed = post.scheduledAt ?? Date().addingTimeInterval(3600)
+        _selectedDate = State(initialValue: max(seed, floorDate))
+    }
+
+    private var earliestSelectableDate: Date {
+        Date().addingTimeInterval(Self.minimumLeadTime)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Reschedule Post")
+            Text("Edit Scheduled Post")
                 .font(.ilTitle(18))
-            Text(post.text.isEmpty ? "(No text)" : post.text)
-                .font(.ilBody())
-                .lineLimit(2)
-                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Message")
+                    .font(.ilMono(10))
+                    .foregroundStyle(.secondary)
+                Text(post.text.isEmpty ? "(No text)" : post.text)
+                    .font(.ilBody())
+                    .lineLimit(4)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Destinations")
+                    .font(.ilMono(10))
+                    .foregroundStyle(.secondary)
+                ScheduledDestinationsLabel(destinations: post.scheduledDestinations)
+            }
+
             DatePicker(
                 "Publish at",
                 selection: $selectedDate,
-                in: Date()...,
+                in: earliestSelectableDate...,
                 displayedComponents: [.date, .hourAndMinute]
             )
+
+            Text("Only the publish time can be changed. To change the message or its "
+                 + "destinations, cancel this post and schedule a new one.")
+                .font(.ilMono(10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
             HStack {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Reschedule") {
+                Button("Save") {
                     onReschedule(selectedDate)
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
+                .disabled(selectedDate <= Date())
             }
         }
         .padding(20)
-        .frame(minWidth: 320, minHeight: 200)
+        .frame(minWidth: 360, minHeight: 300)
+    }
+}
+
+// MARK: - ScheduledDestinationsLabel
+
+/// The destination summary shared by the row and the edit sheet (GitHub #55).
+///
+/// Three distinct states, deliberately not collapsed into two: `nil` means the
+/// server sent no config for this message (also what a row painted from the
+/// on-disk cache shows before the first revalidation), while an empty config
+/// means the post really is going to InterlinedList only.
+private struct ScheduledDestinationsLabel: View {
+    let destinations: ScheduledDestinations?
+
+    var body: some View {
+        Group {
+            if let destinations, !destinations.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.branch")
+                    Text(destinations.displayNames.joined(separator: " \u{00B7} "))
+                }
+            } else if destinations != nil {
+                Text("InterlinedList only")
+            } else {
+                Text("Destinations unavailable")
+            }
+        }
+        .font(.ilMono(10))
+        .foregroundStyle(.secondary)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: String {
+        guard let destinations else { return "Cross-post destinations unavailable" }
+        guard !destinations.isEmpty else { return "Posting to InterlinedList only" }
+        return "Also posting to \(destinations.displayNames.joined(separator: ", "))"
     }
 }
 
 // MARK: - ScheduledPostRow
 
-/// One queued scheduled post: its publish time plus a body preview.
+/// One queued scheduled post: its publish time, a body preview, and — per
+/// GitHub #55 — the cross-post destinations it will fan out to, so they are
+/// readable without opening the editor.
 private struct ScheduledPostRow: View {
     let post: Message
 
@@ -271,6 +398,12 @@ private struct ScheduledPostRow: View {
                     .font(.ilMono(10))
                     .foregroundStyle(.secondary)
             }
+            // Only drawn when the server actually sent a config — a row with no
+            // destination data stays as compact as it was before #55 rather than
+            // carrying an "unavailable" line on every entry.
+            if post.scheduledDestinations != nil {
+                ScheduledDestinationsLabel(destinations: post.scheduledDestinations)
+            }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -286,6 +419,11 @@ private struct ScheduledPostRow: View {
         parts.append(bodyText)
         if !post.tags.isEmpty {
             parts.append("Tags: \(post.tags.joined(separator: ", "))")
+        }
+        if let destinations = post.scheduledDestinations {
+            parts.append(destinations.isEmpty
+                         ? "Posting to InterlinedList only"
+                         : "Also posting to \(destinations.displayNames.joined(separator: ", "))")
         }
         return parts.joined(separator: ". ")
     }
