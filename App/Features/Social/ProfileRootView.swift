@@ -148,12 +148,21 @@ struct ProfileRootView: View {
         followButton: FollowButtonViewModel?
     ) -> some View {
         ScrollView {
-            ProfileHeaderView(
-                profile: profile,
-                counts: counts,
-                mutuals: mutuals,
-                followButton: followButton
-            )
+            VStack(alignment: .leading, spacing: 16) {
+                ProfileHeaderView(
+                    profile: profile,
+                    counts: counts,
+                    mutuals: mutuals,
+                    followButton: followButton
+                )
+                // work-consolidation.md G24 — the documents column the web
+                // profile has and macOS lacked. Self-contained: it owns its
+                // view model and its own load, so this stays one line and the
+                // Social feature learns nothing about `DocumentsServicing`.
+                Divider()
+                PublicUserDocumentsView(username: profile.username)
+                    .padding(.horizontal, 16)
+            }
         }
     }
 

@@ -212,6 +212,13 @@ private struct AppRootView: View {
             // `handle` returns `false` for any non-share URL.
             if ShareLinkDeepLink.handle(url) { return }
 
+            // Document invites (work-consolidation.md G24) — a
+            // `…/documents/invite/{token}` URL routes to the invite landing.
+            // Ordered after the share handler because the two are disjoint
+            // (`/shared/` vs `/invite/`), so neither can swallow the other's
+            // links; `handle` returns `false` for anything else.
+            if DocumentInviteDeepLink.handle(url) { return }
+
             // `interlinedlist://oauth/callback` is the native OAuth redirect URI
             // registered in Info.plist (NW-5). ASWebAuthenticationSession intercepts
             // the URL automatically; this handler is a fallback in case the system

@@ -17,7 +17,7 @@ final class FolderTreeViewModelTests: XCTestCase {
         let stub = StubDocumentsService()
         let root = DocumentsFixtures.folder(id: "F1", name: "Inbox")
         let child = DocumentsFixtures.folder(id: "F2", name: "Receipts", parentId: "F1")
-        await stub.enqueueFolders(success: [root, child])
+        await stub.enqueueTree(foldersOnly: [root, child])
         let viewModel = FolderTreeViewModel(documents: stub)
 
         // When
@@ -33,7 +33,7 @@ final class FolderTreeViewModelTests: XCTestCase {
     func test_givenEmptyResponse_whenInitialLoad_thenLeavesTreeEmpty() async {
         // Given — empty/boundary case.
         let stub = StubDocumentsService()
-        await stub.enqueueFolders(success: [])
+        await stub.enqueueTree(foldersOnly: [])
         let viewModel = FolderTreeViewModel(documents: stub)
 
         // When
@@ -49,7 +49,7 @@ final class FolderTreeViewModelTests: XCTestCase {
         // Given — upstream API failure.
         let stub = StubDocumentsService()
         let failure = TestError.upstream("boom")
-        await stub.enqueueFolders(failure: failure)
+        await stub.enqueueTree(failure: failure)
         let viewModel = FolderTreeViewModel(documents: stub)
 
         // When
@@ -65,7 +65,7 @@ final class FolderTreeViewModelTests: XCTestCase {
     func test_givenValidName_whenCreatingFolder_thenAppendsToTree() async {
         // Happy path.
         let stub = StubDocumentsService()
-        await stub.enqueueFolders(success: [])
+        await stub.enqueueTree(foldersOnly: [])
         let created = DocumentsFixtures.folder(id: "F1", name: "Inbox")
         await stub.enqueueCreateFolder(success: created)
         let viewModel = FolderTreeViewModel(documents: stub)
@@ -81,7 +81,7 @@ final class FolderTreeViewModelTests: XCTestCase {
     func test_givenWhitespaceName_whenCreatingFolder_thenRejectsBeforeService() async {
         // Invalid-input case.
         let stub = StubDocumentsService()
-        await stub.enqueueFolders(success: [])
+        await stub.enqueueTree(foldersOnly: [])
         let viewModel = FolderTreeViewModel(documents: stub)
         await viewModel.initialLoad()
 
@@ -99,7 +99,7 @@ final class FolderTreeViewModelTests: XCTestCase {
 
     func test_givenAPIFailure_whenCreatingFolder_thenSurfacesError() async {
         let stub = StubDocumentsService()
-        await stub.enqueueFolders(success: [])
+        await stub.enqueueTree(foldersOnly: [])
         let failure = TestError.upstream("denied")
         await stub.enqueueCreateFolder(failure: failure)
         let viewModel = FolderTreeViewModel(documents: stub)
@@ -117,7 +117,7 @@ final class FolderTreeViewModelTests: XCTestCase {
     func test_givenExistingFolder_whenRenaming_thenSwapsInPlace() async {
         let stub = StubDocumentsService()
         let folder = DocumentsFixtures.folder(id: "F1", name: "Old")
-        await stub.enqueueFolders(success: [folder])
+        await stub.enqueueTree(foldersOnly: [folder])
         let renamed = DocumentsFixtures.folder(id: "F1", name: "New")
         await stub.enqueueRenameFolder(success: renamed)
         let viewModel = FolderTreeViewModel(documents: stub)
@@ -132,7 +132,7 @@ final class FolderTreeViewModelTests: XCTestCase {
     func test_givenRenameFailure_whenRenaming_thenRestoresSnapshot() async {
         let stub = StubDocumentsService()
         let folder = DocumentsFixtures.folder(id: "F1", name: "Old")
-        await stub.enqueueFolders(success: [folder])
+        await stub.enqueueTree(foldersOnly: [folder])
         let failure = TestError.upstream("denied")
         await stub.enqueueRenameFolder(failure: failure)
         let viewModel = FolderTreeViewModel(documents: stub)
@@ -149,7 +149,7 @@ final class FolderTreeViewModelTests: XCTestCase {
     func test_givenDeletedFolder_whenDeleting_thenRemovesAndClearsSelection() async {
         let stub = StubDocumentsService()
         let folder = DocumentsFixtures.folder(id: "F1", name: "Inbox")
-        await stub.enqueueFolders(success: [folder])
+        await stub.enqueueTree(foldersOnly: [folder])
         await stub.enqueueDeleteFolderSuccess()
         let viewModel = FolderTreeViewModel(documents: stub)
         await viewModel.initialLoad()
@@ -165,7 +165,7 @@ final class FolderTreeViewModelTests: XCTestCase {
     func test_givenDeleteFailure_whenDeleting_thenRestoresSnapshotAndSurfacesError() async {
         let stub = StubDocumentsService()
         let folder = DocumentsFixtures.folder(id: "F1", name: "Inbox")
-        await stub.enqueueFolders(success: [folder])
+        await stub.enqueueTree(foldersOnly: [folder])
         let failure = TestError.upstream("denied")
         await stub.enqueueDeleteFolder(failure: failure)
         let viewModel = FolderTreeViewModel(documents: stub)
@@ -181,7 +181,7 @@ final class FolderTreeViewModelTests: XCTestCase {
 
     func test_givenSelectedID_whenSelecting_thenUpdatesProperty() async {
         let stub = StubDocumentsService()
-        await stub.enqueueFolders(success: [])
+        await stub.enqueueTree(foldersOnly: [])
         let viewModel = FolderTreeViewModel(documents: stub)
         await viewModel.initialLoad()
 

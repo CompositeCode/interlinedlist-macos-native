@@ -15,6 +15,11 @@ struct RecordedDocumentsCall: Sendable, Equatable {
         case documents(folderId: String?, limit: Int, offset: Int)
         case document(id: String)
         case create(title: String, body: String, folderId: String?, isPublic: Bool)
+        case createInFolder(folderId: String, title: String, body: String, isPublic: Bool, relativePath: String?)
+        case moveDocument(id: String, toFolder: String?)
+        case documentTree
+        case publicDocuments(username: String)
+        case invite(token: String)
         case update(id: String, title: String?, body: String?, folderId: String?, isPublic: Bool?)
         case delete(id: String)
         case uploadImage(documentId: String, byteCount: Int, suggestedName: String?)
@@ -36,6 +41,11 @@ actor StubDocumentsService: DocumentsServicing {
     private var documentsOutcomes: [Result<[Document], Error>] = []
     private var documentOutcomes: [Result<Document, Error>] = []
     private var createOutcomes: [Result<Document, Error>] = []
+    private var createInFolderOutcomes: [Result<Document, Error>] = []
+    private var moveOutcomes: [Result<Document, Error>] = []
+    private var treeOutcomes: [Result<DocumentTreeSnapshot, Error>] = []
+    private var publicDocumentsOutcomes: [Result<PublicUserDocuments, Error>] = []
+    private var inviteOutcomes: [Result<DocumentInvite, Error>] = []
     private var updateOutcomes: [Result<Document, Error>] = []
     private var deleteOutcomes: [Result<Void, Error>] = []
     private var uploadImageOutcomes: [Result<URL, Error>] = []
@@ -65,6 +75,28 @@ actor StubDocumentsService: DocumentsServicing {
 
     func enqueueCreate(success doc: Document) { createOutcomes.append(.success(doc)) }
     func enqueueCreate(failure error: Error) { createOutcomes.append(.failure(error)) }
+
+    func enqueueCreateInFolder(success doc: Document) { createInFolderOutcomes.append(.success(doc)) }
+    func enqueueCreateInFolder(failure error: Error) { createInFolderOutcomes.append(.failure(error)) }
+
+    func enqueueMove(success doc: Document) { moveOutcomes.append(.success(doc)) }
+    func enqueueMove(failure error: Error) { moveOutcomes.append(.failure(error)) }
+
+    func enqueueTree(success tree: DocumentTreeSnapshot) { treeOutcomes.append(.success(tree)) }
+    func enqueueTree(failure error: Error) { treeOutcomes.append(.failure(error)) }
+
+    /// Programs a tree that carries `folders` and no documents. The sidebar
+    /// reads folders from the tree since G24, so tests that only care about
+    /// the folder list say so without building a document index.
+    func enqueueTree(foldersOnly folders: [FolderNode]) {
+        treeOutcomes.append(.success(DocumentTreeSnapshot(folders: folders)))
+    }
+
+    func enqueuePublicDocuments(success result: PublicUserDocuments) { publicDocumentsOutcomes.append(.success(result)) }
+    func enqueuePublicDocuments(failure error: Error) { publicDocumentsOutcomes.append(.failure(error)) }
+
+    func enqueueInvite(success invite: DocumentInvite) { inviteOutcomes.append(.success(invite)) }
+    func enqueueInvite(failure error: Error) { inviteOutcomes.append(.failure(error)) }
 
     func enqueueUpdate(success doc: Document) { updateOutcomes.append(.success(doc)) }
     func enqueueUpdate(failure error: Error) { updateOutcomes.append(.failure(error)) }
@@ -121,6 +153,43 @@ actor StubDocumentsService: DocumentsServicing {
     func create(title: String, body: String, folderId: String?, isPublic: Bool) async throws -> Document {
         recorded.append(.init(kind: .create(title: title, body: body, folderId: folderId, isPublic: isPublic)))
         return try take(&createOutcomes, label: "create")
+    }
+
+    func createDocument(
+        inFolder folderId: String,
+        title: String,
+        body: String,
+        isPublic: Bool,
+        relativePath: String?
+    ) async throws -> Document {
+        recorded.append(.init(kind: .createInFolder(
+            folderId: folderId,
+            title: title,
+            body: body,
+            isPublic: isPublic,
+            relativePath: relativePath
+        )))
+        return try take(&createInFolderOutcomes, label: "createDocument(inFolder:)")
+    }
+
+    func moveDocument(id: String, toFolder folderId: String?) async throws -> Document {
+        recorded.append(.init(kind: .moveDocument(id: id, toFolder: folderId)))
+        return try take(&moveOutcomes, label: "moveDocument")
+    }
+
+    func documentTree() async throws -> DocumentTreeSnapshot {
+        recorded.append(.init(kind: .documentTree))
+        return try take(&treeOutcomes, label: "documentTree")
+    }
+
+    func publicDocuments(ofUser username: String) async throws -> PublicUserDocuments {
+        recorded.append(.init(kind: .publicDocuments(username: username)))
+        return try take(&publicDocumentsOutcomes, label: "publicDocuments")
+    }
+
+    func invite(token: String) async throws -> DocumentInvite {
+        recorded.append(.init(kind: .invite(token: token)))
+        return try take(&inviteOutcomes, label: "invite")
     }
 
     func update(id: String, title: String?, body: String?, folderId: String?, isPublic: Bool?) async throws -> Document {
@@ -222,6 +291,62 @@ enum DocumentsFixtures {
             updatedAt: updatedAt,
             createdAt: Date(timeIntervalSince1970: 1_700_000_000),
             isPublic: isPublic
+        )
+    }
+
+    /// A `DocumentTreeSnapshot` from a compact `[folderName: [documentTitle]]`
+    /// description, so a test can say what shape it wants without hand-building
+    /// the folder / summary graph.
+    ///
+    /// Folder ids are derived from the name (`"Inbox"` → `"F-Inbox"`) and
+    /// document ids from the title, so assertions can name them directly.
+    /// `parents` re-parents a folder to build a nested tree.
+    static func tree(
+        folders: [(name: String, documents: [String])] = [],
+        rootDocuments: [String] = [],
+        parents: [String: String] = [:]
+    ) -> DocumentTreeSnapshot {
+        var nodes: [FolderNode] = []
+        var index: [String: [DocumentSummary]] = [:]
+        for entry in folders {
+            let id = "F-\(entry.name)"
+            nodes.append(
+                FolderNode(
+                    id: id,
+                    parentId: parents[entry.name].map { "F-\($0)" },
+                    name: entry.name
+                )
+            )
+            index[id] = entry.documents.map {
+                DocumentSummary(id: "D-\($0)", title: $0, folderId: id)
+            }
+        }
+        return DocumentTreeSnapshot(
+            folders: nodes,
+            documentsByFolder: index,
+            rootDocuments: rootDocuments.map {
+                DocumentSummary(id: "D-\($0)", title: $0, folderId: nil)
+            }
+        )
+    }
+
+    static func invite(
+        token: String = "tok",
+        role: String = "collaborator",
+        resourceTitle: String? = "Q3 Planning",
+        needsAuth: Bool = false,
+        canClaim: Bool = true,
+        wrongAccount: Bool = false,
+        accepted: Bool = false
+    ) -> DocumentInvite {
+        DocumentInvite(
+            token: token,
+            role: role,
+            resourceTitle: resourceTitle,
+            needsAuth: needsAuth,
+            canClaim: canClaim,
+            wrongAccount: wrongAccount,
+            accepted: accepted
         )
     }
 
