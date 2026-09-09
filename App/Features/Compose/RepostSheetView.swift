@@ -33,7 +33,10 @@ struct RepostSheetView: View {
                 viewModel = RepostSheetViewModel(
                     messages: environment.messages,
                     eventBus: environment.composerEventBus,
-                    originalMessageID: original.id
+                    originalMessageID: original.id,
+                    // Same account preference the composer seeds from, so a
+                    // repost and a new message agree on the default.
+                    initialVisibility: environment.defaultComposeVisibility
                 )
             }
         }
