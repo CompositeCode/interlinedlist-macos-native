@@ -171,4 +171,104 @@ final class OrgMappersTests: XCTestCase {
         XCTAssertFalse(membership.organization.isPublic)
         XCTAssertEqual(membership.role, .member)
     }
+
+    // MARK: - Membership context (work-consolidation.md G25)
+
+    func test_givenLiveOrgRow_whenMapping_thenCarriesSystemFlagAndMemberCount() {
+        // Happy path: the fields the live collection routes add.
+        let org = Organization(from: OrganizationDTO(
+            id: "o1",
+            name: "The Public",
+            isPublic: true,
+            slug: "the-public",
+            isSystem: true,
+            memberCount: 22
+        ))
+
+        XCTAssertTrue(org.isSystem)
+        XCTAssertEqual(org.slug, "the-public")
+        XCTAssertEqual(org.memberCount, 22)
+    }
+
+    func test_givenLeanOrgRow_whenMapping_thenDefaultsToOrdinaryLeavableOrg() {
+        // Boundary: a response without the flag must not make an ordinary org
+        // un-leavable.
+        let org = Organization(from: OrganizationDTO(id: "o1", name: "Acme"))
+
+        XCTAssertFalse(org.isSystem)
+        XCTAssertNil(org.memberCount)
+        XCTAssertNil(org.slug)
+    }
+
+    func test_givenRowWithOnlyUserRole_whenResolvingCallerRole_thenFallsBack() {
+        // The live routes send `role` and `userRole` with the same value;
+        // either alone still resolves.
+        let byRole = Organization.callerRole(from: OrganizationDTO(id: "o", name: "n", role: "owner"))
+        XCTAssertEqual(byRole, .owner)
+
+        let byUserRole = Organization.callerRole(from: OrganizationDTO(id: "o", name: "n", userRole: "admin"))
+        XCTAssertEqual(byUserRole, .admin)
+
+        // Boundary: a non-member row carries neither.
+        XCTAssertNil(Organization.callerRole(from: OrganizationDTO(id: "o", name: "n")))
+    }
+
+    func test_givenLiveMemberRow_whenMapping_thenCarriesIdentityAndSuspension() {
+        // Happy path for the corrected members shape.
+        let member = OrgMember(from: OrganizationMemberDTO(
+            userId: "u1",
+            role: "owner",
+            active: false,
+            username: "adron",
+            displayName: "Adron Hall",
+            avatar: "https://cdn/a.jpg",
+            emailVerified: true
+        ))
+
+        XCTAssertEqual(member.displayLabel, "Adron Hall")
+        XCTAssertEqual(member.username, "adron")
+        XCTAssertEqual(member.avatarURL?.absoluteString, "https://cdn/a.jpg")
+        XCTAssertTrue(member.isSuspended)
+    }
+
+    func test_givenBlankAvatarString_whenMapping_thenTreatsItAsAbsent() {
+        // Boundary: the live rows use "" for "no avatar", not null.
+        let member = OrgMember(from: OrganizationMemberDTO(
+            userId: "u2", role: "member", avatar: ""
+        ))
+
+        XCTAssertNil(member.avatarURL)
+    }
+
+    func test_givenMemberWithNoNames_whenLabelling_thenFallsBackToId() {
+        // Boundary: display name → handle → raw id, so a row is never blank.
+        let onlyHandle = OrgMember(from: OrganizationMemberDTO(userId: "u3", role: "member", username: "solo"))
+        XCTAssertEqual(onlyHandle.displayLabel, "solo")
+
+        let bare = OrgMember(from: OrganizationMemberDTO(userId: "u4", role: "member"))
+        XCTAssertEqual(bare.displayLabel, "u4")
+    }
+
+    func test_givenMissingActiveFlag_whenMapping_thenNotTreatedAsSuspended() {
+        // Invalid/absent input: missing data must not paint a member as
+        // suspended.
+        let member = OrgMember(from: OrganizationMemberDTO(userId: "u5", role: "member"))
+        XCTAssertFalse(member.isSuspended)
+    }
+
+    func test_givenSystemOrgMembership_whenCheckingLeavable_thenRefuses() {
+        // The row-level half of the leave rule.
+        let system = UserOrganization(
+            organization: Organization(id: "p", name: "The Public", isSystem: true),
+            role: .member
+        )
+        let ordinary = UserOrganization(
+            organization: Organization(id: "o", name: "Acme"),
+            role: .member
+        )
+
+        XCTAssertFalse(system.isLeavable)
+        XCTAssertTrue(ordinary.isLeavable)
+    }
 }
+

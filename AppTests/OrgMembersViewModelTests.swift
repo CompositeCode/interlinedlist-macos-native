@@ -263,4 +263,211 @@ final class OrgMembersViewModelTests: XCTestCase {
         XCTAssertNil(vm.foundUser)
         XCTAssertEqual(vm.actionError as? OrgMembersError, .emptyHandle)
     }
+
+    // MARK: - Suspend / restore (work-consolidation.md G25)
+
+    func test_givenActiveMember_whenSuspending_thenOptimisticallyMarksSuspended() async {
+        // Happy path: the row flips, the service is called, and the server's
+        // authoritative membership replaces the optimistic copy.
+        let (vm, orgs, _) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage(
+            members: [member("u1", role: .owner), member("u2")],
+            hasMore: false,
+            nextOffset: nil
+        ))
+        await vm.load(reset: true)
+        await orgs.enqueueSetSuspended(success: OrgMember(
+            userId: "u2", membershipId: "m-u2", role: .member, active: false
+        ))
+
+        let error = await vm.setSuspended(vm.members[1], suspended: true)
+
+        XCTAssertNil(error)
+        XCTAssertTrue(vm.members[1].isSuspended)
+        let recorded = await orgs.recorded
+        XCTAssertTrue(recorded.contains { $0.kind == .setMemberSuspended(orgId: "o1", userId: "u2", suspended: true) })
+    }
+
+    func test_givenSuspendedMember_whenRestoring_thenMarksActiveAgain() async {
+        // Happy path in reverse — restoring is never gated.
+        let (vm, orgs, _) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage(
+            members: [OrgMember(userId: "u2", role: .member, active: false)],
+            hasMore: false,
+            nextOffset: nil
+        ))
+        await vm.load(reset: true)
+        await orgs.enqueueSetSuspended(success: OrgMember(userId: "u2", role: .member, active: true))
+
+        let error = await vm.setSuspended(vm.members[0], suspended: false)
+
+        XCTAssertNil(error)
+        XCTAssertFalse(vm.members[0].isSuspended)
+    }
+
+    func test_givenLastOwner_whenSuspending_thenRejectedBeforeAnyServiceCall() async {
+        // Invalid input: suspending the only owner strands the org.
+        let (vm, orgs, _) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage(
+            members: [member("u1", role: .owner), member("u2")],
+            hasMore: false,
+            nextOffset: nil
+        ))
+        await vm.load(reset: true)
+        let callsBefore = await orgs.recorded.count
+
+        let error = await vm.setSuspended(vm.members[0], suspended: true)
+
+        XCTAssertEqual(error as? OrgLifecycleError, .lastOwnerCannotBeSuspended)
+        XCTAssertFalse(vm.members[0].isSuspended, "The row must not flip on a rejected suspend")
+        let callsAfter = await orgs.recorded.count
+        XCTAssertEqual(callsAfter, callsBefore, "A rejected suspend must not hit the service")
+    }
+
+    func test_givenSuspendFails_whenSuspending_thenRollsBackAndSurfacesError() async {
+        // Upstream API failure: the optimistic flip is reverted.
+        let (vm, orgs, _) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage(
+            members: [member("u1", role: .owner), member("u2")],
+            hasMore: false,
+            nextOffset: nil
+        ))
+        await vm.load(reset: true)
+        await orgs.enqueueSetSuspended(failure: URLError(.badServerResponse))
+
+        let error = await vm.setSuspended(vm.members[1], suspended: true)
+
+        XCTAssertNotNil(error)
+        XCTAssertFalse(vm.members[1].isSuspended, "Optimistic state rolled back")
+        XCTAssertNotNil(vm.actionError)
+    }
+
+    func test_givenMemberAlreadyInTargetState_whenSuspending_thenNoOp() async {
+        // Boundary: a redundant suspend is a no-op, not a wasted round-trip.
+        let (vm, orgs, _) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage(
+            members: [OrgMember(userId: "u2", role: .member, active: false)],
+            hasMore: false,
+            nextOffset: nil
+        ))
+        await vm.load(reset: true)
+        let callsBefore = await orgs.recorded.count
+
+        let error = await vm.setSuspended(vm.members[0], suspended: true)
+
+        XCTAssertNil(error)
+        let callsAfter = await orgs.recorded.count
+        XCTAssertEqual(callsAfter, callsBefore)
+    }
+
+    // MARK: - Last-owner protection on the existing mutations
+
+    func test_givenLastOwner_whenDemoting_thenRejectedBeforeAnyServiceCall() async {
+        // Invalid input: "The last remaining owner cannot be demoted."
+        let (vm, orgs, _) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage(
+            members: [member("u1", role: .owner), member("u2")],
+            hasMore: false,
+            nextOffset: nil
+        ))
+        await vm.load(reset: true)
+        let callsBefore = await orgs.recorded.count
+
+        let error = await vm.changeRole(of: vm.members[0], to: .member)
+
+        XCTAssertEqual(error as? OrgLifecycleError, .lastOwnerCannotBeDemoted)
+        XCTAssertEqual(vm.members[0].role, .owner, "The row keeps the owner role")
+        let callsAfter = await orgs.recorded.count
+        XCTAssertEqual(callsAfter, callsBefore)
+    }
+
+    func test_givenLastOwner_whenRemoving_thenRejectedBeforeAnyServiceCall() async {
+        // Invalid input: "…cannot be demoted or removed."
+        let (vm, orgs, _) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage(
+            members: [member("u1", role: .owner), member("u2")],
+            hasMore: false,
+            nextOffset: nil
+        ))
+        await vm.load(reset: true)
+        let callsBefore = await orgs.recorded.count
+
+        let error = await vm.removeMember(vm.members[0])
+
+        XCTAssertEqual(error as? OrgLifecycleError, .lastOwnerCannotBeDemoted)
+        XCTAssertEqual(vm.members.count, 2, "The row must not disappear on a rejected remove")
+        let callsAfter = await orgs.recorded.count
+        XCTAssertEqual(callsAfter, callsBefore)
+    }
+
+    func test_givenTwoOwners_whenDemotingOne_thenAllowed() async {
+        // Boundary: the rule releases as soon as a second owner exists.
+        let (vm, orgs, _) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage(
+            members: [member("u1", role: .owner), member("u2", role: .owner)],
+            hasMore: false,
+            nextOffset: nil
+        ))
+        await vm.load(reset: true)
+        await orgs.enqueueUpdateMember(success: OrgMember(userId: "u1", role: .member, active: true))
+
+        let error = await vm.changeRole(of: vm.members[0], to: .member)
+
+        XCTAssertNil(error)
+        XCTAssertEqual(vm.members[0].role, .member)
+    }
+
+    func test_givenSingleOwnerRoster_whenAskingWhatIsAllowed_thenGatesMatchTheRules() async {
+        // The UI reads these to enable/disable controls; they must agree with
+        // what the mutations actually enforce.
+        let (vm, orgs, _) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage(
+            members: [member("u1", role: .owner), member("u2")],
+            hasMore: false,
+            nextOffset: nil
+        ))
+        await vm.load(reset: true)
+
+        XCTAssertFalse(vm.canSuspend(vm.members[0]))
+        XCTAssertFalse(vm.canRemove(vm.members[0]))
+        XCTAssertFalse(vm.canChangeRole(of: vm.members[0], to: .member))
+        XCTAssertTrue(vm.canSuspend(vm.members[1]))
+        XCTAssertTrue(vm.canRemove(vm.members[1]))
+        XCTAssertTrue(vm.canChangeRole(of: vm.members[1], to: .admin))
+    }
+
+    // MARK: - Identity survives a mutation
+
+    func test_givenNamedMember_whenChangingRole_thenIdentityIsNotBlanked() async {
+        // The membership envelope the server returns on a role change carries
+        // no username or avatar. Adopting it wholesale would blank the row, so
+        // the view model keeps the identity it already had.
+        let (vm, orgs, _) = makeViewModel()
+        await orgs.enqueueMembers(success: OrgMembersPage(
+            members: [
+                member("u1", role: .owner),
+                OrgMember(
+                    userId: "u2",
+                    role: .member,
+                    active: true,
+                    username: "hubcity",
+                    displayName: "HubCity",
+                    avatarURL: URL(string: "https://cdn/h.jpg")
+                )
+            ],
+            hasMore: false,
+            nextOffset: nil
+        ))
+        await vm.load(reset: true)
+        // The server's answer — identity-free, exactly as the real envelope is.
+        await orgs.enqueueUpdateMember(success: OrgMember(userId: "u2", role: .admin, active: true))
+
+        await vm.changeRole(of: vm.members[1], to: .admin)
+
+        XCTAssertEqual(vm.members[1].role, .admin, "Server role is adopted")
+        XCTAssertEqual(vm.members[1].displayName, "HubCity", "Identity is preserved")
+        XCTAssertEqual(vm.members[1].username, "hubcity")
+        XCTAssertEqual(vm.members[1].displayLabel, "HubCity")
+    }
 }
+

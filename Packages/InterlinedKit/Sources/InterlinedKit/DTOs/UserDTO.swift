@@ -341,6 +341,11 @@ public struct UserOrganizationDTO: Decodable, Sendable, Equatable {
     public let deletedAt: Date?
     public let role: String
     public let joinedAt: Date?
+    /// Duplicate of `role` the live route also emits. Verified 2026-09-09.
+    public let userRole: String?
+    /// Total members in the org, denormalized onto the membership row.
+    /// Verified 2026-09-09; drives the My Organizations row subtitle.
+    public let memberCount: Int?
 
     public init(
         id: String,
@@ -354,7 +359,9 @@ public struct UserOrganizationDTO: Decodable, Sendable, Equatable {
         updatedAt: Date? = nil,
         deletedAt: Date? = nil,
         role: String,
-        joinedAt: Date? = nil
+        joinedAt: Date? = nil,
+        userRole: String? = nil,
+        memberCount: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -368,6 +375,8 @@ public struct UserOrganizationDTO: Decodable, Sendable, Equatable {
         self.deletedAt = deletedAt
         self.role = role
         self.joinedAt = joinedAt
+        self.userRole = userRole
+        self.memberCount = memberCount
     }
 }
 

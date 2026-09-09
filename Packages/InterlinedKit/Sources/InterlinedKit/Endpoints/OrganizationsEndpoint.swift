@@ -10,8 +10,10 @@ import Foundation
 /// throwing.
 ///
 /// Auth: all `.bearer` (decision 0001 — Bearer works on the organizations
-/// surface; only `/api/user/organizations` and `/api/exports/*` plus
-/// `/api/user/identities` are session-only).
+/// surface). The old note here also listed `/api/user/organizations` as
+/// session-only; that was wrong and is corrected in `UserEndpoint.swift` —
+/// a raw `Authorization: Bearer` request to it returns HTTP 200 (verified
+/// 2026-09-09), and `GET /api/openapi.json` marks it `x-auth-type: sync-token`.
 public enum Organizations {
 
     // MARK: - Org CRUD
@@ -67,6 +69,20 @@ public enum Organizations {
         Request(method: .put, path: "/api/organizations/\(id)", body: .json(body), auth: .bearer)
     }
 
+    /// `DELETE /api/organizations/[id]` — delete an organization (owner only).
+    ///
+    /// VERIFIED live 2026-09-09 (read-only): `OPTIONS` reports
+    /// `Allow: DELETE, GET, HEAD, OPTIONS, PUT`, and `GET /api/openapi.json`
+    /// declares `deleteOrganizationsById` with `x-auth-type: sync-token`. The
+    /// verb was confirmed **without** issuing a real delete — the test account
+    /// is shared, and deleting an org is not reversible.
+    ///
+    /// The response body is not modelled by the spec, so callers use
+    /// `sendVoid` and ignore it; only the status matters.
+    public static func delete(id: String) -> Request<EmptyResponse> {
+        Request(method: .delete, path: "/api/organizations/\(id)", auth: .bearer)
+    }
+
     // MARK: - Members
 
     /// `GET /api/organizations/[id]/members`
@@ -120,4 +136,66 @@ public enum Organizations {
     public static func users(id: String) -> Request<[OrganizationUserDTO]> {
         Request(method: .get, path: "/api/organizations/\(id)/users", auth: .bearer)
     }
+
+    // MARK: - Organization LinkedIn (work-consolidation.md G25)
+    //
+    // The shared-credential half of LinkedIn. All four verbs verified live
+    // 2026-09-09 by `OPTIONS`, and cross-checked against `GET
+    // /api/openapi.json`, which marks each `x-auth-type: sync-token`.
+    //
+    // Note the asymmetry: `status` is the only readable route. `GET` on
+    // `sync-pages` and on `assignments` — both documented on
+    // `/help/api/organizations` — answer **405** live and are absent from the
+    // OpenAPI document, so the discovered pages and current assignments have
+    // to come back through `status`. See `OrgLinkedInDTO.swift`.
+
+    /// `GET /api/organizations/[id]/linkedin/status` — the org's shared
+    /// LinkedIn credential status, the caller's role, and (when connected) the
+    /// discovered company pages.
+    ///
+    /// Observed live: `{"credential":null,"role":"member"}`.
+    public static func linkedInStatus(id: String) -> Request<OrgLinkedInStatusResponse> {
+        Request(method: .get, path: "/api/organizations/\(id)/linkedin/status", auth: .bearer)
+    }
+
+    /// `POST /api/organizations/[id]/linkedin/sync-pages` — re-discover the
+    /// org's LinkedIn company pages.
+    ///
+    /// Takes no request body (the OpenAPI operation declares none). The 201
+    /// response body is unmodelled and was never observed, so this is typed
+    /// `EmptyResponse` and callers `sendVoid` it, then re-read `status` for the
+    /// refreshed page list. That keeps a sync from failing at the decoder on a
+    /// shape the client has not seen.
+    public static func syncLinkedInPages(id: String) -> Request<EmptyResponse> {
+        Request(method: .post, path: "/api/organizations/\(id)/linkedin/sync-pages", auth: .bearer)
+    }
+
+    /// `PUT /api/organizations/[id]/linkedin/assignments` — assign one member
+    /// to one company page (or clear their assignment with a nil `pageId`).
+    ///
+    /// One assignment per call, per the OpenAPI body schema (`userId` +
+    /// `pageId`). See `UpdateOrgLinkedInAssignmentRequest` for why this differs
+    /// from the help page's "assignment map".
+    public static func assignLinkedInPage(
+        id: String,
+        _ body: UpdateOrgLinkedInAssignmentRequest
+    ) -> Request<EmptyResponse> {
+        Request(
+            method: .put,
+            path: "/api/organizations/\(id)/linkedin/assignments",
+            body: .json(body),
+            auth: .bearer
+        )
+    }
+
+    /// `DELETE /api/organizations/[id]/linkedin/credential` — disconnect the
+    /// org's shared LinkedIn credential.
+    ///
+    /// Destructive for every assigned member: the server clears assignments,
+    /// and each assigned member silently falls back to their personal LinkedIn
+    /// identity. The UI must say so before calling this.
+    public static func disconnectLinkedIn(id: String) -> Request<EmptyResponse> {
+        Request(method: .delete, path: "/api/organizations/\(id)/linkedin/credential", auth: .bearer)
+    }
 }
+

@@ -23,6 +23,9 @@ extension OrgMembershipRecord {
             isPublic: membership.organization.isPublic,
             orgCreatedAt: membership.organization.createdAt,
             orgUpdatedAt: membership.organization.updatedAt,
+            slug: membership.organization.slug,
+            isSystem: membership.organization.isSystem,
+            memberCount: membership.organization.memberCount,
             roleRaw: membership.role.wireToken,
             joinedAt: membership.joinedAt,
             position: position
@@ -38,7 +41,10 @@ extension OrgMembershipRecord {
                 description: orgDescription,
                 isPublic: isPublic,
                 createdAt: orgCreatedAt,
-                updatedAt: orgUpdatedAt
+                updatedAt: orgUpdatedAt,
+                slug: slug,
+                isSystem: isSystem,
+                memberCount: memberCount
             ),
             role: OrgRole(wireToken: roleRaw),
             joinedAt: joinedAt

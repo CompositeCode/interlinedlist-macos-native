@@ -113,7 +113,7 @@ public struct LinkedIdentity: Sendable, Equatable, Hashable, Identifiable {
 /// "Organizations" / org switcher, §6 M6).
 ///
 /// Distinct from `Organization`: this is the *membership view* (the org plus
-/// the caller's own `role` and `joinedAt`), surfaced from the session-only
+/// the caller's own `role` and `joinedAt`), surfaced from the
 /// `/api/user/organizations` endpoint. Domain projection of
 /// `InterlinedKit.UserOrganizationDTO`.
 public struct UserOrganization: Sendable, Equatable, Hashable, Identifiable {
@@ -128,6 +128,18 @@ public struct UserOrganization: Sendable, Equatable, Hashable, Identifiable {
     public let joinedAt: Date?
 
     public var id: String { organization.id }
+
+    /// Whether the caller may leave this org **on the client's own rules**,
+    /// before any network call. Two rules from `/help/organizations`:
+    ///
+    /// - nobody can leave the system org ("The Public"); and
+    /// - the last remaining owner cannot leave until another owner exists.
+    ///
+    /// The second rule needs the org's owner count, which this row does not
+    /// carry — so it is enforced by `OrgLifecycleError.lastOwnerCannotLeave`
+    /// at the service seam, where the roster is available. This property
+    /// answers only the part the row can decide by itself.
+    public var isLeavable: Bool { !organization.isSystem }
 
     public init(organization: Organization, role: OrgRole, joinedAt: Date? = nil) {
         self.organization = organization

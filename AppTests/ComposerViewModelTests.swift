@@ -948,7 +948,7 @@ final class ComposerViewModelTests: XCTestCase {
         await viewModel.setLinkedInEnabled(true)
 
         XCTAssertTrue(viewModel.crossPostToLinkedIn)
-        XCTAssertEqual(viewModel.linkedInPersonalTarget?.label, "Ada Lovelace")
+        XCTAssertEqual(viewModel.linkedInEffectiveTarget?.label, "Ada Lovelace")
         XCTAssertFalse(viewModel.linkedInNotConfigured)
         XCTAssertFalse(viewModel.linkedInOrgScopeMissing)
     }
@@ -997,7 +997,95 @@ final class ComposerViewModelTests: XCTestCase {
 
         XCTAssertTrue(viewModel.crossPostToLinkedIn)
         XCTAssertFalse(viewModel.linkedInNotConfigured)
-        XCTAssertNil(viewModel.linkedInPersonalTarget)
+        XCTAssertNil(viewModel.linkedInEffectiveTarget)
+    }
+
+    // MARK: - LinkedIn destination truthfulness (work-consolidation.md G25)
+    //
+    // /help/organizations: a member with an org page assignment gets that page
+    // as their DEFAULT destination — enabling the toggle without picking a
+    // target publishes to the company page, not to them. The readiness line
+    // has to say so, or it tells the user something untrue.
+
+    func test_givenOrgPageAssignment_whenEnablingLinkedIn_thenNamesTheCompanyPage() async {
+        // Happy path: the assigned company page wins over the personal profile.
+        let service = StubLinkedInService(result: .success(
+            LinkedInPostingTargets(
+                targets: [
+                    LinkedInTarget(kind: .personal, label: "Ada Lovelace", isEnabled: true),
+                    LinkedInTarget(kind: .orgPage, label: "Acme Corp", isEnabled: true, pageRecordId: "page-1")
+                ],
+                orgScopeMissing: false
+            )
+        ))
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(), eventBus: ComposerEventBus(),
+            mode: .newPost, linkedIn: service
+        )
+
+        await viewModel.setLinkedInEnabled(true)
+
+        XCTAssertEqual(viewModel.linkedInEffectiveTarget?.label, "Acme Corp")
+        XCTAssertTrue(
+            viewModel.linkedInPostsToCompanyPage,
+            "An assigned member must not be told they're posting as themselves"
+        )
+    }
+
+    func test_givenDisabledOrgPage_whenEnablingLinkedIn_thenNamesThePersonalProfile() async {
+        // Invalid-for-this-purpose input: a switched-off page is not where the
+        // post lands, so naming it would be the same lie in reverse.
+        let service = StubLinkedInService(result: .success(
+            LinkedInPostingTargets(
+                targets: [
+                    LinkedInTarget(kind: .personal, label: "Ada Lovelace", isEnabled: true),
+                    LinkedInTarget(kind: .orgPage, label: "Acme Corp", isEnabled: false, pageRecordId: "page-1")
+                ],
+                orgScopeMissing: false
+            )
+        ))
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(), eventBus: ComposerEventBus(),
+            mode: .newPost, linkedIn: service
+        )
+
+        await viewModel.setLinkedInEnabled(true)
+
+        XCTAssertEqual(viewModel.linkedInEffectiveTarget?.label, "Ada Lovelace")
+        XCTAssertFalse(viewModel.linkedInPostsToCompanyPage)
+    }
+
+    func test_givenOnlyAPersonalPage_whenEnablingLinkedIn_thenStillFlagsACompanyPage() async {
+        // Boundary: a personal company page is still a company page, not the
+        // user's own profile — the distinction the line has to make.
+        let service = StubLinkedInService(result: .success(
+            LinkedInPostingTargets(
+                targets: [
+                    LinkedInTarget(kind: .personalPage, label: "Ada's Studio", isEnabled: true, pageRecordId: "page-2")
+                ],
+                orgScopeMissing: false
+            )
+        ))
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(), eventBus: ComposerEventBus(),
+            mode: .newPost, linkedIn: service
+        )
+
+        await viewModel.setLinkedInEnabled(true)
+
+        XCTAssertEqual(viewModel.linkedInEffectiveTarget?.label, "Ada's Studio")
+        XCTAssertTrue(viewModel.linkedInPostsToCompanyPage)
+    }
+
+    func test_givenNoTargetsLoaded_whenReadingDestination_thenClaimsNothing() async {
+        // Boundary: with nothing loaded the line renders nothing rather than
+        // guessing a destination.
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(), eventBus: ComposerEventBus(), mode: .newPost
+        )
+
+        XCTAssertNil(viewModel.linkedInEffectiveTarget)
+        XCTAssertFalse(viewModel.linkedInPostsToCompanyPage)
     }
 
     func test_givenNoService_whenEnablingLinkedIn_thenTogglesPlainlyWithoutTargets() async {

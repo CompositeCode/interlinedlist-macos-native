@@ -67,12 +67,38 @@ final class OrganizationsListViewModel {
     /// its submit button and a double-tap can't double-create.
     private(set) var isCreating: Bool = false
 
+    /// True while a join / leave / delete round-trip is in flight, keyed by
+    /// org id — drives per-row spinners and stops a double-tap.
+    private(set) var pendingOperations: Set<String> = []
+
+    /// The most recent lifecycle-action error (join / leave / delete). Kept
+    /// separate from `loadError` and `createError` so a failed action never
+    /// blanks the list.
+    private(set) var actionError: Error?
+
+    /// Public organizations available to join, loaded on demand by `browse()`.
+    /// Empty until then.
+    private(set) var browsableOrganizations: [Organization] = []
+    private(set) var isBrowsing: Bool = false
+    private(set) var browseError: Error?
+
     // MARK: - Init
 
-    init(orgService: OrgServicing, userService: UserServicing) {
+    /// - Parameters:
+    ///   - orgService: the organizations surface.
+    ///   - userService: the membership surface (list + join).
+    ///   - currentUserId: the signed-in user's id. Required to leave an org,
+    ///     because leaving is removing *yourself* from the members collection.
+    ///     `nil` when no session has resolved; leave is then refused with a
+    ///     specific message rather than being silently unavailable.
+    init(orgService: OrgServicing, userService: UserServicing, currentUserId: String? = nil) {
         self.orgs = orgService
         self.user = userService
+        self.currentUserId = currentUserId
     }
+
+    /// The signed-in user's id, for the leave path.
+    private let currentUserId: String?
 
     // MARK: - Intents
 
@@ -167,6 +193,164 @@ final class OrganizationsListViewModel {
             return nil
         }
     }
+
+    // MARK: - Join (work-consolidation.md G25)
+
+    /// Loads the public organizations the user could join.
+    ///
+    /// Filters out orgs the user already belongs to, so the browse sheet never
+    /// offers a Join button that would fail.
+    func browse() async {
+        guard !isBrowsing else { return }
+        isBrowsing = true
+        browseError = nil
+        defer { isBrowsing = false }
+        do {
+            let page = try await orgs.organizations(
+                isPublic: true,
+                userId: nil,
+                limit: 50,
+                offset: 0
+            )
+            let joined = Set(memberships.map(\.organization.id))
+            browsableOrganizations = page.organizations.filter { !joined.contains($0.id) }
+        } catch {
+            browseError = error
+        }
+    }
+
+    /// Joins a public organization and refreshes the membership list from the
+    /// server's answer.
+    ///
+    /// Joining is free for every account — only creating an org is
+    /// subscriber-gated — so there is deliberately no entitlement check here.
+    ///
+    /// - Returns: the error on failure, `nil` on success / no-op.
+    @discardableResult
+    func join(organizationId: String) async -> Error? {
+        let trimmed = organizationId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            actionError = OrganizationsListError.emptyOrganizationId
+            return OrganizationsListError.emptyOrganizationId
+        }
+        guard !pendingOperations.contains(trimmed) else { return nil }
+        pendingOperations.insert(trimmed)
+        defer { pendingOperations.remove(trimmed) }
+
+        do {
+            // The service re-reads the membership list, so the row appears
+            // with the server's own role and joined-at rather than a guess.
+            memberships = try await user.joinOrganization(id: trimmed)
+            browsableOrganizations.removeAll { $0.id == trimmed }
+            actionError = nil
+            lastRefreshedAt = Date()
+            return nil
+        } catch {
+            actionError = error
+            return error
+        }
+    }
+
+    // MARK: - Leave (optimistic)
+
+    /// Leaves an organization.
+    ///
+    /// Enforces the two client-side rules before the call: the system org
+    /// ("The Public") can never be left, and the last owner cannot leave until
+    /// another owner exists. The last-owner half needs the org's roster, which
+    /// this list does not hold — `members` is passed empty, so that rule is
+    /// enforced by the server and surfaced as its error. The system-org rule is
+    /// decided entirely on the row, which is why `isSystem` is cached.
+    ///
+    /// Optimistic: drop the row, call the service, restore on failure.
+    ///
+    /// - Returns: the error if rejected / failed, `nil` on success.
+    @discardableResult
+    func leave(_ membership: UserOrganization) async -> Error? {
+        let orgId = membership.organization.id
+        guard !pendingOperations.contains(orgId) else { return nil }
+        guard let currentUserId, !currentUserId.isEmpty else {
+            actionError = OrgLifecycleError.unknownCurrentUser
+            return OrgLifecycleError.unknownCurrentUser
+        }
+        // Decided on the row, before anything else — this one never needs the
+        // network to know the answer.
+        guard membership.isLeavable else {
+            let violation = OrgLifecycleError.cannotLeaveSystemOrganization(
+                name: membership.organization.name
+            )
+            actionError = violation
+            return violation
+        }
+
+        let snapshot = memberships
+        pendingOperations.insert(orgId)
+        defer { pendingOperations.remove(orgId) }
+
+        memberships.removeAll { $0.organization.id == orgId }
+
+        do {
+            try await orgs.leave(
+                organization: membership.organization,
+                userId: currentUserId,
+                // The roster is not loaded on this surface; the last-owner
+                // rule is the server's to enforce here.
+                members: []
+            )
+            actionError = nil
+            return nil
+        } catch {
+            memberships = snapshot
+            actionError = error
+            return error
+        }
+    }
+
+    // MARK: - Delete (optimistic)
+
+    /// Deletes an organization the caller owns. **Not reversible** — the view
+    /// is responsible for confirming with the user, naming the org, before
+    /// this is called.
+    ///
+    /// Optimistic: drop the row, call the service, restore on failure.
+    ///
+    /// - Returns: the error if rejected / failed, `nil` on success.
+    @discardableResult
+    func delete(_ membership: UserOrganization) async -> Error? {
+        let orgId = membership.organization.id
+        guard !pendingOperations.contains(orgId) else { return nil }
+
+        let snapshot = memberships
+        pendingOperations.insert(orgId)
+        defer { pendingOperations.remove(orgId) }
+
+        memberships.removeAll { $0.organization.id == orgId }
+
+        do {
+            // The owner check lives in the service so it holds for every
+            // caller, not just this screen.
+            try await orgs.delete(id: orgId, callerRole: membership.role)
+            actionError = nil
+            return nil
+        } catch {
+            memberships = snapshot
+            actionError = error
+            return error
+        }
+    }
+
+    /// Whether the signed-in user may delete this org — owner only. Drives
+    /// whether the Delete control renders at all (ownership-gated UI is
+    /// hidden, not disabled).
+    func canDelete(_ membership: UserOrganization) -> Bool {
+        membership.role == .owner
+    }
+
+    /// Whether the Leave control should render for this row. Hidden for the
+    /// system org, which nobody can leave, and when no session has resolved.
+    func canLeave(_ membership: UserOrganization) -> Bool {
+        currentUserId?.isEmpty == false && membership.isLeavable
+    }
 }
 
 // MARK: - OrganizationsListError
@@ -174,11 +358,14 @@ final class OrganizationsListViewModel {
 /// Client-side validation failures surfaced before any network call.
 enum OrganizationsListError: LocalizedError, Equatable {
     case emptyName
+    case emptyOrganizationId
 
     var errorDescription: String? {
         switch self {
         case .emptyName:
             return "Enter a name for the organization."
+        case .emptyOrganizationId:
+            return "Pick an organization to join."
         }
     }
 }
