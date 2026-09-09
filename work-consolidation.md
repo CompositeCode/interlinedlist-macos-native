@@ -152,8 +152,20 @@ Live and available to the test account: `GET /api/ai/status` returns `{"subscrib
 Three routes the DM feature shipped without: `GET /api/dm/conversations` (one row per conversation grouped by `pairKey`, newest first — verified live, `{"items":[],"nextCursor":null}` — this is the natural inbox list, versus today's folder-based `GET /api/dm`), `GET /api/dm/{id}` (single message), and `POST /api/dm/images/upload` (DM image attachments, which the DM composer advertises but cannot perform).
 
 <a id="g23-lists-gaps"></a>
-**G23 · Lists: shared-with-me, contributors, watcher add — MEDIUM. Size M.**
-`GET /api/lists/watching` (verified live, returns real rows) is the **"shared with me" / watched-lists** surface the sidebar lacks. Also `GET /api/lists/{id}/contributors` (full ranked contributor list), `POST /api/lists/{id}/watchers` (add watchers — the client can only read and delete), `GET /api/lists/shared/{token}/data` (row data for a token-shared list, the read-only viewer's missing half), and the invite landing pair `GET`/`POST /api/lists/invite/{token}`.
+**G23 · Lists: shared-with-me, contributors, watcher add — ✅ SHIPPED 2026-09-09 (branch `feat/lists-sharing-g23`, GitHub issue #48).**
+All five routes are built: `GET /api/lists/watching` (the **"shared with me"** sidebar section the client had no equivalent of), `GET /api/lists/{id}/contributors` (ranked contributor panel), `POST /api/lists/{id}/watchers` (add a watcher — the client could previously only read and delete), `GET /api/lists/shared/{token}/data` (the read-only viewer's missing half: a share landing now renders the rows), and `GET /api/lists/invite/{token}` (the email-invite landing).
+
+> **The accept half stays in the browser.** `POST /api/lists/invite/{token}` and `POST /api/lists/shared/{token}` are declared `x-auth-type: session` in the live OpenAPI spec, so a Bearer-only client cannot claim either. The invite landing therefore ends in "Accept in Browser" rather than a native Accept button that would 401 every time. That backend ask is filed separately; `InviteLandingViewModel.acceptInBrowserURL` is the single seam a Bearer-reachable claim route would replace.
+
+> **The read-only probe that preceded this work found four shipping defects in the *existing* watcher surface, all fixed here.** None had been caught because each fails silently at the decoder or as a 400 the UI reports as a generic error:
+> 1. `GET /api/lists/{id}/watchers` answers `{"watchers":[…],"pagination":{…}}`, but the builder declared a bare `[ListWatcherDTO]` — so the sharing panel could never list anyone.
+> 2. `GET /api/lists/{id}/watchers/me` answers `{"watching":…}`, not `{"isWatching":…}` — the flag decoded to `nil` on every call, so the client believed the caller watched nothing.
+> 3. `GET /api/lists/{id}/watchers/users` is a **candidate search** ("people you could add", `{"users":[…],"total","pagination"}`), not the watcher list. It was typed as `[ListWatcherDTO]`, which cannot decode it at all — and the watchers panel was calling it to populate itself.
+> 4. `WatcherRole.wireToken` emitted `owner`/`editor`/`viewer`, none of which the API accepts. `/help/api/lists` documents the taxonomy as `watcher`/`collaborator`/`manager`, and an invalid role is a `400` — so every role change was rejected. UI labels now follow the web's vocabulary (Read-only / Edit / Admin) on both `WatcherRole` and `ShareRole`.
+
+> **Still open, found during the same probe and deliberately out of scope:** `GET /api/lists/{id}` answers the `{"data":{…}}` envelope while `Lists.get(id:)` decodes a bare `ListDTO`, so `ListsService.detail(listId:)` cannot decode a live response. Not exercised by any G23 path (the shared-with-me rows come from the `watching` payload itself), so it is filed rather than fixed here.
+
+> **Entitlements:** granting a named user access is subscriber-gated server-side (`403 {"error":"Subscribe to share lists."}`), as is a role change. `ListsService` projects that 403 onto `ListsError.subscriberRequired` so the UI shows the same upsell Share Links and Invite by Email already use. The client-side pre-flight gate is left to GitHub #40 (`CapabilityGate`) — every `ListsService` write routes through one permissive `canManageLists` seam today, so tightening it here would have blocked free users from reading their own lists.
 
 <a id="g24-documents-gaps"></a>
 **G24 · Documents: sidebar tree, public docs, invites, presence — MEDIUM. Size M.**

@@ -22,6 +22,8 @@ struct RecordedSharingCall: Sendable, Equatable {
         case revokeListLink(listId: String, token: String)
         case resolveList(token: String)
         case claimList(token: String)
+        case sharedListRows(token: String, limit: Int, offset: Int)
+        case resolveListInvite(token: String)
 
         case documentLinks(documentId: String)
         case createDocumentLink(documentId: String, role: ShareRole, expiresAt: Date?)
@@ -55,6 +57,8 @@ actor StubSharingService: SharingServicing {
     private var revokeOutcomes: [Result<Bool, Error>] = []
     private var resolveOutcomes: [Result<ResolvedShare, Error>] = []
     private var claimOutcomes: [Result<ShareClaim, Error>] = []
+    private var sharedRowsOutcomes: [Result<RowsPage, Error>] = []
+    private var resolveInviteOutcomes: [Result<ResolvedListInvite, Error>] = []
 
     // Collaborators.
     private var collaboratorsOutcomes: [Result<[Collaborator], Error>] = []
@@ -86,6 +90,12 @@ actor StubSharingService: SharingServicing {
 
     func enqueueClaim(success value: ShareClaim) { claimOutcomes.append(.success(value)) }
     func enqueueClaim(failure error: Error) { claimOutcomes.append(.failure(error)) }
+
+    func enqueueSharedRows(success value: RowsPage) { sharedRowsOutcomes.append(.success(value)) }
+    func enqueueSharedRows(failure error: Error) { sharedRowsOutcomes.append(.failure(error)) }
+
+    func enqueueResolveInvite(success value: ResolvedListInvite) { resolveInviteOutcomes.append(.success(value)) }
+    func enqueueResolveInvite(failure error: Error) { resolveInviteOutcomes.append(.failure(error)) }
 
     func enqueueCollaborators(success value: [Collaborator]) { collaboratorsOutcomes.append(.success(value)) }
     func enqueueCollaborators(failure error: Error) { collaboratorsOutcomes.append(.failure(error)) }
@@ -136,6 +146,16 @@ actor StubSharingService: SharingServicing {
     func claimListShare(token: String) async throws -> ShareClaim {
         recorded.append(.init(kind: .claimList(token: token)))
         return try take(&claimOutcomes, label: "claimListShare")
+    }
+
+    func sharedListRows(token: String, limit: Int, offset: Int) async throws -> RowsPage {
+        recorded.append(.init(kind: .sharedListRows(token: token, limit: limit, offset: offset)))
+        return try take(&sharedRowsOutcomes, label: "sharedListRows")
+    }
+
+    func resolveListInvite(token: String) async throws -> ResolvedListInvite {
+        recorded.append(.init(kind: .resolveListInvite(token: token)))
+        return try take(&resolveInviteOutcomes, label: "resolveListInvite")
     }
 
     // MARK: SharingServicing — Documents

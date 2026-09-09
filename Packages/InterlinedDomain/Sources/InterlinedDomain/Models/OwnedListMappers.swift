@@ -46,14 +46,20 @@ extension OwnedListsPage {
 // MARK: - Watcher mapping
 
 extension ListWatcher {
-    /// Maps a watcher DTO. Missing role tokens collapse to `.viewer` so the
-    /// share-sheet always has a renderable role; unknown tokens preserve
-    /// under `.other` per `WatcherRole.init(wireToken:)`.
+    /// Maps a watcher DTO. Missing role tokens collapse to `.viewer` — the
+    /// least privileged role — so the share-sheet always has a renderable role
+    /// and an unknown taxonomy never unlocks edit affordances; unknown tokens
+    /// preserve under `.other` per `WatcherRole.init(wireToken:)`.
+    ///
+    /// The live route nests the person under `user`; the flat `username` is
+    /// read as a fallback so older fixtures still map (work-consolidation.md G23).
     public init(from dto: ListWatcherDTO) {
         let role = dto.role.map(WatcherRole.init(wireToken:)) ?? .viewer
         self.init(
             userId: dto.userId,
-            username: dto.username,
+            username: dto.user?.username ?? dto.username,
+            displayName: dto.user?.displayName,
+            avatarURL: dto.user?.avatar.flatMap(URL.init(string:)),
             role: role,
             createdAt: dto.createdAt
         )

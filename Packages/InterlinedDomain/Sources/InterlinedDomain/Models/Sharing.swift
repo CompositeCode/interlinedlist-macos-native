@@ -13,11 +13,15 @@ public enum ShareRole: String, Sendable, Equatable, Hashable, CaseIterable, Iden
 
     public var id: String { rawValue }
 
-    /// UI-facing label.
+    /// UI-facing label, matching the web's vocabulary on `/help/lists`
+    /// (Read-only → `watcher`, Edit → `collaborator`, Admin → `manager`).
+    /// Kept identical to `WatcherRole.label` so the sharing dialog, the
+    /// watchers panel, and the shared-with-me sidebar all say the same words
+    /// (work-consolidation.md G23).
     public var label: String {
         switch self {
-        case .watcher: return "Viewer"
-        case .collaborator: return "Editor"
+        case .watcher: return "Read-only"
+        case .collaborator: return "Edit"
         case .manager: return "Admin"
         }
     }

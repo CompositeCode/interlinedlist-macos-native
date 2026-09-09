@@ -11,6 +11,12 @@ struct ListRowsView: View {
 
     let list: OwnedList
     let viewModel: ListRowsViewModel
+    /// `true` when the signed-in account may read this list but not change it —
+    /// a `watcher`-role share (work-consolidation.md G23). Row-mutating
+    /// affordances are *hidden*, not disabled, per the project's
+    /// "never enabled-but-broken" rule. Defaults to `false` so every existing
+    /// owned-list call site is unchanged.
+    var isReadOnly: Bool = false
 
     @Environment(\.appEnvironment) private var environment
     @State private var selection: Set<String> = []
@@ -82,7 +88,12 @@ struct ListRowsView: View {
             // action becomes "New Issue" (opening the issue composer/browser)
             // rather than a native empty-row create, which wouldn't survive the
             // next sync. Detection is row-derived (`viewModel.isGitHubBacked`).
-            if viewModel.isGitHubBacked {
+            if isReadOnly {
+                Label("Read-only", systemImage: "eye")
+                    .font(.ilMono(10))
+                    .foregroundStyle(.secondary)
+                    .help("This list was shared with you for viewing — you can't change its rows")
+            } else if viewModel.isGitHubBacked {
                 Button {
                     showsIssues = true
                 } label: {
@@ -97,12 +108,14 @@ struct ListRowsView: View {
                 }
             }
 
-            Button {
-                deletePending = true
-            } label: {
-                Label("Delete", systemImage: "minus")
+            if !isReadOnly {
+                Button {
+                    deletePending = true
+                } label: {
+                    Label("Delete", systemImage: "minus")
+                }
+                .disabled(selection.isEmpty || viewModel.isGitHubBacked)
             }
-            .disabled(selection.isEmpty || viewModel.isGitHubBacked)
 
             // "Create from…" over the current row selection
             // (work-consolidation.md G16). Unlike Delete this is safe on a

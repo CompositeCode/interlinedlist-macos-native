@@ -154,7 +154,10 @@ final class SharingServiceTests: XCTestCase {
 
     func test_givenShareRoles_whenReadingLabelsAndCapabilities_thenMatchContract() {
         XCTAssertEqual(ShareRole.allCases.map(\.rawValue), ["watcher", "collaborator", "manager"])
-        XCTAssertEqual(ShareRole.watcher.label, "Viewer")
+        // Labels follow the web's vocabulary on /help/lists
+        // (Read-only / Edit / Admin) — work-consolidation.md G23.
+        XCTAssertEqual(ShareRole.watcher.label, "Read-only")
+        XCTAssertEqual(ShareRole.collaborator.label, "Edit")
         XCTAssertEqual(ShareRole.manager.label, "Admin")
         XCTAssertFalse(ShareRole.watcher.canEdit)
         XCTAssertTrue(ShareRole.collaborator.canEdit)

@@ -31,9 +31,12 @@ struct RecordedListsCall: Sendable, Equatable {
         case deleteRow(listId: String, rowId: String)
         case watchers(listId: String)
         case myWatcherStatus(listId: String)
-        case watcherUsers(listId: String)
+        case watcherCandidates(listId: String, search: String?, limit: Int)
         case setWatcher(listId: String, userId: String, role: WatcherRole)
+        case addWatcher(listId: String, userId: String, role: WatcherRole, notify: Bool)
         case removeWatcher(listId: String, userId: String)
+        case watching(limit: Int, offset: Int)
+        case contributors(listId: String)
         case connections(listId: String?)
         case addConnection(from: String, to: String, label: String?)
         case removeConnection(id: String)
@@ -58,7 +61,10 @@ actor StubListsService: ListsServicing {
     private var updateRowOutcomes: [Result<ListRow, Error>] = []
     private var deleteRowOutcomes: [Result<Void, Error>] = []
     private var watchersOutcomes: [Result<[ListWatcher], Error>] = []
-    private var watcherUsersOutcomes: [Result<[ListWatcher], Error>] = []
+    private var watcherCandidatesOutcomes: [Result<[CollaboratorCandidate], Error>] = []
+    private var addWatcherOutcomes: [Result<Void, Error>] = []
+    private var watchingOutcomes: [Result<WatchedListsPage, Error>] = []
+    private var contributorsOutcomes: [Result<[ListContributor], Error>] = []
     private var myWatcherStatusOutcomes: [Result<WatcherStatus, Error>] = []
     private var setWatcherOutcomes: [Result<ListWatcher, Error>] = []
     private var removeWatcherOutcomes: [Result<Void, Error>] = []
@@ -122,8 +128,15 @@ actor StubListsService: ListsServicing {
     func enqueueDeleteRow(failure error: Error) { deleteRowOutcomes.append(.failure(error)) }
 
     func enqueueWatchers(success watchers: [ListWatcher]) { watchersOutcomes.append(.success(watchers)) }
-    func enqueueWatcherUsers(success watchers: [ListWatcher]) { watcherUsersOutcomes.append(.success(watchers)) }
-    func enqueueWatcherUsers(failure error: Error) { watcherUsersOutcomes.append(.failure(error)) }
+    func enqueueWatchers(failure error: Error) { watchersOutcomes.append(.failure(error)) }
+    func enqueueWatcherCandidates(success candidates: [CollaboratorCandidate]) { watcherCandidatesOutcomes.append(.success(candidates)) }
+    func enqueueWatcherCandidates(failure error: Error) { watcherCandidatesOutcomes.append(.failure(error)) }
+    func enqueueAddWatcherSuccess() { addWatcherOutcomes.append(.success(())) }
+    func enqueueAddWatcher(failure error: Error) { addWatcherOutcomes.append(.failure(error)) }
+    func enqueueWatching(success page: WatchedListsPage) { watchingOutcomes.append(.success(page)) }
+    func enqueueWatching(failure error: Error) { watchingOutcomes.append(.failure(error)) }
+    func enqueueContributors(success contributors: [ListContributor]) { contributorsOutcomes.append(.success(contributors)) }
+    func enqueueContributors(failure error: Error) { contributorsOutcomes.append(.failure(error)) }
     func enqueueMyWatcherStatus(success status: WatcherStatus) { myWatcherStatusOutcomes.append(.success(status)) }
 
     func enqueueSetWatcher(success watcher: ListWatcher) { setWatcherOutcomes.append(.success(watcher)) }
@@ -248,9 +261,26 @@ actor StubListsService: ListsServicing {
         return try take(&myWatcherStatusOutcomes, label: "myWatcherStatus")
     }
 
-    func watcherUsers(of listId: String) async throws -> [ListWatcher] {
-        recorded.append(.init(kind: .watcherUsers(listId: listId)))
-        return try take(&watcherUsersOutcomes, label: "watcherUsers")
+    func watcherCandidates(of listId: String, search: String?, limit: Int) async throws -> [CollaboratorCandidate] {
+        recorded.append(.init(kind: .watcherCandidates(listId: listId, search: search, limit: limit)))
+        return try take(&watcherCandidatesOutcomes, label: "watcherCandidates")
+    }
+
+    func addWatcher(listId: String, userId: String, role: WatcherRole, notify: Bool) async throws {
+        recorded.append(.init(kind: .addWatcher(listId: listId, userId: userId, role: role, notify: notify)))
+        let _: Void = try take(&addWatcherOutcomes, label: "addWatcher")
+    }
+
+    // MARK: ListsServicing — shared with me (G23)
+
+    func watching(limit: Int, offset: Int) async throws -> WatchedListsPage {
+        recorded.append(.init(kind: .watching(limit: limit, offset: offset)))
+        return try take(&watchingOutcomes, label: "watching")
+    }
+
+    func contributors(of listId: String) async throws -> [ListContributor] {
+        recorded.append(.init(kind: .contributors(listId: listId)))
+        return try take(&contributorsOutcomes, label: "contributors")
     }
 
     func setWatcher(listId: String, userId: String, role: WatcherRole) async throws -> ListWatcher {
@@ -363,6 +393,62 @@ enum ListsFixtures {
         role: WatcherRole = .viewer
     ) -> ListWatcher {
         ListWatcher(userId: userId, username: username, role: role)
+    }
+
+    // MARK: - G23 shared-with-me fixtures
+
+    static func watchedList(
+        id: String,
+        title: String = "Shared List",
+        ownerUsername: String? = "adron",
+        ownerDisplayName: String? = "Adron Hall",
+        role: ShareRole = .collaborator,
+        parentTitle: String? = nil
+    ) -> WatchedList {
+        WatchedList(
+            list: ownedList(id: id, title: title),
+            owner: ListOwner(
+                id: "owner-\(id)",
+                username: ownerUsername,
+                displayName: ownerDisplayName
+            ),
+            role: role,
+            parentTitle: parentTitle
+        )
+    }
+
+    static func watchedListsPage(
+        _ lists: [WatchedList],
+        hasMore: Bool = false,
+        nextOffset: Int? = nil
+    ) -> WatchedListsPage {
+        WatchedListsPage(lists: lists, hasMore: hasMore, nextOffset: nextOffset)
+    }
+
+    static func contributor(
+        id: String,
+        username: String? = "adron",
+        displayName: String? = "Adron Hall",
+        addedCount: Int = 0,
+        editedCount: Int = 0,
+        score: Int = 0
+    ) -> ListContributor {
+        ListContributor(
+            id: id,
+            username: username,
+            displayName: displayName,
+            addedCount: addedCount,
+            editedCount: editedCount,
+            score: score
+        )
+    }
+
+    static func candidate(
+        id: String,
+        username: String? = "ada",
+        displayName: String? = "Ada Lovelace"
+    ) -> CollaboratorCandidate {
+        CollaboratorCandidate(id: id, username: username, displayName: displayName)
     }
 
     static func connection(
