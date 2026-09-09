@@ -150,10 +150,24 @@ struct DocumentsRootView: View {
                 }
                 .frame(minWidth: 200, idealWidth: 240)
 
-                DocumentsListView(viewModel: documentsList) { docID in
-                    let document = documentsList.documentsLoaded.first { $0.id == docID }
-                    editor.bind(to: document)
-                }
+                DocumentsListView(
+                    viewModel: documentsList,
+                    onSelect: { docID in
+                        let document = documentsList.documentsLoaded.first { $0.id == docID }
+                        editor.bind(to: document)
+                    },
+                    // work-consolidation.md G24 — the row context menu's
+                    // "Move to folder" reads its destinations from the same
+                    // tree the sidebar paints from.
+                    folderTree: folderTree,
+                    onMoved: { moved in
+                        // Keep an open editor pointed at the server's copy so
+                        // its folder is right after the move.
+                        if editor.document?.id == moved.id {
+                            editor.bind(to: moved)
+                        }
+                    }
+                )
                 .frame(minWidth: 220, idealWidth: 280)
 
                 Group {
@@ -240,6 +254,26 @@ struct DocumentsRootView: View {
                 }
                 .disabled(editor.document == nil)
                 .help("Control whether anyone with the link can view this document")
+
+                // work-consolidation.md G24 — the document-settings half of
+                // "Move to folder". Same menu the list's context menu uses, so
+                // the destinations and the `_templates` exclusion match.
+                if let openDocument = editor.document {
+                    MoveToFolderMenu(
+                        folderTree: folderTree,
+                        currentFolderID: openDocument.folderId
+                    ) { destination in
+                        Task {
+                            await handleMove(
+                                documentID: openDocument.id,
+                                to: destination,
+                                folderTree: folderTree,
+                                documentsList: documentsList,
+                                editor: editor
+                            )
+                        }
+                    }
+                }
 
                 Button {
                     editor.exportMarkdown()
@@ -388,6 +422,30 @@ struct DocumentsRootView: View {
         if let created = await documentsList.createDocument(title: "Untitled") {
             editor?.bind(to: created)
         }
+    }
+
+    /// Moves the open document and reconciles the three panes: the list drops
+    /// or keeps the row, the editor rebinds to the server's copy, and the
+    /// sidebar's per-folder counts are refetched (they came from the tree
+    /// call, so both the source and destination badges went stale).
+    ///
+    /// The move itself is driven through `DocumentsListViewModel` even when it
+    /// was started from the editor, so there is exactly one optimistic-rollback
+    /// implementation rather than two that can disagree.
+    private func handleMove(
+        documentID: Document.ID,
+        to destination: FolderNode.ID?,
+        folderTree: FolderTreeViewModel,
+        documentsList: DocumentsListViewModel,
+        editor: DocumentEditorViewModel
+    ) async {
+        guard let moved = await documentsList.moveDocument(id: documentID, to: destination) else {
+            return
+        }
+        if editor.document?.id == moved.id {
+            editor.bind(to: moved)
+        }
+        await folderTree.refresh()
     }
 
     private func handleOpenLocalCopy(

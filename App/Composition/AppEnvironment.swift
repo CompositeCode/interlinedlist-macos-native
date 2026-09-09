@@ -487,7 +487,12 @@ final class AppEnvironment: ObservableObject {
             // deltas stay consistent (stale-while-revalidate paint).
             store: documentStore,
             // Live image ceilings for `uploadImage` prep (G14 tail).
-            contentLimits: contentLimits
+            contentLimits: contentLimits,
+            // work-consolidation.md G24 — `POST /api/documents/folders/{id}/
+            // documents` is subscriber-gated upstream. Same live box the
+            // messages gate reads, so a mid-session subscribe or lapse re-gates
+            // creating documents in a folder without a relaunch.
+            entitlementsProvider: { liveEntitlements.current() }
         )
         // Server document templates (work-consolidation.md G12). Reuses the same
         // kit-layer `APIClient` like the other services do — the

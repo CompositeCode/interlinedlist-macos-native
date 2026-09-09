@@ -101,7 +101,7 @@ final class LaunchPrefetchCoordinatorTests: XCTestCase {
         ]))
 
         let documents = StubDocumentsService()
-        await documents.enqueueFolders(success: [DocumentsFixtures.folder(id: "F9")])
+        await documents.enqueueTree(foldersOnly: [DocumentsFixtures.folder(id: "F9")])
         await documents.enqueueDocuments(success: [DocumentsFixtures.document(id: "D9")])
 
         let messages = StubMessagesService()
