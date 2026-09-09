@@ -53,7 +53,9 @@ final class ListsEndpointTests: XCTestCase {
 
         XCTAssertEqual(Lists.watchers(listId: "7").path, "/api/lists/7/watchers")
         XCTAssertEqual(Lists.myWatcherStatus(listId: "7").path, "/api/lists/7/watchers/me")
-        XCTAssertEqual(Lists.watcherUsers(listId: "7").path, "/api/lists/7/watchers/users")
+        XCTAssertEqual(Lists.watcherCandidates(listId: "7").path, "/api/lists/7/watchers/users")
+        XCTAssertEqual(Lists.addWatcher(listId: "7", AddListWatcherRequest(userId: "u2")).method, .post)
+        XCTAssertEqual(Lists.addWatcher(listId: "7", AddListWatcherRequest(userId: "u2")).path, "/api/lists/7/watchers")
         XCTAssertEqual(Lists.setWatcher(listId: "7", userId: "u2", UpdateListWatcherRequest(role: "manager")).method, .put)
         XCTAssertEqual(Lists.setWatcher(listId: "7", userId: "u2", UpdateListWatcherRequest(role: "manager")).path, "/api/lists/7/watchers/u2")
         XCTAssertEqual(Lists.removeWatcher(listId: "7", userId: "u2").method, .delete)

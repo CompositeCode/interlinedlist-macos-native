@@ -212,37 +212,211 @@ enum Fixtures {
         """
     }
 
-    /// A single `ListWatcherDTO` object body.
+    /// A single `ListWatcherDTO` object body, in the shape the live route
+    /// returns: the person nested under `user`
+    /// (`/help/api/lists`: `{ id, userId, role, createdAt, user }`).
     static func watcherObject(
         userId: String,
-        role: String? = "editor",
-        username: String? = "ada"
+        role: String? = "collaborator",
+        username: String? = "ada",
+        displayName: String? = "Ada Lovelace"
     ) -> String {
         let roleJSON = role.map { "\"\($0)\"" } ?? "null"
         let usernameJSON = username.map { "\"\($0)\"" } ?? "null"
+        let displayNameJSON = displayName.map { "\"\($0)\"" } ?? "null"
         return """
         {
+          "id": "w-\(userId)",
           "userId": "\(userId)",
           "role": \(roleJSON),
-          "username": \(usernameJSON),
-          "createdAt": "\(createdAtISO)"
+          "createdAt": "\(createdAtISO)",
+          "user": {
+            "id": "\(userId)",
+            "username": \(usernameJSON),
+            "displayName": \(displayNameJSON),
+            "avatar": null
+          }
         }
         """
     }
 
-    /// A bare array of watcher objects (the shape `/watchers` returns).
-    static func watchersArray(_ entries: [(userId: String, role: String?)]) -> String {
+    /// The `{ "watchers": [...], "pagination": {...} }` envelope
+    /// `GET /api/lists/[id]/watchers` really returns (verified live
+    /// 2026-09-09 — work-consolidation.md G23). The route was previously
+    /// modelled as a bare array, which never decoded.
+    static func watchersEnvelope(_ entries: [(userId: String, role: String?)]) -> String {
         let objects = entries.map { watcherObject(userId: $0.userId, role: $0.role) }
             .joined(separator: ",")
-        return "[\(objects)]"
+        return """
+        {
+          "watchers": [\(objects)],
+          "pagination": {
+            "total": \(entries.count),
+            "limit": 20,
+            "offset": 0,
+            "hasMore": false
+          }
+        }
+        """
     }
 
-    /// `GET /api/lists/[id]/watchers/me` envelope.
+    /// `GET /api/lists/[id]/watchers/me` envelope. The wire key is `watching`,
+    /// not `isWatching` (verified live 2026-09-09).
     static func watcherStatusEnvelope(isWatching: Bool?, role: String?) -> String {
         let watchingJSON = isWatching.map { $0 ? "true" : "false" } ?? "null"
         let roleJSON = role.map { "\"\($0)\"" } ?? "null"
         return """
-        { "isWatching": \(watchingJSON), "role": \(roleJSON) }
+        { "watching": \(watchingJSON), "role": \(roleJSON) }
+        """
+    }
+
+    /// `PUT /api/lists/[id]/watchers/[userId]` response: `{ "role" }`.
+    static func setWatcherRoleEnvelope(role: String?) -> String {
+        let roleJSON = role.map { "\"\($0)\"" } ?? "null"
+        return """
+        { "role": \(roleJSON) }
+        """
+    }
+
+    // MARK: - G23 shared-with-me fixtures
+
+    /// One `/api/lists/watching` row — the owned-list shape plus `role`,
+    /// the embedded owner, and the `parent` projection.
+    static func watchedListObject(
+        id: String,
+        title: String = "Shows Upcoming & Seen",
+        role: String? = "collaborator",
+        ownerUsername: String = "adron",
+        parentTitle: String? = nil,
+        isPublic: Bool = true
+    ) -> String {
+        let roleJSON = role.map { "\"\($0)\"" } ?? "null"
+        let parentJSON = parentTitle.map {
+            """
+            { "id": "parent-\(id)", "title": "\($0)" }
+            """
+        } ?? "null"
+        let parentIdJSON = parentTitle == nil ? "null" : "\"parent-\(id)\""
+        return """
+        {
+          "id": "\(id)",
+          "userId": "owner-\(id)",
+          "messageId": null,
+          "parentId": \(parentIdJSON),
+          "folderId": null,
+          "title": "\(title)",
+          "description": null,
+          "isPublic": \(isPublic),
+          "metadata": null,
+          "source": "local",
+          "githubRepo": null,
+          "githubRepoPrivate": null,
+          "createdAt": "\(createdAtISO)",
+          "updatedAt": "\(createdAtISO)",
+          "deletedAt": null,
+          "user": {
+            "id": "owner-\(id)",
+            "username": "\(ownerUsername)",
+            "displayName": "Adron Hall"
+          },
+          "parent": \(parentJSON),
+          "children": [],
+          "role": \(roleJSON)
+        }
+        """
+    }
+
+    /// The `{ "lists": [...], "pagination": {...} }` envelope
+    /// `GET /api/lists/watching` returns.
+    static func watchingEnvelope(
+        _ entries: [(id: String, role: String?)],
+        limit: Int = 50,
+        offset: Int = 0,
+        hasMore: Bool = false
+    ) -> String {
+        let objects = entries
+            .map { watchedListObject(id: $0.id, role: $0.role) }
+            .joined(separator: ",")
+        return """
+        {
+          "lists": [\(objects)],
+          "pagination": {
+            "total": \(entries.count),
+            "limit": \(limit),
+            "offset": \(offset),
+            "hasMore": \(hasMore)
+          }
+        }
+        """
+    }
+
+    /// `GET /api/lists/[id]/contributors` — `{ contributors, totalContributors }`.
+    static func contributorsEnvelope(
+        _ entries: [(id: String, added: Int, edited: Int)]
+    ) -> String {
+        let objects = entries.map { entry in
+            """
+            {
+              "id": "\(entry.id)",
+              "username": "\(entry.id)",
+              "displayName": "User \(entry.id)",
+              "avatar": "https://cdn.interlinedlist.com/\(entry.id).png",
+              "addedCount": \(entry.added),
+              "editedCount": \(entry.edited),
+              "score": \(entry.added + entry.edited)
+            }
+            """
+        }.joined(separator: ",")
+        return """
+        { "contributors": [\(objects)], "totalContributors": \(entries.count) }
+        """
+    }
+
+    /// `GET /api/lists/[id]/watchers/users` — `{ users, total, pagination }`.
+    static func watcherCandidatesEnvelope(_ ids: [String], total: Int? = nil) -> String {
+        let objects = ids.map { id in
+            """
+            {
+              "id": "\(id)",
+              "username": "\(id)",
+              "displayName": "User \(id)",
+              "email": "\(id)@example.com",
+              "avatar": null
+            }
+            """
+        }.joined(separator: ",")
+        return """
+        {
+          "users": [\(objects)],
+          "total": \(total ?? ids.count),
+          "pagination": { "limit": 50, "offset": 0, "hasMore": false }
+        }
+        """
+    }
+
+    /// `POST /api/lists/[id]/watchers` — the documented `{ watching: true }`.
+    static let addWatcherEnvelope: String = #"{ "watching": true }"#
+
+    /// `GET /api/lists/invite/{token}` landing payload.
+    static func listInviteEnvelope(
+        role: String? = "collaborator",
+        needsAuth: Bool = false,
+        canClaim: Bool = true,
+        wrongAccount: Bool = false,
+        accepted: Bool = false,
+        resourceTitle: String? = "Q3 Planning"
+    ) -> String {
+        let roleJSON = role.map { "\"\($0)\"" } ?? "null"
+        let titleJSON = resourceTitle.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "role": \(roleJSON),
+          "needsAuth": \(needsAuth),
+          "canClaim": \(canClaim),
+          "wrongAccount": \(wrongAccount),
+          "accepted": \(accepted),
+          "resourceTitle": \(titleJSON)
+        }
         """
     }
 

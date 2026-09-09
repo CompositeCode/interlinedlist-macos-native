@@ -105,6 +105,63 @@ final class ShareURLParserTests: XCTestCase {
         XCTAssertEqual(docURL?.absoluteString, "https://interlinedlist.com/documents/shared/tok")
     }
 
+    // MARK: - Invite links (work-consolidation.md G23 / issue #48)
+
+    func test_givenHttpsListInviteURL_whenParsing_thenReturnsInviteMode() {
+        let url = URL(string: "https://interlinedlist.com/lists/invite/xN3v9Qk")!
+        XCTAssertEqual(
+            ShareURLParser.parse(url),
+            ParsedShare(kind: .list, token: "xN3v9Qk", mode: .invite)
+        )
+    }
+
+    func test_givenHttpsDocumentInviteURL_whenParsing_thenReturnsInviteMode() {
+        let url = URL(string: "https://interlinedlist.com/documents/invite/tok")!
+        XCTAssertEqual(
+            ShareURLParser.parse(url),
+            ParsedShare(kind: .document, token: "tok", mode: .invite)
+        )
+    }
+
+    func test_givenCustomSchemeInviteURL_whenParsing_thenParsesHostAsResource() {
+        let url = URL(string: "interlinedlist://lists/invite/tok")!
+        XCTAssertEqual(
+            ShareURLParser.parse(url),
+            ParsedShare(kind: .list, token: "tok", mode: .invite)
+        )
+    }
+
+    func test_givenShareURL_whenParsing_thenDefaultsToShareMode() {
+        // Boundary between the two modes: a `shared` link must never be
+        // mistaken for an invite, since the two landings differ.
+        let parsed = ShareURLParser.parse(URL(string: "https://interlinedlist.com/lists/shared/tok")!)
+        XCTAssertEqual(parsed?.mode, .share)
+    }
+
+    func test_givenUnknownMarkerSegment_whenParsing_thenReturnsNil() {
+        // Invalid input: only `shared` and `invite` are recognized markers.
+        XCTAssertNil(ShareURLParser.parse(URL(string: "https://interlinedlist.com/lists/inviting/tok")!))
+        XCTAssertNil(ShareURLParser.parse(URL(string: "https://interlinedlist.com/lists/invite/")!))
+    }
+
+    func test_givenInviteMode_whenBuildingWebURL_thenUsesTheInvitePath() {
+        let base = URL(string: "https://interlinedlist.com")!
+        let url = ShareURLParser.webURL(base: base, kind: .list, token: "tok", mode: .invite)
+        XCTAssertEqual(url?.absoluteString, "https://interlinedlist.com/lists/invite/tok")
+    }
+
+    func test_givenInviteURL_whenHandling_thenPostsInviteModeAndReturnsTrue() {
+        // The deep-link handler routes invites through the same notification,
+        // so `MainWindowView` needs no change.
+        var captured: ParsedShare?
+        let handled = ShareLinkDeepLink.handle(
+            URL(string: "https://interlinedlist.com/lists/invite/tok")!,
+            post: { captured = $0 }
+        )
+        XCTAssertTrue(handled)
+        XCTAssertEqual(captured, ParsedShare(kind: .list, token: "tok", mode: .invite))
+    }
+
     // MARK: - handle() routing (posts only for share links)
 
     func test_givenShareURL_whenHandling_thenPostsParsedAndReturnsTrue() {
