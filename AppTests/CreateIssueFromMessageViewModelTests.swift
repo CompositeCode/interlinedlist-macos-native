@@ -7,8 +7,18 @@ import InterlinedKit
 @MainActor
 final class CreateIssueFromMessageViewModelTests: XCTestCase {
 
-    private func message(text: String = "First line\nSecond line", username: String = "ada", id: String = "msg-1") -> Message {
-        MessageFixtures.message(id: id, author: MessageFixtures.author(username: username), text: text)
+    private func message(
+        text: String = "First line\nSecond line",
+        username: String = "ada",
+        id: String = "msg-1",
+        visibility: Visibility = .public
+    ) -> Message {
+        MessageFixtures.message(
+            id: id,
+            author: MessageFixtures.author(username: username),
+            text: text,
+            visibility: visibility
+        )
     }
 
     private func makeVM(_ stub: StubGitHubService, message: Message? = nil) -> CreateIssueFromMessageViewModel {
@@ -26,8 +36,24 @@ final class CreateIssueFromMessageViewModelTests: XCTestCase {
 
         XCTAssertEqual(vm.title, "Fix the parser")
         XCTAssertTrue(vm.body.contains("more detail"))
-        XCTAssertTrue(vm.body.contains("https://example.test/messages/abc"))
+        // GitHub #38: the body must carry the **public** permalink. The old
+        // /messages/<id> form bounced anyone reading the issue to /login.
+        XCTAssertTrue(vm.body.contains("https://example.test/user/ada/status/abc"))
+        XCTAssertFalse(vm.body.contains("/messages/abc"))
         XCTAssertTrue(vm.body.contains("@ada"))
+    }
+
+    func test_givenPrivateMessage_whenInit_thenBodyCarriesAttributionButNoLink() {
+        // Given a private message turned into an issue.
+        let vm = makeVM(
+            StubGitHubService(),
+            message: message(text: "Fix the parser", username: "ada", id: "abc", visibility: .private)
+        )
+
+        // Then the attribution line survives but no URL is pasted — a private
+        // post resolves for nobody reading the issue (GitHub #38).
+        XCTAssertTrue(vm.body.contains("From @ada on InterlinedList"))
+        XCTAssertFalse(vm.body.contains("https://example.test"))
     }
 
     func test_givenEmptyMessage_whenInit_thenTitleFallsBackToAuthor() {
@@ -102,7 +128,8 @@ final class CreateIssueFromMessageViewModelTests: XCTestCase {
 
         XCTAssertEqual(vm.createdIssue?.number, 55)
         XCTAssertEqual(stub.createdDrafts.first?.title, "Fix the parser")
-        XCTAssertTrue(stub.createdDrafts.first?.body?.contains("example.test/messages") ?? false)
+        // GitHub #38: what actually reaches GitHub must be the public permalink.
+        XCTAssertTrue(stub.createdDrafts.first?.body?.contains("example.test/user/ada/status/msg-1") ?? false)
         XCTAssertNil(vm.error)
     }
 
