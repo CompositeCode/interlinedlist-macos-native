@@ -194,6 +194,44 @@ final class UserEndpointTests: XCTestCase {
         XCTAssertTrue(body.isEmpty)
     }
 
+    // MARK: - View Preferences body (G35 / issue #43)
+
+    func test_givenViewPreferences_whenUpdateBuilt_thenEncodesTheWebsFourKeys() throws {
+        // Happy path: the exact body the web's own "View Preferences" card
+        // PATCHes, verified against the live bundle 2026-09-09.
+        let request = User.update(UpdateUserRequest(
+            messagesPerPage: 15,
+            viewingPreference: "followers_only",
+            showPreviews: false,
+            notificationTrayLimit: 35
+        ))
+
+        let body = try encodedBody(request)
+        XCTAssertEqual(body["messagesPerPage"] as? Int, 15)
+        XCTAssertEqual(body["viewingPreference"] as? String, "followers_only")
+        XCTAssertEqual(body["showPreviews"] as? Bool, false)
+        XCTAssertEqual(body["notificationTrayLimit"] as? Int, 35)
+    }
+
+    func test_givenNoTrayLimit_whenUpdateBuilt_thenOmitsItSoItIsNeverClobbered() throws {
+        // Invalid-by-omission guard: patching an unrelated field must not send
+        // `notificationTrayLimit: null` and wipe the account's stored value.
+        let request = User.update(UpdateUserRequest(displayName: "Ada"))
+
+        let body = try encodedBody(request)
+        XCTAssertNil(body["notificationTrayLimit"])
+        XCTAssertNil(body["viewingPreference"])
+    }
+
+    func test_givenBoundaryTrayLimits_whenUpdateBuilt_thenEncodesThemVerbatim() throws {
+        // Boundary: the request body is a faithful mirror — range enforcement
+        // is the domain layer's job (`UserSettings` clamps), not the DTO's.
+        for limit in [10, 40] {
+            let body = try encodedBody(User.update(UpdateUserRequest(notificationTrayLimit: limit)))
+            XCTAssertEqual(body["notificationTrayLimit"] as? Int, limit)
+        }
+    }
+
     func test_givenValidPatch_whenUpdateSent_thenReturnsUpdatedUser() async throws {
         let (client, transport, _) = makeClient()
         await transport.enqueue(.json(userEnvelopeJSON))

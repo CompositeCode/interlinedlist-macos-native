@@ -170,6 +170,19 @@ final class ComposerViewModel {
         return false
     }
 
+    /// Whether the advanced post options (media / schedule / cross-post) are
+    /// currently revealed, behind the gear affordance.
+    ///
+    /// Seeded from the account's `showAdvancedPostSettings` preference and
+    /// flipped by `toggleAdvancedOptions()`. This is what makes Settings ▸
+    /// Preferences ▸ "Show advanced post options" real: before G35 / issue #43
+    /// the toggle was persisted and read back by the Preferences pane and by
+    /// nothing else, so turning it off changed nothing in the composer.
+    private(set) var showsAdvancedOptions: Bool
+
+    /// True while the gear's write-back to the account is in flight.
+    private(set) var isSavingAdvancedOptionsPreference: Bool = false
+
     /// The primary-action label. Reflects the schedule-vs-send-now affordance
     /// (PLAN.md §6 M6) for a new message; falls back to the mode's label for an
     /// edit.
@@ -228,7 +241,8 @@ final class ComposerViewModel {
         userService: UserServicing? = nil,
         contentLimits: ContentLimitsProviding? = nil,
         linkedIn: LinkedInServicing? = nil,
-        initialVisibility: Visibility = .public
+        initialVisibility: Visibility = .public,
+        initialShowsAdvancedOptions: Bool = true
     ) {
         self.messages = messages
         self.eventBus = eventBus
@@ -240,6 +254,10 @@ final class ComposerViewModel {
         self.contentLimits = contentLimits
         self.linkedIn = linkedIn
         self.scheduledAt = Date().addingTimeInterval(3600)
+        // Defaults to `true` so previews and existing tests that don't pass a
+        // preference keep the pre-G35 behaviour (options always revealed).
+        // Production passes the account's real preference.
+        self.showsAdvancedOptions = initialShowsAdvancedOptions
         switch mode {
         case .newPost:
             self.body = ""
@@ -267,6 +285,34 @@ final class ComposerViewModel {
 
     func setVisibility(_ visibility: Visibility) {
         self.visibility = visibility
+    }
+
+    /// Reveals or hides the advanced post options and persists the new state to
+    /// the account, mirroring the web gear exactly: its click handler flips the
+    /// panel *and* PATCHes `{ showAdvancedPostSettings }` (verified against the
+    /// live bundle 2026-09-09), so the choice sticks across sessions and
+    /// clients.
+    ///
+    /// The local flip is optimistic and is rolled back if the write fails, so
+    /// the panel never shows a state the account does not hold. A `nil`
+    /// `userService` (previews / tests) still toggles locally — the affordance
+    /// must work without a network seam wired.
+    func toggleAdvancedOptions() async {
+        guard !isSavingAdvancedOptionsPreference else { return }
+        let snapshot = showsAdvancedOptions
+        let desired = !snapshot
+        showsAdvancedOptions = desired
+        guard let userService else { return }
+        isSavingAdvancedOptionsPreference = true
+        defer { isSavingAdvancedOptionsPreference = false }
+        do {
+            let updated = try await userService.setShowAdvancedPostSettings(desired)
+            // Trust the server's answer over the optimistic guess.
+            showsAdvancedOptions = updated.showAdvancedPostSettings
+        } catch {
+            showsAdvancedOptions = snapshot
+            self.error = error
+        }
     }
 
     /// Adds picked / dropped file URLs as attachments. Unsupported file types

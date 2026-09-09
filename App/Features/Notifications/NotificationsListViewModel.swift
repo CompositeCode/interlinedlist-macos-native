@@ -27,6 +27,13 @@ final class NotificationsListViewModel {
     private let service: NotificationsServicing
     private let bus: NotificationsEventBus?
 
+    /// The account's `notificationTrayLimit` (10...40, default 20), passed to
+    /// every tray load so the bell never renders more rows than the user asked
+    /// for (G35 / issue #43 — the preference had no reader before this).
+    /// Optional so existing tests and previews construct the view model
+    /// unchanged and get the server's own page size.
+    private let trayLimit: Int?
+
     // MARK: - Observable state
 
     /// The rendered tray rows, newest-first as the server returns them.
@@ -56,10 +63,12 @@ final class NotificationsListViewModel {
 
     init(
         service: NotificationsServicing,
-        notificationsEventBus: NotificationsEventBus? = nil
+        notificationsEventBus: NotificationsEventBus? = nil,
+        trayLimit: Int? = nil
     ) {
         self.service = service
         self.bus = notificationsEventBus
+        self.trayLimit = trayLimit
     }
 
     // MARK: - Intents
@@ -72,7 +81,7 @@ final class NotificationsListViewModel {
         isLoading = true
         defer { isLoading = false }
         do {
-            let tray = try await service.tray()
+            let tray = try await service.tray(limit: trayLimit)
             items = tray.items
             unreadCount = tray.unreadCount
             error = nil

@@ -87,7 +87,12 @@ struct ComposerWindowView: View {
                     // The account's public/private default for new posts. Read
                     // synchronously off the session-cached `CurrentUser`, so the
                     // picker opens on the right value with no fetch and no flicker.
-                    initialVisibility: environment.defaultComposeVisibility
+                    initialVisibility: environment.defaultComposeVisibility,
+                    // G35 / issue #43: the account's "Show advanced post
+                    // options" preference decides whether the gear opens
+                    // revealed. Read synchronously off the preferences store,
+                    // so there is no fetch and no flicker.
+                    initialShowsAdvancedOptions: environment.showsAdvancedPostOptionsByDefault
                 )
             }
             if assistant == nil, let environment {
@@ -150,15 +155,22 @@ struct ComposerWindowView: View {
 
                 visibilityPicker(viewModel: viewModel)
 
-                // M6 — subscriber-gated controls, new messages only.
+                // M6 — subscriber-gated controls, new messages only. The gear
+                // reveals/hides them and persists the choice to the account
+                // (G35 / issue #43), matching the web's own affordance: "Show
+                // the gear icon next to the message input so you can attach
+                // images, video, and cross-post when composing".
                 if viewModel.showsSubscriberControls {
                     Divider()
-                    if !viewModel.canUseSubscriberFeatures {
-                        upsellHint
+                    advancedOptionsToggle(viewModel: viewModel)
+                    if viewModel.showsAdvancedOptions {
+                        if !viewModel.canUseSubscriberFeatures {
+                            upsellHint
+                        }
+                        mediaSection(viewModel: viewModel)
+                        scheduleSection(viewModel: viewModel)
+                        crossPostSection(viewModel: viewModel)
                     }
-                    mediaSection(viewModel: viewModel)
-                    scheduleSection(viewModel: viewModel)
-                    crossPostSection(viewModel: viewModel)
                 }
 
                 if let error = viewModel.error {
@@ -187,6 +199,39 @@ struct ComposerWindowView: View {
         .dropDestination(for: URL.self) { urls, _ in
             viewModel.addAttachments(urls: urls)
             return true
+        }
+    }
+
+    // MARK: - Advanced options gear
+
+    /// The gear that reveals the media / schedule / cross-post sections. Always
+    /// present for a new message so the controls are never simply missing; its
+    /// initial state comes from the account's "Show advanced post options"
+    /// preference and flipping it writes that preference back.
+    @ViewBuilder
+    private func advancedOptionsToggle(viewModel: ComposerViewModel) -> some View {
+        HStack(spacing: 6) {
+            Button {
+                Task { await viewModel.toggleAdvancedOptions() }
+            } label: {
+                Label(
+                    viewModel.showsAdvancedOptions ? "Hide posting options" : "Posting options",
+                    systemImage: "gearshape"
+                )
+                .font(.ilMono(11))
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.isSavingAdvancedOptionsPreference)
+            .help("Media, scheduling, and cross-posting. Your choice is saved to your account.")
+            .accessibilityLabel("Posting options")
+            .accessibilityValue(viewModel.showsAdvancedOptions ? "Shown" : "Hidden")
+
+            if viewModel.isSavingAdvancedOptionsPreference {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+            }
+            Spacer()
         }
     }
 

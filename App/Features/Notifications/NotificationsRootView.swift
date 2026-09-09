@@ -81,7 +81,9 @@ struct NotificationsRootView: View {
         if viewModel == nil {
             let vm = NotificationsListViewModel(
                 service: environment.notificationsService,
-                notificationsEventBus: environment.notificationsEventBus
+                notificationsEventBus: environment.notificationsEventBus,
+                // G35 / issue #43 — the account's notification tray limit.
+                trayLimit: environment.notificationTrayLimit
             )
             viewModel = vm
             await vm.load()

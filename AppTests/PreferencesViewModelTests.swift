@@ -16,14 +16,18 @@ final class PreferencesViewModelTests: XCTestCase {
         showPreviews: Bool = true,
         showAdvancedPostSettings: Bool = false,
         isPrivateAccount: Bool = false,
-        messagesPerPage: Int = 20
+        messagesPerPage: Int = 20,
+        viewingPreference: ViewingPreference = .allMessages,
+        notificationTrayLimit: Int = 20
     ) -> UserSettings {
         UserSettings(
             defaultPubliclyVisible: defaultPubliclyVisible,
             showPreviews: showPreviews,
             showAdvancedPostSettings: showAdvancedPostSettings,
             isPrivateAccount: isPrivateAccount,
-            messagesPerPage: messagesPerPage
+            messagesPerPage: messagesPerPage,
+            viewingPreference: viewingPreference,
+            notificationTrayLimit: notificationTrayLimit
         )
     }
 
@@ -73,14 +77,14 @@ final class PreferencesViewModelTests: XCTestCase {
         stub.enqueueSettings(success: settings(messagesPerPage: 20))
         let viewModel = PreferencesViewModel(userService: stub)
         await viewModel.load()
-        viewModel.settings.messagesPerPage = 50
-        stub.enqueueUpdateSettings(success: settings(messagesPerPage: 50))
+        viewModel.settings.messagesPerPage = 28
+        stub.enqueueUpdateSettings(success: settings(messagesPerPage: 28))
 
         await viewModel.save()
 
         XCTAssertFalse(viewModel.hasChanges)
-        XCTAssertEqual(viewModel.settings.messagesPerPage, 50)
-        XCTAssertEqual(stub.lastUpdatedSettings?.messagesPerPage, 50)
+        XCTAssertEqual(viewModel.settings.messagesPerPage, 28)
+        XCTAssertEqual(stub.lastUpdatedSettings?.messagesPerPage, 28)
         XCTAssertNil(viewModel.error)
     }
 
@@ -100,7 +104,7 @@ final class PreferencesViewModelTests: XCTestCase {
         stub.enqueueSettings(success: settings(messagesPerPage: 20))
         let viewModel = PreferencesViewModel(userService: stub)
         await viewModel.load()
-        viewModel.settings.messagesPerPage = 40
+        viewModel.settings.messagesPerPage = 25
         stub.enqueueUpdateSettings(failure: URLError(.timedOut))
 
         await viewModel.save()

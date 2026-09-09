@@ -390,11 +390,18 @@ public final class MessagesService: MessagesServicing {
         limit: Int,
         offset: Int
     ) async throws -> TimelinePage {
-        // The Following feed has no API endpoint yet. Return an empty page
+        // Neither follower feed has an API endpoint yet. Return an empty page
         // immediately — no network call, no store write — so the view model
         // surfaces a "coming soon" empty state rather than a spinner that
         // never resolves or a spurious API error (App Store Guideline 2.1).
-        if scope == .following {
+        //
+        // Re-verified live 2026-09-09 (G35 / issue #43): `GET /api/messages`
+        // honours only `onlyMine`. `?scope=following`,
+        // `?viewingPreference=followers_only` and `?filter=followers_only` all
+        // return the identical unfiltered page, so sending the request would
+        // render the *full* timeline under a "Followers" / "Following" label —
+        // a silently-wrong feed, which is worse than an honest empty state.
+        guard scope.hasBackendFeed else {
             return TimelinePage(messages: [], hasMore: false, nextOffset: nil)
         }
         do {

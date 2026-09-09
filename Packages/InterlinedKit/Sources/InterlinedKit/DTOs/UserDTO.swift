@@ -163,8 +163,18 @@ public struct UserDTO: Decodable, Sendable, Equatable {
 
 // MARK: - UpdateUserRequest
 
-/// Request body for `POST /api/user/update`. Every field is optional so a
+/// Request body for `PATCH /api/user/update`. Every field is optional so a
 /// caller patches only what changed; nil fields are omitted from the wire body.
+///
+/// VERIFIED live 2026-09-09 (work-consolidation.md G35 / issue #43): the web
+/// client's own "View Preferences" card PATCHes exactly
+/// `{ messagesPerPage, viewingPreference, showPreviews, notificationTrayLimit }`
+/// to this route, which settles two open questions — `notificationTrayLimit` is
+/// an accepted key here (it was previously read-only on `UserDTO`), and
+/// `viewingPreference` is a snake_case token, not a display string. The web
+/// validates `messagesPerPage` to 10...30 and `notificationTrayLimit` to
+/// 10...40 before sending; `UserSettings` clamps to the same ranges so a value
+/// saved from macOS is always representable on the web.
 public struct UpdateUserRequest: Encodable, Sendable, Equatable {
     public let displayName: String?
     public let bio: String?
@@ -175,6 +185,10 @@ public struct UpdateUserRequest: Encodable, Sendable, Equatable {
     public let showPreviews: Bool?
     public let showAdvancedPostSettings: Bool?
     public let isPrivateAccount: Bool?
+    /// How many rows the notification bell tray holds (10...40, default 20).
+    /// Accepted by this route — confirmed against the web client's own PATCH
+    /// body on 2026-09-09.
+    public let notificationTrayLimit: Int?
 
     public init(
         displayName: String? = nil,
@@ -185,7 +199,8 @@ public struct UpdateUserRequest: Encodable, Sendable, Equatable {
         viewingPreference: String? = nil,
         showPreviews: Bool? = nil,
         showAdvancedPostSettings: Bool? = nil,
-        isPrivateAccount: Bool? = nil
+        isPrivateAccount: Bool? = nil,
+        notificationTrayLimit: Int? = nil
     ) {
         self.displayName = displayName
         self.bio = bio
@@ -196,11 +211,13 @@ public struct UpdateUserRequest: Encodable, Sendable, Equatable {
         self.showPreviews = showPreviews
         self.showAdvancedPostSettings = showAdvancedPostSettings
         self.isPrivateAccount = isPrivateAccount
+        self.notificationTrayLimit = notificationTrayLimit
     }
 
     private enum CodingKeys: String, CodingKey {
         case displayName, bio, theme, defaultPubliclyVisible, messagesPerPage
         case viewingPreference, showPreviews, showAdvancedPostSettings, isPrivateAccount
+        case notificationTrayLimit
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -214,6 +231,7 @@ public struct UpdateUserRequest: Encodable, Sendable, Equatable {
         try container.encodeIfPresent(showPreviews, forKey: .showPreviews)
         try container.encodeIfPresent(showAdvancedPostSettings, forKey: .showAdvancedPostSettings)
         try container.encodeIfPresent(isPrivateAccount, forKey: .isPrivateAccount)
+        try container.encodeIfPresent(notificationTrayLimit, forKey: .notificationTrayLimit)
     }
 }
 
