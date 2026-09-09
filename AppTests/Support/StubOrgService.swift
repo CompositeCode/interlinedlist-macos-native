@@ -24,6 +24,14 @@ struct RecordedOrgCall: Sendable, Equatable {
         case updateMember(orgId: String, userId: String, role: String, active: Bool?)
         case removeMember(orgId: String, userId: String)
         case users(orgId: String)
+        // G25 lifecycle + org LinkedIn
+        case delete(orgId: String, callerRole: String?)
+        case leave(orgId: String, userId: String)
+        case setMemberSuspended(orgId: String, userId: String, suspended: Bool)
+        case linkedInStatus(orgId: String)
+        case syncLinkedInPages(orgId: String, callerRole: String?)
+        case assignLinkedInPage(orgId: String, userId: String, pageId: String?, callerRole: String?)
+        case disconnectLinkedIn(orgId: String, callerRole: String?)
     }
     let kind: Kind
 }
@@ -41,6 +49,17 @@ actor StubOrgService: OrgServicing {
     private var updateMemberOutcomes: [Result<OrgMember, Error>] = []
     private var removeMemberOutcomes: [Result<Void, Error>] = []
     private var usersOutcomes: [Result<[OrgUser], Error>] = []
+    private var deleteOutcomes: [Result<Void, Error>] = []
+    private var leaveOutcomes: [Result<Void, Error>] = []
+    private var setSuspendedOutcomes: [Result<OrgMember, Error>] = []
+    private var linkedInStatusOutcomes: [Result<OrgLinkedInStatus, Error>] = []
+    private var syncPagesOutcomes: [Result<OrgLinkedInStatus, Error>] = []
+    private var assignPageOutcomes: [Result<Void, Error>] = []
+    private var disconnectOutcomes: [Result<Void, Error>] = []
+
+    /// What `linkedInAuthorizeURL` returns. Non-nil by default so the connect
+    /// affordance is exercisable; set to nil to cover the unbuildable case.
+    var authorizeURL: URL? = URL(string: "https://interlinedlist.com/api/auth/linkedin/org-authorize?organizationId=o1")
 
     private(set) var recorded: [RecordedOrgCall] = []
 
@@ -72,6 +91,29 @@ actor StubOrgService: OrgServicing {
 
     func enqueueUsers(success users: [OrgUser]) { usersOutcomes.append(.success(users)) }
     func enqueueUsers(failure error: Error) { usersOutcomes.append(.failure(error)) }
+
+    func enqueueDeleteSuccess() { deleteOutcomes.append(.success(())) }
+    func enqueueDelete(failure error: Error) { deleteOutcomes.append(.failure(error)) }
+
+    func enqueueLeaveSuccess() { leaveOutcomes.append(.success(())) }
+    func enqueueLeave(failure error: Error) { leaveOutcomes.append(.failure(error)) }
+
+    func enqueueSetSuspended(success member: OrgMember) { setSuspendedOutcomes.append(.success(member)) }
+    func enqueueSetSuspended(failure error: Error) { setSuspendedOutcomes.append(.failure(error)) }
+
+    func enqueueLinkedInStatus(success status: OrgLinkedInStatus) { linkedInStatusOutcomes.append(.success(status)) }
+    func enqueueLinkedInStatus(failure error: Error) { linkedInStatusOutcomes.append(.failure(error)) }
+
+    func enqueueSyncPages(success status: OrgLinkedInStatus) { syncPagesOutcomes.append(.success(status)) }
+    func enqueueSyncPages(failure error: Error) { syncPagesOutcomes.append(.failure(error)) }
+
+    func enqueueAssignPageSuccess() { assignPageOutcomes.append(.success(())) }
+    func enqueueAssignPage(failure error: Error) { assignPageOutcomes.append(.failure(error)) }
+
+    func enqueueDisconnectSuccess() { disconnectOutcomes.append(.success(())) }
+    func enqueueDisconnect(failure error: Error) { disconnectOutcomes.append(.failure(error)) }
+
+    func setAuthorizeURL(_ url: URL?) { authorizeURL = url }
 
     // MARK: OrgServicing
 
@@ -133,6 +175,84 @@ actor StubOrgService: OrgServicing {
     func users(of orgId: String) async throws -> [OrgUser] {
         recorded.append(.init(kind: .users(orgId: orgId)))
         return try take(&usersOutcomes, label: "users")
+    }
+
+    // MARK: OrgServicing — G25 lifecycle
+
+    func delete(id: String, callerRole: OrgRole?) async throws {
+        recorded.append(.init(kind: .delete(orgId: id, callerRole: callerRole?.wireToken)))
+        // Mirror the real service's precondition so view-model tests exercise
+        // the same gate the production path applies.
+        if let violation = OrgOwnershipRules.validateDelete(callerRole: callerRole) { throw violation }
+        let _: Void = try take(&deleteOutcomes, label: "delete")
+    }
+
+    func leave(organization: Organization, userId: String, members: [OrgMember]) async throws {
+        recorded.append(.init(kind: .leave(orgId: organization.id, userId: userId)))
+        if let violation = OrgOwnershipRules.validateLeave(
+            organization: organization,
+            userId: userId,
+            members: members
+        ) { throw violation }
+        let _: Void = try take(&leaveOutcomes, label: "leave")
+    }
+
+    func setMemberSuspended(
+        in orgId: String,
+        member: OrgMember,
+        suspended: Bool,
+        members: [OrgMember]
+    ) async throws -> OrgMember {
+        recorded.append(.init(kind: .setMemberSuspended(orgId: orgId, userId: member.userId, suspended: suspended)))
+        if let violation = OrgOwnershipRules.validateSuspension(
+            member: member,
+            suspended: suspended,
+            members: members
+        ) { throw violation }
+        return try take(&setSuspendedOutcomes, label: "setMemberSuspended")
+    }
+
+    // MARK: OrgServicing — G25 organization LinkedIn
+
+    func linkedInStatus(of orgId: String) async throws -> OrgLinkedInStatus {
+        recorded.append(.init(kind: .linkedInStatus(orgId: orgId)))
+        return try take(&linkedInStatusOutcomes, label: "linkedInStatus")
+    }
+
+    func syncLinkedInPages(of orgId: String, callerRole: OrgRole?) async throws -> OrgLinkedInStatus {
+        recorded.append(.init(kind: .syncLinkedInPages(orgId: orgId, callerRole: callerRole?.wireToken)))
+        try requireManager(callerRole)
+        return try take(&syncPagesOutcomes, label: "syncLinkedInPages")
+    }
+
+    func assignLinkedInPage(
+        in orgId: String,
+        userId: String,
+        pageId: String?,
+        callerRole: OrgRole?
+    ) async throws {
+        recorded.append(.init(kind: .assignLinkedInPage(
+            orgId: orgId, userId: userId, pageId: pageId, callerRole: callerRole?.wireToken
+        )))
+        try requireManager(callerRole)
+        let _: Void = try take(&assignPageOutcomes, label: "assignLinkedInPage")
+    }
+
+    func disconnectLinkedIn(from orgId: String, callerRole: OrgRole?) async throws {
+        recorded.append(.init(kind: .disconnectLinkedIn(orgId: orgId, callerRole: callerRole?.wireToken)))
+        try requireManager(callerRole)
+        let _: Void = try take(&disconnectOutcomes, label: "disconnectLinkedIn")
+    }
+
+    nonisolated func linkedInAuthorizeURL(organizationId: String) -> URL? {
+        URL(string: "https://interlinedlist.com/api/auth/linkedin/org-authorize?organizationId=\(organizationId)")
+    }
+
+    private func requireManager(_ role: OrgRole?) throws {
+        switch role {
+        case .owner, .admin: return
+        case .member, .other, .none: throw OrgLifecycleError.linkedInRequiresOwnerOrAdmin
+        }
     }
 
     // MARK: - Internals

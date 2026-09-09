@@ -156,6 +156,73 @@ final class UserServiceTests: XCTestCase {
         XCTAssertTrue(memberships.isEmpty)
     }
 
+    // MARK: - join an organization (work-consolidation.md G25)
+
+    func test_givenPublicOrg_whenJoining_thenPostsThenRereadsMemberships() async throws {
+        // Happy path. The 201 body is unmodelled upstream, so the service
+        // ignores it and re-reads the list — which also refreshes the cache.
+        let api = StubAPIClient()
+        await api.enqueue(json: "{}")
+        await api.enqueue(json: Fixtures.userOrganizationsEnvelope([
+            Fixtures.userOrganizationObject(id: "o-1", name: "Acme", role: "member")
+        ]))
+        let service = UserService(api: api)
+
+        let memberships = try await service.joinOrganization(id: "o-1")
+
+        XCTAssertEqual(memberships.map(\.id), ["o-1"])
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.map(\.method), ["POST", "GET"])
+        XCTAssertEqual(recorded.first?.path, "/api/user/organizations")
+        XCTAssertEqual(recorded.last?.path, "/api/user/organizations")
+    }
+
+    func test_givenBlankOrgId_whenJoining_thenRejectsBeforeAnyServiceCall() async throws {
+        // Invalid input: nothing to join.
+        let api = StubAPIClient()
+        let service = UserService(api: api)
+
+        do {
+            _ = try await service.joinOrganization(id: "   ")
+            XCTFail("Expected an OrgLifecycleError")
+        } catch let error as OrgLifecycleError {
+            XCTAssertEqual(error, .unknownCurrentUser)
+        }
+
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty, "A rejected join must not hit the network")
+    }
+
+    func test_givenJoinFails_whenJoining_thenSurfacesAPIErrorAndDoesNotReread() async throws {
+        // Upstream API failure: no follow-up read after a failed join.
+        let api = StubAPIClient()
+        await api.enqueue(failure: .forbidden(serverMessage: "private org"))
+        let service = UserService(api: api)
+
+        do {
+            _ = try await service.joinOrganization(id: "o-1")
+            XCTFail("Expected an APIError")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .forbidden(serverMessage: "private org"))
+        }
+
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.map(\.method), ["POST"])
+    }
+
+    func test_givenJoinIntoNoMemberships_whenJoining_thenReturnsEmptyList() async throws {
+        // Boundary: the re-read comes back empty (the join did not stick).
+        // The caller sees the truth rather than an optimistic row.
+        let api = StubAPIClient()
+        await api.enqueue(json: "{}")
+        await api.enqueue(json: Fixtures.userOrganizationsEnvelope([]))
+        let service = UserService(api: api)
+
+        let memberships = try await service.joinOrganization(id: "o-1")
+
+        XCTAssertTrue(memberships.isEmpty)
+    }
+
     // MARK: - organizations SWR cache
 
     func test_givenStore_whenLoadingOrganizations_thenWritesThroughToCache() async throws {

@@ -119,17 +119,35 @@ final class OrgMembersViewModel {
         guard let index = members.firstIndex(where: { $0.userId == member.userId }) else { return nil }
         guard members[index].role != newRole else { return nil }
 
+        // Last-owner protection (G25): demoting the only owner strands the
+        // org. Rejected here so the user gets the specific sentence instead of
+        // a generic 400 from the server.
+        if let violation = OrgOwnershipRules.validateRoleChange(
+            member: members[index],
+            to: newRole,
+            members: members
+        ) {
+            actionError = violation
+            return violation
+        }
+
         let snapshot = members
         pendingOperations.insert(member.userId)
         defer { pendingOperations.remove(member.userId) }
 
-        // Optimistic: paint the new role immediately.
+        // Optimistic: paint the new role immediately. Identity is carried
+        // across explicitly — the roster row now renders a name and avatar,
+        // and rebuilding without them would blank the row mid-flight.
         members[index] = OrgMember(
             userId: member.userId,
             membershipId: member.membershipId,
             role: newRole,
             active: member.active,
-            createdAt: member.createdAt
+            createdAt: member.createdAt,
+            username: member.username,
+            displayName: member.displayName,
+            avatarURL: member.avatarURL,
+            emailVerified: member.emailVerified
         )
 
         do {
@@ -139,9 +157,21 @@ final class OrgMembersViewModel {
                 role: newRole,
                 active: nil
             )
-            // Trust the server's authoritative return value, not the local copy.
+            // Trust the server's authoritative role, but keep the identity:
+            // the membership envelope this returns carries no username or
+            // avatar, so adopting it wholesale would blank the row.
             if let idx = members.firstIndex(where: { $0.userId == updated.userId }) {
-                members[idx] = updated
+                members[idx] = OrgMember(
+                    userId: updated.userId,
+                    membershipId: updated.membershipId,
+                    role: updated.role,
+                    active: updated.active,
+                    createdAt: updated.createdAt ?? member.createdAt,
+                    username: member.username,
+                    displayName: member.displayName,
+                    avatarURL: member.avatarURL,
+                    emailVerified: member.emailVerified
+                )
             }
             actionError = nil
             return nil
@@ -214,6 +244,12 @@ final class OrgMembersViewModel {
         guard !pendingOperations.contains(member.userId) else { return nil }
         guard members.contains(where: { $0.userId == member.userId }) else { return nil }
 
+        // Last-owner protection (G25) — same rule as demotion.
+        if let violation = OrgOwnershipRules.validateRemoval(member: member, members: members) {
+            actionError = violation
+            return violation
+        }
+
         let snapshot = members
         pendingOperations.insert(member.userId)
         defer { pendingOperations.remove(member.userId) }
@@ -229,6 +265,90 @@ final class OrgMembersViewModel {
             actionError = error
             return error
         }
+    }
+
+    // MARK: - Suspend / restore (optimistic, work-consolidation.md G25)
+
+    /// Suspends or restores a member's access without removing them from the
+    /// organization (`/help/organizations` — "suspend their access").
+    ///
+    /// There is no suspend route: suspension is `active` on the member-update
+    /// body, which is why this goes through `OrgServicing.setMemberSuspended`
+    /// rather than a bespoke call. The service re-sends the member's current
+    /// role so a suspend cannot silently change it.
+    ///
+    /// Optimistic, like every other mutation here: flip the row, call the
+    /// service, replace with the server's authoritative membership on success,
+    /// restore the snapshot on failure.
+    ///
+    /// - Returns: the error if rejected / failed, `nil` on success or no-op.
+    @discardableResult
+    func setSuspended(_ member: OrgMember, suspended: Bool) async -> Error? {
+        guard !pendingOperations.contains(member.userId) else { return nil }
+        guard let index = members.firstIndex(where: { $0.userId == member.userId }) else { return nil }
+        guard members[index].isSuspended != suspended else { return nil }
+
+        // Suspending the last owner leaves the org with no usable owner.
+        if let violation = OrgOwnershipRules.validateSuspension(
+            member: members[index],
+            suspended: suspended,
+            members: members
+        ) {
+            actionError = violation
+            return violation
+        }
+
+        let snapshot = members
+        pendingOperations.insert(member.userId)
+        defer { pendingOperations.remove(member.userId) }
+
+        // Optimistic: paint the new access state immediately.
+        members[index] = OrgMember(
+            userId: member.userId,
+            membershipId: member.membershipId,
+            role: member.role,
+            active: !suspended,
+            createdAt: member.createdAt,
+            username: member.username,
+            displayName: member.displayName,
+            avatarURL: member.avatarURL,
+            emailVerified: member.emailVerified
+        )
+
+        do {
+            let updated = try await orgs.setMemberSuspended(
+                in: orgId,
+                member: member,
+                suspended: suspended,
+                members: snapshot
+            )
+            if let idx = members.firstIndex(where: { $0.userId == updated.userId }) {
+                members[idx] = updated
+            }
+            actionError = nil
+            return nil
+        } catch {
+            members = snapshot
+            actionError = error
+            return error
+        }
+    }
+
+    /// Whether the roster's rules currently allow suspending `member`. Drives
+    /// the control's enabled state so the UI does not offer an action that is
+    /// guaranteed to be rejected.
+    func canSuspend(_ member: OrgMember) -> Bool {
+        OrgOwnershipRules.validateSuspension(member: member, suspended: true, members: members) == nil
+    }
+
+    /// Whether the roster's rules currently allow removing `member`.
+    func canRemove(_ member: OrgMember) -> Bool {
+        OrgOwnershipRules.validateRemoval(member: member, members: members) == nil
+    }
+
+    /// Whether `member` can be moved to `role` under the last-owner rule.
+    func canChangeRole(of member: OrgMember, to role: OrgRole) -> Bool {
+        OrgOwnershipRules.validateRoleChange(member: member, to: role, members: members) == nil
     }
 
     // MARK: - Handle lookup (NW-6)

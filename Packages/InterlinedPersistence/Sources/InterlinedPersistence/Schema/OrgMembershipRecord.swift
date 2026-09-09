@@ -38,6 +38,14 @@ final class OrgMembershipRecord {
     var isPublic: Bool
     var orgCreatedAt: Date?
     var orgUpdatedAt: Date?
+    var slug: String?
+
+    /// The system-org flag. Cached so "you can't leave The Public" holds on a
+    /// cache-first paint, before the network read lands.
+    var isSystem: Bool = false
+
+    /// Members in the org, denormalized for the My Organizations row subtitle.
+    var memberCount: Int?
 
     /// Wire string for the caller's role. Rehydrated via `OrgRole(wireToken:)`.
     var roleRaw: String
@@ -55,6 +63,9 @@ final class OrgMembershipRecord {
         isPublic: Bool = false,
         orgCreatedAt: Date? = nil,
         orgUpdatedAt: Date? = nil,
+        slug: String? = nil,
+        isSystem: Bool = false,
+        memberCount: Int? = nil,
         roleRaw: String,
         joinedAt: Date? = nil,
         position: Int
@@ -65,6 +76,9 @@ final class OrgMembershipRecord {
         self.isPublic = isPublic
         self.orgCreatedAt = orgCreatedAt
         self.orgUpdatedAt = orgUpdatedAt
+        self.slug = slug
+        self.isSystem = isSystem
+        self.memberCount = memberCount
         self.roleRaw = roleRaw
         self.joinedAt = joinedAt
         self.position = position
