@@ -601,3 +601,111 @@ final class MapperTests: XCTestCase {
         XCTAssertEqual(preview.displayHost, "example.com")
     }
 }
+
+// MARK: - ScheduledDestinations (GitHub #55)
+
+/// The destination projection is what the Scheduled pane renders, so its
+/// mapping is covered against the live shape: the web's own badge component
+/// reads `mastodonProviderIds`, `crossPostToBluesky` and `crossPostToLinkedIn`
+/// off `scheduledCrossPostConfig`, and the server omits keys for networks that
+/// were not selected.
+final class ScheduledDestinationsMapperTests: XCTestCase {
+
+    // Happy path — every network selected maps across and reads back in the
+    // web's display order.
+    func test_givenEveryNetworkSelected_whenMapped_thenAllAreCarried() {
+        // Given
+        let dto = ScheduledCrossPostConfigDTO(
+            mastodonProviderIds: ["prov-1", "prov-2"],
+            crossPostToBluesky: true,
+            crossPostToLinkedIn: true,
+            crossPostToTwitter: true
+        )
+
+        // When
+        let destinations = ScheduledDestinations(from: dto)
+
+        // Then
+        XCTAssertEqual(destinations.mastodonProviderIds, ["prov-1", "prov-2"])
+        XCTAssertTrue(destinations.bluesky)
+        XCTAssertTrue(destinations.linkedIn)
+        XCTAssertTrue(destinations.twitter)
+        XCTAssertFalse(destinations.isEmpty)
+        // One Mastodon label for two provider ids, matching the web badge.
+        XCTAssertEqual(destinations.displayNames, ["Mastodon", "Bluesky", "LinkedIn", "X"])
+    }
+
+    // Invalid / partial input — the server omits unselected keys entirely, so
+    // absent must resolve to "not a destination", never to a crash or a true.
+    func test_givenOmittedKeys_whenMapped_thenAbsentMeansNotADestination() {
+        // Given — only Bluesky was selected, so that is the only key sent.
+        let dto = ScheduledCrossPostConfigDTO(crossPostToBluesky: true)
+
+        // When
+        let destinations = ScheduledDestinations(from: dto)
+
+        // Then
+        XCTAssertEqual(destinations.mastodonProviderIds, [])
+        XCTAssertTrue(destinations.bluesky)
+        XCTAssertFalse(destinations.linkedIn)
+        XCTAssertFalse(destinations.twitter)
+        XCTAssertEqual(destinations.displayNames, ["Bluesky"])
+    }
+
+    // Boundary — a config that selects nothing is NOT the same as no config:
+    // it means the post publishes to InterlinedList only, and the UI says so.
+    func test_givenConfigSelectingNothing_whenMapped_thenIsEmptyButPresent() {
+        // Given
+        let dto = ScheduledCrossPostConfigDTO(
+            mastodonProviderIds: [],
+            crossPostToBluesky: false,
+            crossPostToLinkedIn: false,
+            crossPostToTwitter: false
+        )
+
+        // When
+        let destinations = ScheduledDestinations(from: dto)
+
+        // Then
+        XCTAssertTrue(destinations.isEmpty)
+        XCTAssertEqual(destinations.displayNames, [])
+    }
+
+    // Happy path through the full message decode: a scheduled post carries its
+    // destinations end to end, from wire JSON to the rendered projection.
+    func test_givenScheduledMessageJSON_whenDecoded_thenDestinationsSurvive() throws {
+        // Given — the live shape, with Mastodon and LinkedIn selected.
+        let json = Fixtures.messageObject(
+            id: "m-1",
+            scheduledAt: "2027-01-15T09:00:00Z",
+            scheduledCrossPostConfigJSON: """
+            {"mastodonProviderIds":["prov-1"],"crossPostToLinkedIn":true}
+            """
+        )
+
+        // When
+        let dto = try JSONCoders.makeDecoder().decode(MessageDTO.self, from: Data(json.utf8))
+        let message = Message(from: dto)
+
+        // Then
+        XCTAssertEqual(message.scheduledDestinations?.mastodonProviderIds, ["prov-1"])
+        XCTAssertEqual(message.scheduledDestinations?.linkedIn, true)
+        XCTAssertEqual(message.scheduledDestinations?.bluesky, false)
+        XCTAssertEqual(message.scheduledDestinations?.displayNames, ["Mastodon", "LinkedIn"])
+    }
+
+    // Boundary — an already-published message sends `scheduledCrossPostConfig:
+    // null`, which must map to nil, not to `.none`. The UI relies on that
+    // difference to tell "not scheduled" from "scheduled, nothing selected".
+    func test_givenNullConfig_whenDecoded_thenDestinationsAreNil() throws {
+        // Given
+        let json = Fixtures.messageObject(id: "m-2")
+
+        // When
+        let dto = try JSONCoders.makeDecoder().decode(MessageDTO.self, from: Data(json.utf8))
+        let message = Message(from: dto)
+
+        // Then
+        XCTAssertNil(message.scheduledDestinations)
+    }
+}

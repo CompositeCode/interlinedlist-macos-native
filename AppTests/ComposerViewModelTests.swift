@@ -1025,6 +1025,94 @@ final class ComposerViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.linkedInNotConfigured)
     }
 
+    // MARK: - Scheduled destination summary (GitHub #55)
+
+    func test_givenSeveralNetworksEnabled_whenSummarising_thenListsThemInWebOrder() async {
+        // Happy path: the schedule dialog names every selected network, in the
+        // order the web lists them.
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(),
+            eventBus: ComposerEventBus(),
+            mode: .newPost
+        )
+        viewModel.crossPostToMastodon = true
+        viewModel.mastodonProviderIdsInput = "prov-1, prov-2"
+        viewModel.crossPostToBluesky = true
+        viewModel.crossPostToLinkedIn = true
+        viewModel.crossPostToTwitter = true
+
+        XCTAssertEqual(
+            viewModel.scheduledDestinationNames,
+            ["Mastodon", "Bluesky", "LinkedIn", "X"]
+        )
+        XCTAssertEqual(
+            viewModel.scheduledDestinationSummary,
+            "Mastodon \u{00B7} Bluesky \u{00B7} LinkedIn \u{00B7} X"
+        )
+    }
+
+    func test_givenMastodonToggledWithNoProviderIds_whenSummarising_thenMastodonIsOmitted() async {
+        // Invalid input: the toggle alone sends an empty `mastodonProviderIds`,
+        // which fans out nowhere — so claiming Mastodon as a destination would
+        // be a lie the user acts on.
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(),
+            eventBus: ComposerEventBus(),
+            mode: .newPost
+        )
+        viewModel.crossPostToMastodon = true
+        viewModel.mastodonProviderIdsInput = "   "
+
+        XCTAssertEqual(viewModel.scheduledDestinationNames, [])
+        XCTAssertEqual(viewModel.scheduledDestinationSummary, "InterlinedList only")
+    }
+
+    func test_givenNoNetworksEnabled_whenSummarising_thenSaysInterlinedListOnly() async {
+        // Empty / boundary: the dialog always states a destination rather than
+        // rendering a blank where the list would be.
+        let viewModel = ComposerViewModel(
+            messages: StubMessagesService(),
+            eventBus: ComposerEventBus(),
+            mode: .newPost
+        )
+
+        XCTAssertTrue(viewModel.scheduledDestinationNames.isEmpty)
+        XCTAssertEqual(viewModel.scheduledDestinationSummary, "InterlinedList only")
+    }
+
+    func test_givenScheduledPost_whenSubmitting_thenCrossPostFlagsTravelWithTheSchedule() async throws {
+        // Upstream-contract guard, and the answer to the question issue #55
+        // raised: are composer cross-post selections actually carried onto a
+        // *scheduled* post, or silently dropped? They are carried — the create
+        // call sends them in the same body as `scheduledAt`. This test pins that
+        // down so a future composer refactor cannot quietly break it.
+        let stub = StubMessagesService()
+        await stub.enqueueCreatePost(success: MessageFixtures.message(id: "m-1", text: "later"))
+        let viewModel = ComposerViewModel(
+            messages: stub,
+            eventBus: ComposerEventBus(),
+            mode: .newPost,
+            entitlements: EntitlementsService(customerStatus: .subscriber)
+        )
+        viewModel.body = "later"
+        let when = Date().addingTimeInterval(7200)
+        viewModel.isScheduled = true
+        viewModel.scheduledAt = when
+        viewModel.crossPostToBluesky = true
+        viewModel.crossPostToTwitter = true
+
+        await viewModel.submit()
+
+        let recorded = await stub.recorded
+        guard case .createPost(_, _, _, _, _, let scheduledAt, _, let bluesky, _, let twitter) =
+                recorded.last?.kind else {
+            return XCTFail("Expected a createPost call, got \(String(describing: recorded.last?.kind))")
+        }
+        XCTAssertEqual(scheduledAt, when)
+        XCTAssertTrue(bluesky, "A scheduled post must keep its Bluesky selection")
+        XCTAssertTrue(twitter, "A scheduled post must keep its X selection")
+    }
+
     // MARK: - Content-limit test helpers
 
     private func makeLimits(messageMaxContentLength: Int) -> ContentLimits {

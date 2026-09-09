@@ -22,13 +22,19 @@ enum Fixtures {
         pushCount: Int = 1,
         parentId: String? = nil,
         scheduledAt: String? = nil,
-        pushedMessageId: String? = nil
+        pushedMessageId: String? = nil,
+        /// Raw JSON for `scheduledCrossPostConfig` (GitHub #55). Passed as a
+        /// string so a test can assert on the exact live shape — including the
+        /// partial objects the server sends, where unselected networks are
+        /// omitted rather than sent as `false`.
+        scheduledCrossPostConfigJSON: String? = nil
     ) -> String {
         let displayNameJSON = displayName.map { "\"\($0)\"" } ?? "null"
         let tagsJSON = tags.map { "[" + $0.map { "\"\($0)\"" }.joined(separator: ",") + "]" } ?? "null"
         let parentJSON = parentId.map { "\"\($0)\"" } ?? "null"
         let scheduledJSON = scheduledAt.map { "\"\($0)\"" } ?? "null"
         let pushedIdJSON = pushedMessageId.map { "\"\($0)\"" } ?? "null"
+        let scheduledConfigJSON = scheduledCrossPostConfigJSON ?? "null"
         return """
         {
           "id": "\(id)",
@@ -49,7 +55,8 @@ enum Fixtures {
             "displayName": \(displayNameJSON),
             "avatar": "https://cdn.interlinedlist.com/\(username).png"
           },
-          "dugByMe": \(dugByMe)
+          "dugByMe": \(dugByMe),
+          "scheduledCrossPostConfig": \(scheduledConfigJSON)
         }
         """
     }

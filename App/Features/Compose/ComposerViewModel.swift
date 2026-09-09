@@ -197,6 +197,41 @@ final class ComposerViewModel {
     /// the user gets an immediate signal instead of a server-side rejection.
     var isOverMessageLimit: Bool { messageCharacterCount > messageCharacterLimit }
 
+    // MARK: - Scheduled destinations (GitHub #55)
+
+    /// The cross-post destinations the draft will fan out to, as the schedule
+    /// dialog names them.
+    ///
+    /// The web's schedule dialog lists the connected networks alongside the
+    /// date so you can see where a queued post is going at the moment you queue
+    /// it. macOS keeps its per-network toggles where they are (they are shared
+    /// with the send-now path) and mirrors the *information* here instead —
+    /// deliberately additive, so the composer's structure is untouched.
+    ///
+    /// Derived from the same toggles `submitNewPost` sends, so the summary
+    /// cannot drift from what is actually posted. Mastodon counts only when a
+    /// provider id was actually entered: the toggle alone sends an empty
+    /// `mastodonProviderIds`, which fans out nowhere.
+    var scheduledDestinationNames: [String] {
+        var names: [String] = []
+        if crossPostToMastodon, !Self.normalise(providerIds: mastodonProviderIdsInput).isEmpty {
+            names.append("Mastodon")
+        }
+        if crossPostToBluesky { names.append("Bluesky") }
+        if crossPostToLinkedIn { names.append("LinkedIn") }
+        if crossPostToTwitter { names.append("X") }
+        return names
+    }
+
+    /// One line naming where the scheduled post will land. Falls back to the
+    /// InterlinedList-only wording so the dialog always states a destination
+    /// rather than showing a blank where the list would be.
+    var scheduledDestinationSummary: String {
+        let names = scheduledDestinationNames
+        guard !names.isEmpty else { return "InterlinedList only" }
+        return names.joined(separator: " \u{00B7} ")
+    }
+
     // MARK: - Validation
 
     /// Whether the current draft would be accepted for submit. Empty body is

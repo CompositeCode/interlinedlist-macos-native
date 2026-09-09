@@ -516,7 +516,7 @@ final class MessagesServiceTests: XCTestCase {
         XCTAssertTrue(description.contains("delete"))
     }
 
-    // MARK: - reschedule (the write the live API does support)
+    // MARK: - updateScheduled (the write the live API does support)
 
     func test_givenNewDate_whenRescheduling_thenPatchesWithScheduledAtOnly() async throws {
         // Given — the live reply is a bare MessageDTO, not the create envelope.
@@ -527,7 +527,10 @@ final class MessagesServiceTests: XCTestCase {
         let newDate = Date(timeIntervalSince1970: 1_800_000_000)
 
         // When
-        let updated = try await service.reschedule(messageId: "m-42", newDate: newDate)
+        let updated = try await service.updateScheduled(
+            messageId: "m-42",
+            edit: ScheduledPostEdit(scheduledAt: newDate)
+        )
 
         // Then
         XCTAssertEqual(updated.id, "m-42")
@@ -547,9 +550,9 @@ final class MessagesServiceTests: XCTestCase {
         let store = InMemoryMessageStore()
         let service = MessagesService(api: api, store: store)
 
-        _ = try await service.reschedule(
+        _ = try await service.updateScheduled(
             messageId: "m-42",
-            newDate: Date(timeIntervalSince1970: 1_800_000_000)
+            edit: ScheduledPostEdit(scheduledAt: Date(timeIntervalSince1970: 1_800_000_000))
         )
 
         let cached = await store.cachedMessage(id: "m-42")
@@ -566,7 +569,10 @@ final class MessagesServiceTests: XCTestCase {
         let service = MessagesService(api: api)
 
         do {
-            _ = try await service.reschedule(messageId: "m-42", newDate: .distantFuture)
+            _ = try await service.updateScheduled(
+                messageId: "m-42",
+                edit: ScheduledPostEdit(scheduledAt: .distantFuture)
+            )
             XCTFail("Expected an APIError")
         } catch let error as APIError {
             XCTAssertEqual(
@@ -574,6 +580,108 @@ final class MessagesServiceTests: XCTestCase {
                 .badRequest(serverMessage: "Can only edit scheduled posts that are in the future")
             )
         }
+    }
+
+    // MARK: - updateScheduled: the edits the live API cannot apply (GitHub #55)
+
+    func test_givenContentEdit_whenUpdatingScheduled_thenRefusesWithoutCallingTheAPI() async throws {
+        // Invalid input: the live PATCH silently DISCARDS a content sent beside
+        // scheduledAt, so a request that looks successful would leave the user
+        // believing an edit saved. Refuse locally, and prove no call was made.
+        let api = StubAPIClient()
+        let service = MessagesService(api: api)
+
+        do {
+            _ = try await service.updateScheduled(
+                messageId: "m-42",
+                edit: ScheduledPostEdit(scheduledAt: .distantFuture, content: "rewritten")
+            )
+            XCTFail("Expected scheduledEditNotSupported")
+        } catch let error as MessagesError {
+            XCTAssertEqual(error, .scheduledEditNotSupported(fields: ["content"]))
+        }
+
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty, "A refused edit must not reach the network")
+    }
+
+    func test_givenDestinationEdit_whenUpdatingScheduled_thenNamesEveryUnsupportedField() async throws {
+        // Both unsupported fields at once — the error must name them in a
+        // stable order so the user-facing sentence is deterministic.
+        let api = StubAPIClient()
+        let service = MessagesService(api: api)
+
+        do {
+            _ = try await service.updateScheduled(
+                messageId: "m-42",
+                edit: ScheduledPostEdit(
+                    scheduledAt: .distantFuture,
+                    content: "rewritten",
+                    destinations: ScheduledDestinations(bluesky: true)
+                )
+            )
+            XCTFail("Expected scheduledEditNotSupported")
+        } catch let error as MessagesError {
+            XCTAssertEqual(error, .scheduledEditNotSupported(fields: ["content", "destinations"]))
+        }
+
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty)
+    }
+
+    func test_givenPastDate_whenUpdatingScheduled_thenRejectsBeforeCallingTheAPI() async throws {
+        // Invalid input: a past publish time is rejected client-side so the
+        // user gets a specific message instead of a round-trip and a generic 400.
+        let api = StubAPIClient()
+        let service = MessagesService(api: api)
+
+        do {
+            _ = try await service.updateScheduled(
+                messageId: "m-42",
+                edit: ScheduledPostEdit(scheduledAt: Date(timeIntervalSince1970: 1))
+            )
+            XCTFail("Expected scheduledDateNotInFuture")
+        } catch let error as MessagesError {
+            XCTAssertEqual(error, .scheduledDateNotInFuture)
+        }
+
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty, "A past-dated reschedule must not reach the network")
+    }
+
+    func test_givenEmptyEdit_whenUpdatingScheduled_thenReportsNoChanges() async throws {
+        // Boundary: an edit that asks for nothing is a no-op, not a request.
+        let api = StubAPIClient()
+        let service = MessagesService(api: api)
+
+        do {
+            _ = try await service.updateScheduled(messageId: "m-42", edit: ScheduledPostEdit())
+            XCTFail("Expected noScheduledChanges")
+        } catch let error as MessagesError {
+            XCTAssertEqual(error, .noScheduledChanges)
+        }
+
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty)
+    }
+
+    func test_givenScheduledEditRefusal_whenDescribed_thenNamesTheFieldsAndTheWorkaround() {
+        // The sentence is user-facing: it must say what cannot change and what
+        // to do instead, or the read-only sheet looks like a bug.
+        let description = MessagesError.scheduledEditNotSupported(
+            fields: ["content", "destinations"]
+        ).description
+        XCTAssertTrue(description.contains("content"))
+        XCTAssertTrue(description.contains("destinations"))
+        XCTAssertTrue(description.lowercased().contains("cancel"))
+    }
+
+    func test_givenUnsupportedFields_whenEditOnlyMovesTheDate_thenNoneAreReported() {
+        // Boundary on the projection itself: a time-only edit is the supported
+        // case and must report nothing unsupported.
+        let edit = ScheduledPostEdit(scheduledAt: .distantFuture)
+        XCTAssertEqual(edit.unsupportedFields, [])
+        XCTAssertFalse(edit.isEmpty)
     }
 
     // MARK: - M2 write surface: delete

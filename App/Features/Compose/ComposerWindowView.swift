@@ -320,6 +320,30 @@ struct ComposerWindowView: View {
                 )
                 .datePickerStyle(.compact)
                 .disabled(!viewModel.canUseSubscriberFeatures)
+
+                // GitHub #55 — the web's schedule dialog names the networks a
+                // queued post will reach, next to the date. The per-network
+                // toggles stay in `crossPostSection` (they serve the send-now
+                // path too); this mirrors the information so the schedule
+                // decision is made with its destinations in view.
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.branch")
+                    Text("Goes to \(viewModel.scheduledDestinationSummary)")
+                }
+                .font(.ilMono(10))
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Scheduled post destinations: \(viewModel.scheduledDestinationSummary)")
+
+                // The web lets you click the scheduled date to drop the
+                // schedule and post immediately; this is the same escape hatch.
+                Button("Post now instead") {
+                    viewModel.isScheduled = false
+                }
+                .buttonStyle(.link)
+                .font(.ilMono(10))
+                .disabled(!viewModel.canUseSubscriberFeatures)
+                .help("Cancel scheduling and publish this message right away.")
             }
         }
     }

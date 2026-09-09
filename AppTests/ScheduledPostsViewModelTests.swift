@@ -18,7 +18,11 @@ final class ScheduledPostsViewModelTests: XCTestCase {
     /// A `Message` with a non-nil `scheduledAt` (the list only shows queued
     /// posts). `MessageFixtures.message` always sets `scheduledAt: nil`, so we
     /// build directly here.
-    private func scheduledMessage(id: String, at: Date = Date().addingTimeInterval(3600)) -> Message {
+    private func scheduledMessage(
+        id: String,
+        at: Date = Date().addingTimeInterval(3600),
+        destinations: ScheduledDestinations? = nil
+    ) -> Message {
         Message(
             id: id,
             author: MessageFixtures.author(),
@@ -33,7 +37,8 @@ final class ScheduledPostsViewModelTests: XCTestCase {
             replyCount: nil,
             parentID: nil,
             repost: nil,
-            scheduledAt: at
+            scheduledAt: at,
+            scheduledDestinations: destinations
         )
     }
 
@@ -165,7 +170,7 @@ final class ScheduledPostsViewModelTests: XCTestCase {
         let post = scheduledMessage(id: "s-1", at: originalDate)
         await stub.enqueueScheduledPosts(success: [post])
         let confirmed = scheduledMessage(id: "s-1", at: newDate)
-        await stub.enqueueReschedule(success: confirmed)
+        await stub.enqueueUpdateScheduled(success: confirmed)
         let viewModel = ScheduledPostsViewModel(messages: stub)
         await viewModel.load()
 
@@ -181,7 +186,7 @@ final class ScheduledPostsViewModelTests: XCTestCase {
         let newDate = Date(timeIntervalSince1970: 1_800_003_600)
         let post = scheduledMessage(id: "s-1", at: originalDate)
         await stub.enqueueScheduledPosts(success: [post])
-        await stub.enqueueReschedule(failure: TestError.upstream("conflict"))
+        await stub.enqueueUpdateScheduled(failure: TestError.upstream("conflict"))
         let viewModel = ScheduledPostsViewModel(messages: stub)
         await viewModel.load()
 
@@ -189,5 +194,99 @@ final class ScheduledPostsViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.posts.first?.scheduledAt, originalDate)
         XCTAssertNotNil(viewModel.actionError)
+    }
+
+    // MARK: - reschedule validation + destinations (GitHub #55)
+
+    func test_givenPastDate_whenRescheduling_thenRejectsWithoutTouchingTheList() async {
+        // Invalid input: a past time is refused client-side. The row must keep
+        // its original date — the optimistic write is skipped entirely, so a
+        // bad pick never flashes into the list — and no service call is made.
+        let stub = StubMessagesService()
+        let originalDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let post = scheduledMessage(id: "s-1", at: originalDate)
+        await stub.enqueueScheduledPosts(success: [post])
+        let viewModel = ScheduledPostsViewModel(messages: stub)
+        await viewModel.load()
+
+        await viewModel.reschedule(post: post, to: Date(timeIntervalSince1970: 1))
+
+        XCTAssertEqual(viewModel.posts.first?.scheduledAt, originalDate)
+        XCTAssertEqual(viewModel.actionError as? MessagesError, .scheduledDateNotInFuture)
+        let recorded = await stub.recorded
+        XCTAssertEqual(recorded.count, 1, "Only the initial load — no updateScheduled call")
+    }
+
+    func test_givenReschedule_whenOptimisticallyApplied_thenKeepsTheRowsDestinations() async {
+        // Boundary / regression: the optimistic copy used to be hand-built and
+        // dropped every fetch-time field, so rescheduling wiped the row's
+        // destination chips until the next refresh. The in-flight copy must
+        // carry them.
+        let stub = StubMessagesService()
+        let originalDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let newDate = Date(timeIntervalSince1970: 1_800_003_600)
+        let destinations = ScheduledDestinations(
+            mastodonProviderIds: ["prov-1"],
+            bluesky: true
+        )
+        let post = scheduledMessage(id: "s-1", at: originalDate, destinations: destinations)
+        await stub.enqueueScheduledPosts(success: [post])
+        // The failure path leaves the optimistic copy observable long enough to
+        // assert on it, then rolls back — proving both halves at once.
+        await stub.enqueueUpdateScheduled(failure: TestError.upstream("conflict"))
+        let viewModel = ScheduledPostsViewModel(messages: stub)
+        await viewModel.load()
+
+        let optimistic = post.byRescheduling(to: newDate)
+        XCTAssertEqual(optimistic.scheduledAt, newDate)
+        XCTAssertEqual(optimistic.scheduledDestinations, destinations)
+
+        await viewModel.reschedule(post: post, to: newDate)
+
+        // Rolled back, destinations intact.
+        XCTAssertEqual(viewModel.posts.first?.scheduledAt, originalDate)
+        XCTAssertEqual(viewModel.posts.first?.scheduledDestinations, destinations)
+    }
+
+    func test_givenReschedule_whenSucceeding_thenSendsATimeOnlyEdit() async {
+        // Happy path on the payload itself: the view model must never ask for a
+        // content or destination change, because the live API cannot apply one.
+        let stub = StubMessagesService()
+        let newDate = Date(timeIntervalSince1970: 1_800_003_600)
+        let post = scheduledMessage(id: "s-1", at: Date(timeIntervalSince1970: 1_800_000_000))
+        await stub.enqueueScheduledPosts(success: [post])
+        await stub.enqueueUpdateScheduled(success: scheduledMessage(id: "s-1", at: newDate))
+        let viewModel = ScheduledPostsViewModel(messages: stub)
+        await viewModel.load()
+
+        await viewModel.reschedule(post: post, to: newDate)
+
+        let recorded = await stub.recorded
+        guard case .updateScheduled(let messageId, let edit) = recorded.last?.kind else {
+            return XCTFail("Expected an updateScheduled call, got \(String(describing: recorded.last?.kind))")
+        }
+        XCTAssertEqual(messageId, "s-1")
+        XCTAssertEqual(edit.scheduledAt, newDate)
+        XCTAssertNil(edit.content)
+        XCTAssertNil(edit.destinations)
+        XCTAssertEqual(edit.unsupportedFields, [])
+    }
+
+    func test_givenActionError_whenCleared_thenBannerStateResets() async {
+        // Empty/boundary: dismissing the failure banner must not re-run or
+        // resurrect the failed action.
+        let stub = StubMessagesService()
+        let post = scheduledMessage(id: "s-1", at: Date(timeIntervalSince1970: 1_800_000_000))
+        await stub.enqueueScheduledPosts(success: [post])
+        let viewModel = ScheduledPostsViewModel(messages: stub)
+        await viewModel.load()
+        await viewModel.reschedule(post: post, to: Date(timeIntervalSince1970: 1))
+        XCTAssertNotNil(viewModel.actionError)
+
+        viewModel.clearActionError()
+
+        XCTAssertNil(viewModel.actionError)
+        let recorded = await stub.recorded
+        XCTAssertEqual(recorded.count, 1)
     }
 }
