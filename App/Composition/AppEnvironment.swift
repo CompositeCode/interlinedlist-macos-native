@@ -553,7 +553,9 @@ final class AppEnvironment: ObservableObject {
         // endpoints are already routed by the shared `authTransport`. The
         // event bus is a singleton so the DM list, an open thread, and the
         // dock-badge coordinator all see the same stream.
-        let directMessages = DirectMessagesService(api: api)
+        // G22: DM photo upload runs through the same `ImagePrep` pipeline as
+        // the post composer, driven by the live `GET /api/limits` ceilings.
+        let directMessages = DirectMessagesService(api: api, contentLimits: contentLimits)
         let directMessagesEventBus = DirectMessagesEventBus()
         // Settings cluster (work-consolidation.md G17-G20). All reuse the shared
         // kit-layer `APIClient`.

@@ -74,6 +74,16 @@ struct DirectMessagesRootView: View {
             guard let username = note.object as? String else { return }
             selectedUsername = username
         }
+        // G22: a deep link that names a *message* id resolves to the thread
+        // it belongs to via `GET /api/dm/{id}`.
+        .onReceive(NotificationCenter.default.publisher(for: .directMessagesOpenMessage)) { note in
+            guard let messageID = note.object as? String else { return }
+            Task {
+                if let username = await viewModel?.conversationUsername(forMessageID: messageID) {
+                    selectedUsername = username
+                }
+            }
+        }
     }
 
     // MARK: - Body
@@ -153,7 +163,7 @@ struct DirectMessagesRootView: View {
                 Text(conversation.otherUser?.displayName ?? "@\(conversation.otherUsername)")
                     .font(.body.weight(conversation.unreadCount > 0 ? .semibold : .regular))
                     .lineLimit(1)
-                Text(conversation.latestMessage.body)
+                Text(conversation.preview)
                     .font(.ilSubtitle())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -171,17 +181,22 @@ struct DirectMessagesRootView: View {
         }
         .padding(.vertical, 4)
         .contextMenu {
-            if viewModel.folder == .deleted {
-                Button {
-                    Task { await viewModel.restore(messageID: conversation.latestMessage.id) }
-                } label: {
-                    Label("Restore", systemImage: "arrow.uturn.backward")
-                }
-            } else {
-                Button(role: .destructive) {
-                    Task { await viewModel.trash(messageID: conversation.latestMessage.id) }
-                } label: {
-                    Label("Move to Deleted", systemImage: "trash")
+            // Trash / restore act on a specific message. A row with no
+            // decodable newest message has nothing to act on, so the menu
+            // is empty rather than offering an action that cannot fire.
+            if let latest = conversation.latestMessage {
+                if viewModel.folder == .deleted {
+                    Button {
+                        Task { await viewModel.restore(messageID: latest.id) }
+                    } label: {
+                        Label("Restore", systemImage: "arrow.uturn.backward")
+                    }
+                } else {
+                    Button(role: .destructive) {
+                        Task { await viewModel.trash(messageID: latest.id) }
+                    } label: {
+                        Label("Move to Deleted", systemImage: "trash")
+                    }
                 }
             }
         }
@@ -272,4 +287,15 @@ extension Foundation.Notification.Name {
     /// Posted by the ⌥⌘M menu command / the Messages menu to route the
     /// sidebar to the Messages section.
     static let directMessagesShow = Foundation.Notification.Name("InterlinedList.directMessagesShow")
+
+    /// Posted with a **direct-message id** `object` to open the conversation
+    /// that message belongs to (work-consolidation.md G22). The id is resolved
+    /// to a username by `DirectMessagesListViewModel`, from the loaded listing
+    /// when possible and otherwise `GET /api/dm/{id}`.
+    ///
+    /// This is the deep-link seam. Nothing posts it yet: the notification
+    /// feed has no direct-message kind (`NotificationKind` carries none), so
+    /// the producer arrives with whatever surface introduces DM notifications
+    /// or a `interlinedlist://dm/<id>` URL scheme.
+    static let directMessagesOpenMessage = Foundation.Notification.Name("InterlinedList.directMessagesOpenMessage")
 }

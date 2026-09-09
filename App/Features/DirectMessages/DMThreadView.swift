@@ -16,6 +16,7 @@
 // Per decision 0003, this view consumes only `InterlinedDomain`.
 
 import SwiftUI
+import UniformTypeIdentifiers
 import InterlinedDomain
 
 struct DMThreadView: View {
@@ -27,6 +28,9 @@ struct DMThreadView: View {
     @Environment(\.appEnvironment) private var environment
 
     @State private var viewModel: DMThreadViewModel?
+
+    /// Controls the `.fileImporter` sheet for picking photos (G22).
+    @State private var isPhotoImporterPresented = false
 
     var body: some View {
         Group {
@@ -92,6 +96,21 @@ struct DMThreadView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        // SwiftUI-only file picking (Decision 0005 — no NSOpenPanel).
+        // Images only: DMs have no video route.
+        .fileImporter(
+            isPresented: $isPhotoImporterPresented,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: true
+        ) { result in
+            if case .success(let urls) = result {
+                viewModel.addAttachments(urls: urls)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            viewModel.addAttachments(urls: urls)
+            return true
+        }
     }
 
     @ViewBuilder
@@ -128,6 +147,11 @@ struct DMThreadView: View {
         HStack {
             if outgoing { Spacer(minLength: 40) }
             VStack(alignment: outgoing ? .trailing : .leading, spacing: 4) {
+                // G22: photos on a DM. Rendered above the text so a
+                // photos-only message is not an empty bubble.
+                if !message.imageURLs.isEmpty {
+                    messagePhotos(message.imageURLs)
+                }
                 if !message.body.isEmpty {
                     Text(message.body)
                         .font(.ilBody())
@@ -147,18 +171,89 @@ struct DMThreadView: View {
             if !outgoing { Spacer(minLength: 40) }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(outgoing ? "You said" : "They said"): \(message.body)")
+        .accessibilityLabel(bubbleAccessibilityLabel(message: message, outgoing: outgoing))
+    }
+
+    /// The attached photos on a message, laid out as a wrapping strip.
+    /// SwiftUI-only (`AsyncImage`, Decision 0005).
+    @ViewBuilder
+    private func messagePhotos(_ urls: [URL]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(urls, id: \.self) { url in
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        case .failure:
+                            Image(systemName: "photo.badge.exclamationmark")
+                                .foregroundStyle(.secondary)
+                        default:
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                    .frame(width: 160, height: 160)
+                    .clipShape(RoundedRectangle(cornerRadius: ILMetric.radiusLg))
+                    .accessibilityLabel("Attached photo")
+                }
+            }
+        }
+        .frame(maxHeight: 160)
+    }
+
+    /// Speaks the body, and says how many photos rode along so a
+    /// photos-only message isn't announced as an empty bubble.
+    private func bubbleAccessibilityLabel(message: DirectMessage, outgoing: Bool) -> String {
+        let who = outgoing ? "You said" : "They said"
+        let photos = message.imageURLs.count
+        let photoPhrase = photos == 1 ? "1 photo" : "\(photos) photos"
+        if message.body.isEmpty, photos > 0 { return "\(who): \(photoPhrase)" }
+        if photos > 0 { return "\(who): \(message.body), with \(photoPhrase)" }
+        return "\(who): \(message.body)"
     }
 
     @ViewBuilder
     private func composer(viewModel: DMThreadViewModel) -> some View {
+        let composerDisabled = !viewModel.isMutual || viewModel.isBlocked
         VStack(alignment: .leading, spacing: 4) {
             if let error = viewModel.error {
                 Text(error.localizedDescription)
                     .font(.ilSubtitle())
                     .foregroundStyle(.red)
             }
+            if !viewModel.attachments.isEmpty {
+                DMAttachmentStrip(
+                    attachments: viewModel.attachments,
+                    limit: viewModel.maxAttachments,
+                    onRemove: { viewModel.removeAttachment(id: $0) }
+                )
+            }
+            if viewModel.isOverBodyLimit {
+                Text("\(viewModel.draft.count) of \(viewModel.bodyCharacterLimit) characters")
+                    .font(.ilMono(10))
+                    .foregroundStyle(.red)
+            }
             HStack(spacing: 8) {
+                // G22: photo attachments. Sending photos needs a verified
+                // email address; the server refuses with an explanation when
+                // it isn't, and that message is what the error line shows.
+                // TODO(#41): once issue #41's `CapabilityGate` merges,
+                // disable this and explain up front rather than after the
+                // attempt.
+                Button {
+                    isPhotoImporterPresented = true
+                } label: {
+                    Image(systemName: "photo.on.rectangle")
+                }
+                .buttonStyle(.bordered)
+                .disabled(composerDisabled || viewModel.attachmentsAreFull)
+                .help(
+                    viewModel.attachmentsAreFull
+                        ? "Up to \(viewModel.maxAttachments) photos per message"
+                        : "Attach photos"
+                )
+                .accessibilityLabel("Attach photos")
+
                 TextField(
                     composerPlaceholder(viewModel: viewModel),
                     text: Binding(
@@ -169,7 +264,7 @@ struct DMThreadView: View {
                 )
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(1...4)
-                .disabled(!viewModel.isMutual || viewModel.isBlocked)
+                .disabled(composerDisabled)
                 .onSubmit {
                     Task { await viewModel.send() }
                 }
@@ -191,6 +286,21 @@ struct DMThreadView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        // SwiftUI-only file picking (Decision 0005 — no NSOpenPanel).
+        // Images only: DMs have no video route.
+        .fileImporter(
+            isPresented: $isPhotoImporterPresented,
+            allowedContentTypes: [.image],
+            allowsMultipleSelection: true
+        ) { result in
+            if case .success(let urls) = result {
+                viewModel.addAttachments(urls: urls)
+            }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            viewModel.addAttachments(urls: urls)
+            return true
+        }
     }
 
     private func composerPlaceholder(viewModel: DMThreadViewModel) -> String {
