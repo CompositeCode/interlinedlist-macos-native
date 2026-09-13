@@ -45,3 +45,46 @@ extension DMThread {
         )
     }
 }
+
+// MARK: - G22: server-grouped conversations
+
+extension DMConversationSummary {
+
+    /// Maps one `GET /api/dm/conversations` row.
+    ///
+    /// Identity falls through `pairKey` → other participant's id → newest
+    /// message id → `fallbackID`, so a row is never dropped, nor collides with
+    /// a sibling row, for want of an id — which matters because the populated
+    /// server shape is unverified and the decoder is deliberately permissive.
+    ///
+    /// `unreadCount` defaults to 0 rather than nil: an unreported count means
+    /// "nothing to badge", and a phantom badge is worse than a missing one.
+    ///
+    /// - Parameter fallbackID: last-resort identity, supplied by the page
+    ///   mapper as the row's position so it is unique within the page.
+    public init(from dto: DMConversationDTO, fallbackID: String) {
+        let message = dto.lastMessage.map(DirectMessage.init(from:))
+        let other = dto.otherUser.map(UserSummary.init(from:))
+        let identity = [dto.pairKey, other?.id, message?.id]
+            .compactMap { $0 }
+            .first { !$0.isEmpty } ?? fallbackID
+        self.init(
+            id: identity,
+            pairKey: dto.pairKey,
+            otherUser: other,
+            unreadCount: dto.unreadCount ?? 0,
+            latestMessage: message
+        )
+    }
+}
+
+extension DMConversationPage {
+    public init(from dto: DMConversationsPage) {
+        self.init(
+            conversations: dto.items.enumerated().map { index, item in
+                DMConversationSummary(from: item, fallbackID: "dm-conversation-\(index)")
+            },
+            nextCursor: dto.nextCursor
+        )
+    }
+}

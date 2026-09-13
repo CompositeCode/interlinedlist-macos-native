@@ -23,6 +23,14 @@
 // `DirectMessage` (never trusting the local copy). On failure we remove
 // the placeholder, restore the draft, and surface the error.
 //
+// Photo attachments (work-consolidation.md G22): up to 8 per message, held
+// in a `DMAttachmentDraft` and uploaded through
+// `DirectMessagesServicing.uploadImage` immediately before the send. An
+// upload that fails does NOT abort the message — the text still goes out,
+// the failure is surfaced, and nothing the user typed or picked is lost.
+// Photo sending requires a verified email; the server's 403 is surfaced
+// verbatim. TODO(#41): the verification gate is owned by issue #41.
+//
 // Bubble alignment uses `DirectMessage.isOutgoing(currentUserId:)` with
 // the id from the injected `currentUserID` closure so the view model
 // always sees the latest session (mirrors `ProfileViewModel`).
@@ -55,6 +63,10 @@ final class DMThreadViewModel {
     private let currentUserIDProvider: @MainActor () -> String?
     private let pollInterval: Duration
 
+    /// Reads an attachment's bytes. Injected so tests exercise the upload
+    /// path without touching the filesystem (mirrors `ComposerViewModel`).
+    private let readData: @Sendable (URL) async throws -> Data
+
     // MARK: - Observable state
 
     /// The rendered thread, oldest-first (chat order — newest at the
@@ -80,6 +92,26 @@ final class DMThreadViewModel {
     /// The composer draft. Two-way bound by the view.
     var draft: String = ""
 
+    /// Pending photo attachments for the next send (G22).
+    private(set) var attachmentDraft = DMAttachmentDraft()
+
+    /// The pending photos, for the composer's thumbnail strip.
+    var attachments: [ComposerAttachment] { attachmentDraft.attachments }
+
+    /// Whether the documented 8-photo cap is reached — disables the attach
+    /// affordance rather than letting a pick fail after the fact.
+    var attachmentsAreFull: Bool { attachmentDraft.isFull }
+
+    /// The documented per-message photo cap, for the composer's counter.
+    var maxAttachments: Int { DMLimits.maxImagesPerMessage }
+
+    /// The documented DM body ceiling — 10,000 characters, far larger than
+    /// the post composer's 5,000 (a different surface, a different limit).
+    var bodyCharacterLimit: Int { DMLimits.maxBodyCharacters }
+
+    /// True when the draft exceeds the body ceiling.
+    var isOverBodyLimit: Bool { draft.count > bodyCharacterLimit }
+
     /// True while the initial thread load is in flight.
     private(set) var isLoading: Bool = false
 
@@ -96,7 +128,12 @@ final class DMThreadViewModel {
     /// Whether the composer can currently send: mutual, not blocked, and
     /// a non-blank draft.
     var canSend: Bool {
-        isMutual && !isBlocked && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard isMutual, !isBlocked, !isOverBodyLimit else { return false }
+        // A photo alone is a valid message — the server accepts imageUrls
+        // with an empty body — so either a non-blank body or a queued photo
+        // is enough.
+        return !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !attachmentDraft.isEmpty
     }
 
     // MARK: - Internals
@@ -119,13 +156,15 @@ final class DMThreadViewModel {
         service: DirectMessagesServicing,
         eventBus: DirectMessagesEventBus? = nil,
         currentUserID: @MainActor @escaping () -> String? = { nil },
-        pollInterval: Duration = defaultPollInterval
+        pollInterval: Duration = defaultPollInterval,
+        readData: @escaping @Sendable (URL) async throws -> Data = { try Data(contentsOf: $0) }
     ) {
         self.username = username
         self.service = service
         self.bus = eventBus
         self.currentUserIDProvider = currentUserID
         self.pollInterval = pollInterval
+        self.readData = readData
     }
 
     // MARK: - Lifecycle
@@ -175,14 +214,42 @@ final class DMThreadViewModel {
 
     // MARK: - Send
 
-    /// Sends the current draft. Blank drafts (no text, no images) are
+    /// Queues picked / dropped photos for the next send. Non-images and
+    /// anything past the documented 8-photo cap are refused here, before any
+    /// bytes are read — the "invalid input rejected before the service is
+    /// called" gate.
+    func addAttachments(urls: [URL]) {
+        if let rejection = attachmentDraft.add(urls: urls) {
+            error = rejection
+        } else {
+            error = nil
+        }
+    }
+
+    /// Removes one queued photo.
+    func removeAttachment(id: ComposerAttachment.ID) {
+        attachmentDraft.remove(id: id)
+    }
+
+    /// Sends the current draft. Blank drafts (no text, no photos) are
     /// rejected before the service is touched — `canSend` gates the UI but
     /// this guard makes the rejection authoritative. Optimistic: append a
     /// placeholder, call `send`, replace it with the server message on
     /// success, or remove it and restore the draft on failure.
+    ///
+    /// Photos upload first (G22). A failed upload is **not** fatal: whatever
+    /// uploaded is attached, the failure is surfaced, and a message with text
+    /// still goes out. Only a photos-only message whose every upload failed
+    /// has nothing left to send — then the draft and the picks are kept
+    /// intact so the user can retry.
     func send() async {
         let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        let pendingAttachments = attachmentDraft
+        guard !trimmed.isEmpty || !pendingAttachments.isEmpty else { return }
+        guard !isOverBodyLimit else {
+            error = DMThreadError.bodyTooLong(limit: bodyCharacterLimit)
+            return
+        }
         guard let recipientId = resolvedRecipientId() else {
             // No recipient id could be resolved (empty thread with no
             // resolved other user). Surface a typed error rather than
@@ -194,7 +261,23 @@ final class DMThreadViewModel {
         isSending = true
         defer { isSending = false }
 
-        // Optimistic placeholder.
+        // 1. Upload photos, if any. Never throws — see `DMAttachmentDraft`.
+        var uploadFailure: Error?
+        var imageURLs: [String] = []
+        if !pendingAttachments.isEmpty {
+            let result = await pendingAttachments.upload(using: service, readData: readData)
+            imageURLs = result.urls
+            uploadFailure = result.failure
+        }
+
+        // Every photo failed on a photos-only message: there is nothing left
+        // to send. Keep the draft and the picks, surface the failure.
+        guard !trimmed.isEmpty || !imageURLs.isEmpty else {
+            error = uploadFailure
+            return
+        }
+
+        // 2. Optimistic placeholder, now including any uploaded photos.
         optimisticSeq += 1
         let tempId = "optimistic-\(optimisticSeq)"
         let me = currentUserIDProvider()
@@ -203,7 +286,7 @@ final class DMThreadViewModel {
             senderId: me ?? "",
             recipientId: recipientId,
             body: trimmed,
-            imageURLs: [],
+            imageURLs: imageURLs.compactMap(URL.init(string:)),
             createdAt: Date(),
             readAt: nil,
             sender: nil,
@@ -214,14 +297,21 @@ final class DMThreadViewModel {
         draft = ""
 
         do {
-            let sent = try await service.send(recipientId: recipientId, body: trimmed)
+            let sent = try await service.send(
+                recipientId: recipientId,
+                body: trimmed,
+                imageURLs: imageURLs
+            )
             // Replace the placeholder with the authoritative server value.
             if let index = messages.firstIndex(where: { $0.id == tempId }) {
                 messages[index] = sent
             } else {
                 messages.append(sent)
             }
-            error = nil
+            attachmentDraft.removeAll()
+            // A partial photo failure is still worth reporting even though
+            // the message went out — otherwise a photo silently vanishes.
+            error = uploadFailure
             bus?.post(.messageSent(recipientUsername: username, message: sent))
         } catch is CancellationError {
             // Cancelled mid-send — not a failure. Drop the optimistic bubble
@@ -421,6 +511,12 @@ final class DMThreadViewModel {
         self.hasLoadedOnce = true
         cacheRecipientId()
     }
+
+    /// Seeds pending photo attachments without going through the file
+    /// picker. For tests / previews.
+    func seedAttachmentsForTest(urls: [URL]) {
+        _ = attachmentDraft.add(urls: urls)
+    }
 }
 
 // MARK: - DMThreadError
@@ -430,4 +526,18 @@ enum DMThreadError: Error, Equatable {
     /// `send` was invoked but no recipient id could be resolved (an empty
     /// thread with no resolved other user).
     case unknownRecipient
+    /// The draft exceeded the documented 10,000-character DM ceiling.
+    case bodyTooLong(limit: Int)
+}
+
+extension DMThreadError: LocalizedError, CustomStringConvertible {
+    var errorDescription: String? { description }
+    var description: String {
+        switch self {
+        case .unknownRecipient:
+            return "We couldn't work out who this conversation is with."
+        case .bodyTooLong(let limit):
+            return "A direct message can be up to \(limit) characters."
+        }
+    }
 }
