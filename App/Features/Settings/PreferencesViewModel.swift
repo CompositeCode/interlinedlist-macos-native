@@ -57,6 +57,34 @@ final class PreferencesViewModel {
     /// Drives the Save button's enabled state.
     var hasChanges: Bool { settings != lastSaved }
 
+    /// The rows the Viewing picker offers: the four documented values, plus the
+    /// account's current value when the server sent a token this build does not
+    /// recognise.
+    ///
+    /// Without the second half a `.other` token would leave the `Picker` with a
+    /// selection matching no tag, which SwiftUI renders as a blank control —
+    /// and the first edit to any other field would silently rewrite the
+    /// unrecognised preference. Offering it keeps the round-trip honest.
+    var viewingPreferenceOptions: [ViewingPreference] {
+        let selectable = ViewingPreference.selectable
+        guard !selectable.contains(settings.viewingPreference) else { return selectable }
+        return selectable + [settings.viewingPreference]
+    }
+
+    /// The inclusive range the Posts-per-page stepper offers. Mirrors the web
+    /// control exactly (`min=10 max=30`) so no value saved here is
+    /// unrepresentable there.
+    var messagesPerPageRange: ClosedRange<Int> { UserSettings.messagesPerPageRange }
+
+    /// The inclusive range the notification-tray stepper offers
+    /// (`min=10 max=40`, default 20).
+    var notificationTrayLimitRange: ClosedRange<Int> { UserSettings.notificationTrayLimitRange }
+
+    /// Whether the selected viewing preference names a feed the API can serve.
+    /// `false` for Followers Only / Following Only until P1-G lands; the pane
+    /// says so rather than implying the filter is in effect.
+    var selectedViewingPreferenceIsServed: Bool { settings.viewingPreference.hasBackendFeed }
+
     init(
         userService: UserServicing,
         preferencesStore: UserPreferencesStore? = nil,
@@ -75,6 +103,14 @@ final class PreferencesViewModel {
         error = nil
         defer { isLoading = false }
         do {
+            // `UserSettings` clamps `messagesPerPage` and `notificationTrayLimit`
+            // in its initializer, so an account that still stores an
+            // out-of-range value — the pane used to offer `5...100`, which the
+            // web's `10...30` control cannot represent — is corrected on the way
+            // in. Both `settings` and `lastSaved` therefore hold the clamped
+            // value: the pane opens clean (no phantom unsaved change), and the
+            // next Save for any reason writes the legal value rather than
+            // re-sending the illegal one.
             let loaded = try await userService.settings()
             settings = loaded
             lastSaved = loaded

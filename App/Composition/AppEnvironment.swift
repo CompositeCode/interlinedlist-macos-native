@@ -73,6 +73,23 @@ final class AppEnvironment: ObservableObject {
         currentUserStore.currentUser?.defaultVisibility ?? .public
     }
 
+    // MARK: - View preferences (G35 / issue #43)
+    //
+    // One additive block reading the account's server-synced View Preferences
+    // off `userPreferences`, so features get them without importing the store
+    // directly. All three fall back to `UserSettings.default` before the first
+    // load resolves, so nothing waits on a preferences round-trip.
+
+    /// The scope a newly-opened timeline window starts on, from the account's
+    /// stored `viewingPreference`.
+    var defaultTimelineScope: TimelineScope { userPreferences.defaultTimelineScope }
+
+    /// How many rows the notification bell tray renders (10...40, default 20).
+    var notificationTrayLimit: Int { userPreferences.notificationTrayLimit }
+
+    /// Whether the composer opens with its advanced post options revealed.
+    var showsAdvancedPostOptionsByDefault: Bool { userPreferences.showAdvancedPostSettings }
+
     /// Re-resolves the signed-in account's `customerStatus` (PLAN.md §8 — a
     /// gated call returning 403 means the subscription lapsed mid-session, so
     /// the UI must re-gate). The composer calls this when a gated `createPost`

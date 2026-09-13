@@ -92,6 +92,13 @@ struct TimelineRootView: View {
             if viewModel == nil, let environment {
                 let model = TimelineViewModel(
                     messages: environment.messages,
+                    // G35 / issue #43 — open on the account's stored Viewing
+                    // preference, so a filter set on the web is honoured on
+                    // launch instead of always starting at All. Read
+                    // synchronously off the preferences store, which holds
+                    // `UserSettings.default` (All Messages) until the first
+                    // load resolves, so this never blocks first paint.
+                    scope: environment.defaultTimelineScope,
                     eventBus: environment.composerEventBus
                 )
                 viewModel = model
@@ -247,10 +254,11 @@ struct TimelineRootView: View {
             ) {
                 Text("All").tag(TimelineScope.all)
                 Text("Mine").tag(TimelineScope.mine)
+                Text("Followers").tag(TimelineScope.followers)
                 Text("Following").tag(TimelineScope.following)
             }
             .pickerStyle(.segmented)
-            .frame(maxWidth: 220)
+            .frame(maxWidth: 300)
             .accessibilityLabel("Timeline scope")
 
             HStack(spacing: 6) {
@@ -295,12 +303,14 @@ struct TimelineRootView: View {
 
     @ViewBuilder
     private func content(viewModel: TimelineViewModel) -> some View {
-        // Following has no API endpoint yet — always show the coming-soon
-        // state regardless of load / error / empty conditions (App Store
-        // Guideline 2.1: every visible control must work or show a graceful
-        // unavailable state).
-        if viewModel.scope == .following {
-            followingComingSoonState
+        // Neither follower scope has an API endpoint yet — always show the
+        // coming-soon state regardless of load / error / empty conditions (App
+        // Store Guideline 2.1: every visible control must work or show a
+        // graceful unavailable state). Re-verified 2026-09-09: the API ignores
+        // every follower-filter parameter and returns the full timeline, so an
+        // "empty feed" here would actually be a mislabelled complete one.
+        if !viewModel.scope.hasBackendFeed {
+            followerFeedComingSoonState(scope: viewModel.scope)
         } else if let error = viewModel.error, viewModel.messagesLoaded.isEmpty {
             errorState(error: error, viewModel: viewModel)
         } else if viewModel.messagesLoaded.isEmpty, viewModel.isLoading {
@@ -370,14 +380,15 @@ struct TimelineRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var followingComingSoonState: some View {
-        VStack(spacing: 8) {
+    private func followerFeedComingSoonState(scope: TimelineScope) -> some View {
+        let name = scope == .followers ? "Followers" : "Following"
+        return VStack(spacing: 8) {
             Image(systemName: "person.2")
                 .font(.ilDisplay(36))
                 .foregroundStyle(.secondary)
-            Text("Following feed coming soon")
+            Text("\(name) feed coming soon")
                 .font(.ilSubtitle())
-            Text("The Following timeline is not yet available.")
+            Text("The \(name) timeline is not yet available.")
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
