@@ -79,6 +79,11 @@ struct MainWindowView: View {
     // state drives the `ResolveShareView` landing sheet.
     @State private var pendingShare: ParsedShare? = nil
 
+    // Document invites (work-consolidation.md G24) — an opened
+    // `…/documents/invite/{token}` URL posts `.openDocumentInvite` and this
+    // state drives the `DocumentInviteView` landing sheet.
+    @State private var pendingDocumentInvite: ParsedDocumentInvite? = nil
+
     var body: some View {
         NavigationSplitView {
             List(selection: $selection) {
@@ -244,6 +249,24 @@ struct MainWindowView: View {
                 ResolveShareView(parsed: parsed, environment: environment) { _ in
                     selection = parsed.kind == .list ? .lists : .documents
                 }
+            }
+        }
+        // Document invites (work-consolidation.md G24) — an opened invite URL
+        // posts `.openDocumentInvite`. The landing is read-only: accepting is
+        // session-cookie-only upstream, so it ends in a browser hand-off and
+        // there is no post-accept routing to do here.
+        .onReceive(NotificationCenter.default.publisher(for: .openDocumentInvite)) { note in
+            guard let parsed = note.object as? ParsedDocumentInvite else { return }
+            pendingDocumentInvite = parsed
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { pendingDocumentInvite != nil },
+                set: { if !$0 { pendingDocumentInvite = nil } }
+            )
+        ) {
+            if let parsed = pendingDocumentInvite {
+                DocumentInviteView(parsed: parsed, environment: environment)
             }
         }
     }

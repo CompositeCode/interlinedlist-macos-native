@@ -121,3 +121,107 @@ extension DocumentSyncOperation {
         }
     }
 }
+
+// MARK: - Sidebar tree (work-consolidation.md G24)
+
+extension FolderNode {
+
+    /// Maps a `DocumentTreeFolderDTO`. The tree's folder rows are thinner than
+    /// `DocumentFolderDTO`: no `createdAt` / `updatedAt` and no `deleted`
+    /// tombstone (the tree only ever returns live folders). Those project to
+    /// `nil` / `false` rather than being invented.
+    public init(from dto: DocumentTreeFolderDTO) {
+        self.init(
+            id: dto.id,
+            parentId: dto.parentId,
+            name: dto.name,
+            createdAt: nil,
+            updatedAt: nil,
+            deleted: false
+        )
+    }
+}
+
+extension DocumentSummary {
+
+    /// Maps a document row from the tree or the public-by-user route.
+    ///
+    /// `folderID` is passed in rather than read off the DTO because the tree
+    /// nests documents under their folder and omits `folderId` entirely; the
+    /// caller supplies the enclosing folder (or `nil` for `rootDocuments`).
+    /// When the DTO *does* carry a `folderId` (the public-by-user route), that
+    /// value wins — the caller has no better information there.
+    public init(from dto: DocumentDTO, folderID: FolderNode.ID?) {
+        self.init(
+            id: dto.id,
+            title: dto.title,
+            folderId: dto.folderId ?? folderID,
+            relativePath: dto.relativePath,
+            isPublic: dto.isPublic ?? false
+        )
+    }
+}
+
+extension DocumentTreeSnapshot {
+
+    /// Maps `GET /api/documents/tree` into the sidebar snapshot.
+    ///
+    /// Root documents stay a separate array — flattening them into a synthetic
+    /// folder would erase the "no folder" destination the move action needs.
+    /// `_templates` is kept in `folders` (the picker looks it up by name) and
+    /// filtered out of the user-facing projections on the snapshot itself.
+    public init(from dto: DocumentTreeResponse) {
+        var index: [FolderNode.ID: [DocumentSummary]] = [:]
+        for folder in dto.folders {
+            index[folder.id] = folder.documents.map {
+                DocumentSummary(from: $0, folderID: folder.id)
+            }
+        }
+        self.init(
+            folders: dto.folders.map(FolderNode.init(from:)),
+            documentsByFolder: index,
+            rootDocuments: dto.rootDocuments.map {
+                DocumentSummary(from: $0, folderID: nil)
+            }
+        )
+    }
+}
+
+// MARK: - Public documents by user (work-consolidation.md G24)
+
+extension PublicUserDocuments {
+
+    /// Maps `GET /api/users/{username}/documents`. The username is not in the
+    /// response body — it is the path parameter — so the caller passes it back
+    /// in for display.
+    public init(username: String, from dto: PublicUserDocumentsResponse) {
+        self.init(
+            username: username,
+            documents: dto.documents.map(Document.init(from:)),
+            folders: dto.folders.map(FolderNode.init(from:))
+        )
+    }
+}
+
+// MARK: - Invite landing (work-consolidation.md G24)
+
+extension DocumentInvite {
+
+    /// Maps `GET /api/documents/invite/{token}`. Every branch flag is optional
+    /// on the wire and collapses to `false` here: an absent flag means "this
+    /// branch does not apply", which is exactly what `false` renders as.
+    ///
+    /// The token is not echoed in the body, so it is threaded through from the
+    /// request — the landing view needs it to build the browser hand-off URL.
+    public init(token: String, from dto: DocumentInviteLandingDTO) {
+        self.init(
+            token: token,
+            role: dto.role,
+            resourceTitle: dto.resourceTitle,
+            needsAuth: dto.needsAuth ?? false,
+            canClaim: dto.canClaim ?? false,
+            wrongAccount: dto.wrongAccount ?? false,
+            accepted: dto.accepted ?? false
+        )
+    }
+}

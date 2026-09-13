@@ -5,6 +5,14 @@
 // context menu for rename / delete / new sub-folder, and a
 // "Documents" root row that means "show unfiled documents."
 // Pure SwiftUI; no AppKit involvement.
+//
+// work-consolidation.md G24: the whole thing is painted from one call.
+// `FolderTreeViewModel` now reads `GET /api/documents/tree`, which carries
+// each folder's documents inline — so the per-folder counts rendered here
+// cost nothing extra. A count is shown only once the tree has actually
+// landed (`documentCount(for:)` returns `nil` while the view is painting
+// from cache), so a cached row never displays an authoritative-looking
+// zero it hasn't earned.
 
 import SwiftUI
 import InterlinedDomain
@@ -30,8 +38,12 @@ struct DocumentsSidebarView: View {
             }
         )) {
             // Unfiled root — selecting it shows documents with no folder.
-            Label("All Documents", systemImage: "tray")
-                .tag(FolderNode.ID?.none)
+            HStack {
+                Label("All Documents", systemImage: "tray")
+                Spacer()
+                FolderCountBadge(count: viewModel.documentCount(for: nil))
+            }
+            .tag(FolderNode.ID?.none)
 
             if viewModel.folders.isEmpty, viewModel.isLoading {
                 ProgressView()
@@ -61,6 +73,7 @@ struct DocumentsSidebarView: View {
                     FolderSidebarRow(
                         folder: folder,
                         tree: tree,
+                        documentCount: { viewModel.documentCount(for: $0) },
                         onRenameRequested: { id, current in
                             pendingRenameID = id
                             renameDraft = current
@@ -172,6 +185,10 @@ private struct FolderSidebarRow: View {
 
     let folder: FolderNode
     let tree: FolderTree
+    /// How many documents are filed directly in a folder, or `nil` when the
+    /// tree hasn't landed yet. Passed as a closure so the recursive row does
+    /// not need the whole view model.
+    let documentCount: (FolderNode.ID) -> Int?
     let onRenameRequested: (FolderNode.ID, String) -> Void
     let onDeleteRequested: (FolderNode.ID) -> Void
     let onAddSubfolderRequested: (FolderNode.ID) -> Void
@@ -187,6 +204,7 @@ private struct FolderSidebarRow: View {
                         FolderSidebarRow(
                             folder: child,
                             tree: tree,
+                            documentCount: documentCount,
                             onRenameRequested: onRenameRequested,
                             onDeleteRequested: onDeleteRequested,
                             onAddSubfolderRequested: onAddSubfolderRequested
@@ -201,8 +219,14 @@ private struct FolderSidebarRow: View {
     }
 
     private var row: some View {
-        Label(folder.name, systemImage: "folder")
-            .contextMenu {
+        HStack {
+            Label(folder.name, systemImage: "folder")
+            Spacer()
+            // Direct children only — the tree nests documents under the folder
+            // that holds them, so a parent does not roll up its sub-folders.
+            FolderCountBadge(count: documentCount(folder.id))
+        }
+        .contextMenu {
                 Button {
                     onAddSubfolderRequested(folder.id)
                 } label: {
@@ -219,6 +243,28 @@ private struct FolderSidebarRow: View {
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
-            }
+        }
+    }
+}
+
+// MARK: - Folder count badge
+
+/// Trailing document count for a sidebar row.
+///
+/// Renders nothing at all for `nil` (the tree hasn't landed) *and* for zero —
+/// an empty folder reads better as a folder with no badge than as one
+/// annotated "0". The distinction still matters upstream: `nil` means unknown,
+/// so nothing is claimed about a folder we haven't fetched.
+private struct FolderCountBadge: View {
+
+    let count: Int?
+
+    var body: some View {
+        if let count, count > 0 {
+            Text("\(count)")
+                .font(.ilMono(10))
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("\(count) documents")
+        }
     }
 }

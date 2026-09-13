@@ -156,17 +156,80 @@ final class DocumentsListViewModel {
             return nil
         }
         do {
-            let doc = try await documents.create(
-                title: trimmedTitle,
-                body: body,
-                folderId: folderID,
-                isPublic: isPublic
-            )
+            // work-consolidation.md G24 — route by destination, not by flag.
+            //
+            // `POST /api/documents` is documented as "always creates at root:
+            // there is no `folderId` in its body", so the `folderId:` argument
+            // this used to pass was silently dropped: a New Document created
+            // with a folder selected landed at root and vanished from the
+            // column the user was looking at. Creating inside a folder has its
+            // own route, and this is the only place that decides between them.
+            let doc: Document
+            if let folderID {
+                doc = try await documents.createDocument(
+                    inFolder: folderID,
+                    title: trimmedTitle,
+                    body: body,
+                    isPublic: isPublic,
+                    relativePath: nil
+                )
+            } else {
+                doc = try await documents.create(
+                    title: trimmedTitle,
+                    body: body,
+                    folderId: nil,
+                    isPublic: isPublic
+                )
+            }
             documentsLoaded.insert(doc, at: 0)
             selectedDocumentID = doc.id
             error = nil
             return doc
         } catch {
+            self.error = error
+            return nil
+        }
+    }
+
+    /// Moves a document into `folderID`, or out to root when `folderID` is
+    /// `nil`. Optimistic: the row leaves the rendered column immediately when
+    /// the destination differs from the folder being viewed, and is restored
+    /// with the error surfaced if the service refuses.
+    ///
+    /// Returns the relocated document on success so the caller can rebind an
+    /// open editor to the server's copy.
+    @discardableResult
+    func moveDocument(id: Document.ID, to destinationFolderID: FolderNode.ID?) async -> Document? {
+        guard let index = documentsLoaded.firstIndex(where: { $0.id == id }) else {
+            // Nothing rendered to move. Not an error the user caused — the row
+            // may have been removed by a sync delta a moment earlier.
+            return nil
+        }
+        // No-op guard: moving a document to the folder it is already in would
+        // spend a round-trip to change nothing.
+        guard documentsLoaded[index].folderId != destinationFolderID else { return nil }
+
+        let previous = documentsLoaded
+        let previousSelection = selectedDocumentID
+        // The column shows exactly one folder, so a document moved anywhere
+        // else no longer belongs in it.
+        let leavesThisColumn = destinationFolderID != folderID
+        if leavesThisColumn {
+            documentsLoaded.remove(at: index)
+            if selectedDocumentID == id { selectedDocumentID = nil }
+        }
+        do {
+            let moved = try await documents.moveDocument(id: id, toFolder: destinationFolderID)
+            if !leavesThisColumn, let idx = documentsLoaded.firstIndex(where: { $0.id == id }) {
+                // Moved *into* the folder being viewed — keep the row and take
+                // the server's copy so `folderId` is authoritative.
+                documentsLoaded[idx] = moved
+            }
+            error = nil
+            return moved
+        } catch {
+            documentsLoaded = previous
+            selectedDocumentID = previousSelection
             self.error = error
             return nil
         }

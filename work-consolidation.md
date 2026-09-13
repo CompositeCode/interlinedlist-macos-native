@@ -175,8 +175,19 @@ All five routes are built: `GET /api/lists/watching` (the **"shared with me"** s
 > **Entitlements:** granting a named user access is subscriber-gated server-side (`403 {"error":"Subscribe to share lists."}`), as is a role change. `ListsService` projects that 403 onto `ListsError.subscriberRequired` so the UI shows the same upsell Share Links and Invite by Email already use. The client-side pre-flight gate is left to GitHub #40 (`CapabilityGate`) — every `ListsService` write routes through one permissive `canManageLists` seam today, so tightening it here would have blocked free users from reading their own lists.
 
 <a id="g24-documents-gaps"></a>
-**G24 · Documents: sidebar tree, public docs, invites, presence — MEDIUM. Size M.**
-`GET /api/documents/tree` returns `{folders, rootDocuments}` in **one** call — today the sidebar assembles that from several. `GET /api/users/{username}/documents` is public documents by user (the profile page has no documents tab). `GET`/`POST /api/documents/invite/{token}` are the invite landing/claim pair matching the list ones. `POST /api/documents/folders/{id}/documents` creates a document directly in a folder. `POST`/`DELETE /api/documents/{id}/presence` is the live-cursor heartbeat — **defer**: it is a collaborative-editing feature with a polling cost, worth building only if multi-user editing is a goal.
+**G24 · Documents: sidebar tree, public docs, invites, presence — SHIPPED 2026-09-09 (GitHub #52), minus the deferred presence pair.**
+Built on `feat/documents-tree-g24`. `GET /api/documents/tree` now backs the sidebar in **one** call (`FolderTreeViewModel.documentTree()`), which also gives the sidebar per-folder document counts for free. `GET /api/users/{username}/documents` backs a documents column on the profile page. `POST /api/documents/folders/{id}/documents` creates a document directly in a folder, subscriber-gated. `GET /api/documents/invite/{token}` renders an invite landing that ends in "Accept in Browser".
+
+Four things the live probe (read-only, 2026-09-09) settled, each of which changed the plan:
+
+- **The tree does not retire the document-list fetch.** Its inline document rows carry only `id`, `title`, `relativePath`, `isPublic` — no body, no `updatedAt`, no `folderId`. Only the *folder* fetch retired; the middle column and the editor still need their own reads. Modelled as `DocumentSummary`, deliberately not as `Document`.
+- **`POST /api/documents` silently ignored the folder.** The reference is explicit that it "always creates at root: there is no `folderId` in its body" — so every New Document created with a folder selected was landing at root. Fixed by routing through the folder route.
+- **Moving to root needs an explicit `null`.** Codable omits nil optionals, and an omitted `folderId` means "leave it alone", so a dedicated `MoveDocumentRequest` always writes the key.
+- **The invite accept half is genuinely out of reach.** `POST /api/documents/invite/{token}` is `x-auth-type: session`; a Bearer client cannot claim, so the landing hands off to the browser. Backend ask filed separately.
+
+Also closed here: **Move to folder** (editor settings menu + list context menu, with "No folder (root)", `_templates` excluded as a destination). **Seed defaults was already shipped** — `Documents.seedDefaultTemplates()` → `DocumentTemplatesService.seedDefaultTemplates()` → `ServerTemplatesViewModel.seedDefaults()`, wired in `DocumentTemplatePickerView`; that bullet closes as already-done.
+
+Still deferred: `POST`/`DELETE /api/documents/{id}/presence`, the live-cursor heartbeat — a collaborative-editing feature with a polling cost, worth building only if multi-user editing becomes a goal.
 
 <a id="g25-org-admin"></a>
 **G25 · Organization admin + LinkedIn org pages — ✅ SHIPPED 2026-09-09 (GitHub [#54](https://github.com/CompositeCode/interlinedlist-macos-native/issues/54), branch `feat/orgs-lifecycle-g25`). Size M. (Was [G11b](#2d-upstream-blocked--deferred-confirm-demand-before-building).)**

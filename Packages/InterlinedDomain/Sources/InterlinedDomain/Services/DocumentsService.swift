@@ -21,6 +21,25 @@ public enum DocumentsError: Error, Sendable, Equatable {
     /// on `DocumentsError`, not the imaging error.
     case imageTooLargeAfterPrep
 
+    /// A subscriber-only documents action was attempted by a free account.
+    /// Raised **before** any HTTP call so the UI can gate the affordance
+    /// rather than surfacing a bare 403. Carries nothing: the only gated
+    /// documents action today is creating a document, and the message is the
+    /// same whichever route it came in on.
+    ///
+    /// TODO(#40): issue #40 owns `EntitlementsService` and is building a
+    /// `CapabilityGate` whose denials carry a reason and run
+    /// status → email-verification → tier, hardest first. When it lands, this
+    /// case should carry that denial instead of standing alone, and the gate
+    /// below should ask it rather than reading `isSubscriber`. Deliberately not
+    /// done here: adding a `Feature` case means editing the file #40 owns, so
+    /// this consumes the existing seam and leaves the enum untouched.
+    ///
+    /// Note the gate matches #40's published matrix: **creation only**. Moving,
+    /// editing and deleting documents stay free on every tier, so a lapsed
+    /// subscriber keeps existing content fully usable.
+    case subscriberRequired
+
     /// The sync engine refused to complete a cycle. Carries the underlying
     /// transport / API failure unchanged so the UI can still inspect it.
     /// Wrapped as `APIError` when the underlying source was one, or
@@ -40,6 +59,8 @@ extension DocumentsError: LocalizedError, CustomStringConvertible {
             return "Document \(localId) is out of date (server version: \(serverVersion))."
         case .imageTooLargeAfterPrep:
             return "Image is too large to upload, even after compression."
+        case .subscriberRequired:
+            return "Creating documents requires a subscription."
         case .syncFailed(let underlying):
             return "Document sync failed: \(underlying.localizedDescription)"
         }
@@ -113,6 +134,67 @@ public protocol DocumentsServicing: Sendable {
     /// byte budget.
     func uploadImage(in documentId: String, image: Data, suggestedName: String?) async throws -> URL
 
+    /// Creates a document **inside** `folderId` via
+    /// `POST /api/documents/folders/{id}/documents`.
+    ///
+    /// A separate method rather than a flag on `create(...)` because it is a
+    /// different route with a different contract: `POST /api/documents`
+    /// documents itself as "always creates at root — there is no `folderId`
+    /// in its body", so the `folderId` argument on `create(...)` has never
+    /// reached the server. Anything filing a document into a folder must come
+    /// through here.
+    ///
+    /// Subscriber-gated (`x-subscription-tier: subscriber` on the live spec).
+    /// The gate runs locally first and throws
+    /// `DocumentsError.subscriberRequired` before any HTTP call.
+    func createDocument(
+        inFolder folderId: String,
+        title: String,
+        body: String,
+        isPublic: Bool,
+        relativePath: String?
+    ) async throws -> Document
+
+    /// Moves a document into `folderId`, or out to root when `folderId` is
+    /// `nil`. Returns the relocated document as the server sees it.
+    ///
+    /// Distinct from `update(id:…folderId:…)` because only this path can
+    /// express "no folder": `UpdateDocumentRequest` omits nil keys, and an
+    /// omitted `folderId` means "leave it where it is".
+    func moveDocument(id: String, toFolder folderId: String?) async throws -> Document
+
+    // MARK: - Sidebar tree
+
+    /// The whole documents sidebar in one call (`GET /api/documents/tree`):
+    /// every folder with its documents inline, plus the unfiled root
+    /// documents.
+    ///
+    /// This is the sidebar's single source. It replaces `folders(limit:offset:)`
+    /// there, and it write-throughs its folders to the injected `DocumentStore`
+    /// so `cachedFolders()` keeps serving the same stale-while-revalidate paint
+    /// it did before.
+    ///
+    /// It does **not** replace `documents(in:limit:offset:)`: the tree's inline
+    /// rows carry no body and no `updatedAt`, so the document list column and
+    /// the editor still need the heavier read. Only the *folder* fetch retires.
+    func documentTree() async throws -> DocumentTreeSnapshot
+
+    // MARK: - Public documents
+
+    /// A user's public documents (`GET /api/users/{username}/documents`).
+    /// Unauthenticated — usable for any handle, including while signed out.
+    func publicDocuments(ofUser username: String) async throws -> PublicUserDocuments
+
+    // MARK: - Invites
+
+    /// Resolves a document email invite for its landing page
+    /// (`GET /api/documents/invite/{token}`).
+    ///
+    /// Landing only. There is no accept method and cannot be one: the claim
+    /// route is session-cookie-authenticated, so a Bearer client hands the
+    /// final step to the browser via `DocumentInvite.acceptURL(base:)`.
+    func invite(token: String) async throws -> DocumentInvite
+
     // MARK: - Folders
 
     func folders(limit: Int, offset: Int) async throws -> [FolderNode]
@@ -148,6 +230,25 @@ public final class DocumentsService: DocumentsServicing {
     /// image ceilings; when `nil` the built-in `ImagePrep` constants apply.
     private let contentLimits: ContentLimitsProviding?
 
+    /// Live entitlements, evaluated at call time on every gated write.
+    ///
+    /// A closure, not a stored value, for the same reason `MessagesService`
+    /// uses one: the signed-in account's `customerStatus` changes mid-session
+    /// (sign-in resolves, a subscription lapses, a 403 forces a re-fetch), and
+    /// a snapshot taken at launch would gate on a stale answer. The App layer
+    /// passes a reader over its `LiveEntitlements` box.
+    ///
+    /// Defaults to `.free` — a signed-out or unresolved session is never
+    /// wrongly entitled.
+    ///
+    /// TODO(#40): the gate reads `EntitlementsService.isSubscriber` directly
+    /// because `Feature` has no documents case yet. Issue #40 owns
+    /// `EntitlementsService`; when its `CapabilityGate` lands, add a
+    /// `Feature.documentCreation` case (named for creation, not `.documents`,
+    /// to keep it unmissable that only creation is gated) and switch
+    /// `requireSubscriber()` below to ask the gate. One line, no call sites.
+    private let entitlementsProvider: @Sendable () -> EntitlementsService
+
     /// - Parameters:
     ///   - api: networking seam (a stub in tests).
     ///   - sync: optional coordinator. When `nil`, sync methods throw and
@@ -167,13 +268,17 @@ public final class DocumentsService: DocumentsServicing {
         sync: DocumentSyncCoordinating? = nil,
         store: DocumentStore? = nil,
         decoder: JSONDecoder = JSONCoders.makeDecoder(),
-        contentLimits: ContentLimitsProviding? = nil
+        contentLimits: ContentLimitsProviding? = nil,
+        entitlementsProvider: @escaping @Sendable () -> EntitlementsService = {
+            EntitlementsService(customerStatus: .free)
+        }
     ) {
         self.api = api
         self.sync = sync
         self.store = store
         self.decoder = decoder
         self.contentLimits = contentLimits
+        self.entitlementsProvider = entitlementsProvider
     }
 
     // MARK: - Documents
@@ -271,6 +376,130 @@ public final class DocumentsService: DocumentsServicing {
             let dto = try await api.send(Documents.update(id: id, req)).document
             return Document(from: dto)
         } catch let error as APIError {
+            if case .notFound = error {
+                throw DocumentsError.notFound
+            }
+            throw error
+        }
+    }
+
+    public func createDocument(
+        inFolder folderId: String,
+        title: String,
+        body: String,
+        isPublic: Bool,
+        relativePath: String?
+    ) async throws -> Document {
+        // Gate before the round-trip: a free account gets a typed domain error
+        // and a useful message instead of a bare 403 from the wire.
+        try requireSubscriber()
+        let req = CreateDocumentInFolderRequest(
+            title: title,
+            content: body,
+            relativePath: relativePath,
+            isPublic: isPublic
+        )
+        do {
+            // Same `{ message, document }` envelope as `POST /api/documents`.
+            let dto = try await api.send(Documents.createInFolder(folderId: folderId, req)).document
+            let document = Document(from: dto)
+            // Write through so the folder's cached documents include the new
+            // row before the next revalidation — same contract as `documents`.
+            if let store {
+                await store.upsert(document, localEditedAt: nil)
+            }
+            return document
+        } catch let error as APIError {
+            // A folder that vanished between the sidebar painting it and the
+            // create landing reads as "not found" to the user, not as a raw
+            // status code.
+            if case .notFound = error {
+                throw DocumentsError.notFound
+            }
+            // The server gates this route too. Translate its 403 into the same
+            // typed error the local gate raises so callers branch once.
+            if case .forbidden = error {
+                throw DocumentsError.subscriberRequired
+            }
+            throw error
+        }
+    }
+
+    public func moveDocument(id: String, toFolder folderId: String?) async throws -> Document {
+        do {
+            // `Documents.move` encodes an explicit `null` for root; a plain
+            // `update(folderId: nil)` would omit the key and move nothing.
+            let dto = try await api.send(Documents.move(id: id, toFolderId: folderId)).document
+            let document = Document(from: dto)
+            if let store {
+                await store.upsert(document, localEditedAt: nil)
+            }
+            return document
+        } catch let error as APIError {
+            // Covers both halves of the invalid case: a document that was
+            // deleted underneath us, and a destination folder that no longer
+            // exists — the server answers 404 for either.
+            if case .notFound = error {
+                throw DocumentsError.notFound
+            }
+            throw error
+        }
+    }
+
+    // MARK: - Sidebar tree
+
+    public func documentTree() async throws -> DocumentTreeSnapshot {
+        let response = try await api.send(Documents.tree())
+        let snapshot = DocumentTreeSnapshot(from: response)
+        // Write the folders through so `cachedFolders()` keeps painting the
+        // sidebar before the network returns. Only folders: the tree's
+        // document rows are summaries without a body or `updatedAt`, and
+        // upserting those into the document cache would overwrite real cached
+        // documents with emptier ones — the precise regression the summary
+        // type exists to prevent.
+        if let store {
+            for folder in snapshot.folders {
+                await store.upsertFolder(folder)
+            }
+        }
+        return snapshot
+    }
+
+    // MARK: - Public documents
+
+    public func publicDocuments(ofUser username: String) async throws -> PublicUserDocuments {
+        let trimmed = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            // Invalid input: an empty handle would resolve to
+            // `/api/users//documents`, a different route entirely. Refuse
+            // before the request rather than asking the server about it.
+            throw DocumentsError.notFound
+        }
+        do {
+            let response = try await api.send(Documents.publicDocuments(username: trimmed))
+            return PublicUserDocuments(username: trimmed, from: response)
+        } catch let error as APIError {
+            if case .notFound = error {
+                throw DocumentsError.notFound
+            }
+            throw error
+        }
+    }
+
+    // MARK: - Invites
+
+    public func invite(token: String) async throws -> DocumentInvite {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw DocumentsError.notFound
+        }
+        do {
+            let dto = try await api.send(Documents.invite(token: trimmed))
+            return DocumentInvite(token: trimmed, from: dto)
+        } catch let error as APIError {
+            // The server deliberately collapses unknown / expired / revoked /
+            // deleted-document into one 404 so tokens can't be probed. Keep
+            // that collapse — do not try to distinguish them in the UI.
             if case .notFound = error {
                 throw DocumentsError.notFound
             }
@@ -421,6 +650,17 @@ public final class DocumentsService: DocumentsServicing {
 
     public var syncEvents: AsyncStream<DocumentSyncEvent>? {
         sync?.events
+    }
+
+    // MARK: - Entitlement gate
+
+    /// Throws `DocumentsError.subscriberRequired` when the live account is not
+    /// a subscriber. The single place the documents surface consults
+    /// entitlements, so the #40 follow-up is a one-line change here.
+    private func requireSubscriber() throws {
+        guard entitlementsProvider().isSubscriber else {
+            throw DocumentsError.subscriberRequired
+        }
     }
 
     // MARK: - Multipart helpers
