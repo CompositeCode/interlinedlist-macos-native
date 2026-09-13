@@ -2,9 +2,12 @@ import Foundation
 
 /// Request builders for the **User** (account) endpoint group.
 ///
-/// Auth follows decision 0001: `.bearer` everywhere except the two confirmed
+/// Auth follows decision 0001: `.bearer` everywhere except the confirmed
 /// session-only reads — `GET /api/user/identities` and
-/// `GET /api/user/organizations` — which are `.session`.
+/// `GET /api/user/engagement` — which are `.session`.
+///
+/// `GET /api/user/organizations` used to be listed here as session-only. It is
+/// not; see the builder below for the 2026-09-09 verification.
 public enum User {
 
     // MARK: - Read
@@ -24,10 +27,49 @@ public enum User {
         Request(method: .get, path: "/api/user/identities", auth: .session)
     }
 
-    /// `GET /api/user/organizations` — organizations the user belongs to.
-    /// **Session-only** per decision 0001 (Bearer is rejected here).
-    public static func organizations() -> Request<UserOrganizationsResponse> {
-        Request(method: .get, path: "/api/user/organizations", auth: .session)
+    /// `GET /api/user/organizations` — organizations the user belongs to, with
+    /// the caller's own role, joined-at, and the org's member count.
+    ///
+    /// **CORRECTED 2026-09-09 — this is a Bearer route, not a session route.**
+    /// Decision 0001 recorded it as session-only, and it shipped as
+    /// `auth: .session`. A raw `curl` carrying nothing but
+    /// `Authorization: Bearer <sync token>` — no cookie jar at all — returns
+    /// HTTP 200 with the full membership list, and `GET /api/openapi.json`
+    /// marks the operation `x-auth-type: sync-token`. The same spec correctly
+    /// reports `x-auth-type: session` for `/api/user/engagement`, which this
+    /// repo independently confirmed is session-only, so the field is
+    /// trustworthy on both sides.
+    ///
+    /// `role` narrows the result server-side (e.g. `"owner"`); `nil` returns
+    /// every membership.
+    public static func organizations(role: String? = nil) -> Request<UserOrganizationsResponse> {
+        Request(
+            method: .get,
+            path: "/api/user/organizations",
+            query: [.string("role", role)],
+            auth: .bearer
+        )
+    }
+
+    /// `POST /api/user/organizations` — **join** an organization.
+    ///
+    /// The join path. There is no `/api/organizations/{id}/join` route (it
+    /// 404s); joining is a write against the caller's own membership
+    /// collection. Confirmed 2026-09-09 without issuing a write, from the
+    /// shipped web client (which posts `{ organizationId }` to this exact
+    /// path) and from `GET /api/openapi.json` (`postUserOrganizations`,
+    /// one body property `organizationId`, 201 response).
+    ///
+    /// The 201 body is unmodelled and was not observed, so this is typed
+    /// `EmptyResponse` — callers `sendVoid` it and re-read the membership
+    /// list rather than risking a decode failure on an unseen shape.
+    public static func joinOrganization(organizationId: String) -> Request<EmptyResponse> {
+        Request(
+            method: .post,
+            path: "/api/user/organizations",
+            body: .json(JoinOrganizationRequest(organizationId: organizationId)),
+            auth: .bearer
+        )
     }
 
     /// `GET /api/user/engagement` — lifetime dig/push totals on your own

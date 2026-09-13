@@ -147,11 +147,29 @@ final class ComposerViewModel {
     /// a connect hint — mirrors the Bluesky/Mastodon NW-4 pattern.
     private(set) var linkedInNotConfigured: Bool = false
 
-    /// The primary LinkedIn destination the post will publish to (the personal
-    /// profile, falling back to the first available target). `nil` until targets
-    /// are loaded.
-    var linkedInPersonalTarget: LinkedInTarget? {
-        linkedInTargets.first { $0.kind == .personal } ?? linkedInTargets.first
+    /// The LinkedIn destination this post will actually publish to
+    /// (work-consolidation.md G25).
+    ///
+    /// **This is not always the personal profile.** Per `/help/organizations`,
+    /// a member who has been assigned an organization company page gets that
+    /// page as their *default* destination: enabling the LinkedIn toggle
+    /// without picking a target publishes to the company page, not to them.
+    ///
+    /// The previous implementation looked up the personal target first, so an
+    /// assigned member was told "Posting as <their own name>" while the server
+    /// published to a company page. The precedence now matches the server's.
+    var linkedInEffectiveTarget: LinkedInTarget? {
+        LinkedInPostingTargets(
+            targets: linkedInTargets,
+            orgScopeMissing: linkedInOrgScopeMissing
+        ).defaultDestination
+    }
+
+    /// Whether the resolved destination is a company page rather than the
+    /// user's own profile. The view uses this to say so explicitly instead of
+    /// leaving the distinction to a bare name.
+    var linkedInPostsToCompanyPage: Bool {
+        linkedInEffectiveTarget?.isCompanyPage ?? false
     }
 
     // MARK: - Derived gating

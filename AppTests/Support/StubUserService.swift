@@ -20,6 +20,7 @@ struct RecordedUserCall: Sendable, Equatable {
     enum Kind: Sendable, Equatable {
         case identities
         case organizations
+        case joinOrganization(id: String)
         case identityLinkURL(provider: String, instance: String?)
         case requestEmailChange(newEmail: String)
         case uploadAvatar(contentType: String)
@@ -44,6 +45,7 @@ final class StubUserService: UserServicing, @unchecked Sendable {
 
     private var identitiesOutcomes: [Result<[LinkedIdentity], Error>] = []
     private var organizationsOutcomes: [Result<[UserOrganization], Error>] = []
+    private var joinOrganizationOutcomes: [Result<[UserOrganization], Error>] = []
     private var requestEmailChangeOutcomes: [Result<Void, Error>] = []
     private var uploadAvatarOutcomes: [Result<URL?, Error>] = []
     private var deleteAccountOutcomes: [Result<Void, Error>] = []
@@ -94,6 +96,16 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func enqueueOrganizations(failure error: Error) {
         lock.lock(); defer { lock.unlock() }
         organizationsOutcomes.append(.failure(error))
+    }
+
+    func enqueueJoinOrganization(success orgs: [UserOrganization]) {
+        lock.lock(); defer { lock.unlock() }
+        joinOrganizationOutcomes.append(.success(orgs))
+    }
+
+    func enqueueJoinOrganization(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        joinOrganizationOutcomes.append(.failure(error))
     }
 
     func enqueueRequestEmailChange(success: Void = ()) {
@@ -211,6 +223,17 @@ final class StubUserService: UserServicing, @unchecked Sendable {
 
     func cachedOrganizations() async -> [UserOrganization] {
         readCachedOrganizations()
+    }
+
+    /// Joins an org (work-consolidation.md G25). Mirrors the real service:
+    /// a blank id is rejected before anything is recorded, and success returns
+    /// the refreshed membership list rather than an optimistic row.
+    func joinOrganization(id: String) async throws -> [UserOrganization] {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw OrgLifecycleError.unknownCurrentUser }
+        return try perform(label: "joinOrganization", record: .joinOrganization(id: trimmed)) {
+            $0.joinOrganizationOutcomes
+        } set: { $0.joinOrganizationOutcomes = $1 }
     }
 
     /// Synchronous lock-guarded read — factored out so the `async` protocol

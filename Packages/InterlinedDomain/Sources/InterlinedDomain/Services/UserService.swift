@@ -38,6 +38,19 @@ public protocol UserServicing: Sendable {
     /// when no store is injected or the cache is cold.
     func cachedOrganizations() async -> [UserOrganization]
 
+    /// Joins a public organization and returns the refreshed membership list
+    /// (work-consolidation.md G25).
+    ///
+    /// Joining is free for every account — only *creating* an org is
+    /// subscriber-gated (`/help/organizations`), so this deliberately has no
+    /// entitlement check.
+    ///
+    /// The join response body is unmodelled upstream and was never observed
+    /// live, so the implementation ignores it and re-reads `organizations()`
+    /// instead of decoding a shape it has not seen. That re-read also writes
+    /// the new membership through to the cache.
+    func joinOrganization(id: String) async throws -> [UserOrganization]
+
     /// Resolves the web authorize URL for linking a new OAuth identity
     /// (PLAN.md §4 — "OAuth … link-account-only in v1"; Wave 7 spike
     /// `docs/spikes/0002-oauth-identity-linking.md`). The v1 UX is a browser
@@ -201,6 +214,17 @@ public final class UserService: UserServicing {
 
     public func cachedOrganizations() async -> [UserOrganization] {
         await orgStore?.cachedMemberships() ?? []
+    }
+
+    public func joinOrganization(id: String) async throws -> [UserOrganization] {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw OrgLifecycleError.unknownCurrentUser
+        }
+        // Ignore the 201 body (unmodelled upstream) and re-read the list,
+        // which also refreshes the cache.
+        try await api.sendVoid(User.joinOrganization(organizationId: trimmed))
+        return try await organizations()
     }
 
     public func identityLinkURL(provider: IdentityProvider, instance: String?) throws -> URL {

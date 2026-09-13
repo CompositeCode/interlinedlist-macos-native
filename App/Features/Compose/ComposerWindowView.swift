@@ -380,11 +380,20 @@ struct ComposerWindowView: View {
             )) { Text("LinkedIn") }
                 .disabled(!viewModel.canUseSubscriberFeatures)
 
-            if viewModel.crossPostToLinkedIn, let target = viewModel.linkedInPersonalTarget {
-                Text("Posting as \(target.label)")
+            // G25: name the destination the server will actually publish to.
+            // For a member with an org page assignment that is the company
+            // page, not their own profile — so the company-page case says so
+            // in as many words rather than showing a bare name the user would
+            // reasonably read as their own.
+            if viewModel.crossPostToLinkedIn, let target = viewModel.linkedInEffectiveTarget {
+                Text(viewModel.linkedInPostsToCompanyPage
+                     ? "Posting to the \(target.label) company page"
+                     : "Posting as \(target.label)")
                     .font(.ilMono(10))
                     .foregroundStyle(.secondary)
-                    .accessibilityLabel("Posting to LinkedIn as \(target.label)")
+                    .accessibilityLabel(viewModel.linkedInPostsToCompanyPage
+                                        ? "Posting to LinkedIn as the \(target.label) company page"
+                                        : "Posting to LinkedIn as \(target.label)")
             }
 
             if viewModel.crossPostToLinkedIn, viewModel.linkedInOrgScopeMissing {

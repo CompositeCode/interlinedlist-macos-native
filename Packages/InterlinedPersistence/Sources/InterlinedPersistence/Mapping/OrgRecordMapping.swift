@@ -22,7 +22,10 @@ extension OrgRecord {
             orgDescription: organization.description,
             isPublic: organization.isPublic,
             createdAt: organization.createdAt,
-            updatedAt: organization.updatedAt
+            updatedAt: organization.updatedAt,
+            slug: organization.slug,
+            isSystem: organization.isSystem,
+            memberCount: organization.memberCount
         )
     }
 
@@ -36,6 +39,9 @@ extension OrgRecord {
         isPublic = organization.isPublic
         createdAt = organization.createdAt
         updatedAt = organization.updatedAt
+        slug = organization.slug
+        isSystem = organization.isSystem
+        memberCount = organization.memberCount
     }
 
     /// Hydrate the row into a domain `Organization` value.
@@ -46,7 +52,10 @@ extension OrgRecord {
             description: orgDescription,
             isPublic: isPublic,
             createdAt: createdAt,
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            slug: slug,
+            isSystem: isSystem,
+            memberCount: memberCount
         )
     }
 }
@@ -61,7 +70,11 @@ extension OrgMemberRecord {
             membershipId: member.membershipId,
             roleRaw: member.role.wireToken,
             active: member.active,
-            createdAt: member.createdAt
+            createdAt: member.createdAt,
+            username: member.username,
+            displayName: member.displayName,
+            avatarURLString: member.avatarURL?.absoluteString,
+            emailVerified: member.emailVerified
         )
     }
 
@@ -73,6 +86,10 @@ extension OrgMemberRecord {
         roleRaw = member.role.wireToken
         active = member.active
         createdAt = member.createdAt
+        username = member.username
+        displayName = member.displayName
+        avatarURLString = member.avatarURL?.absoluteString
+        emailVerified = member.emailVerified
     }
 
     /// Hydrate the row into a domain `OrgMember` value.
@@ -82,7 +99,11 @@ extension OrgMemberRecord {
             membershipId: membershipId,
             role: OrgRole(wireToken: roleRaw),
             active: active,
-            createdAt: createdAt
+            createdAt: createdAt,
+            username: username,
+            displayName: displayName,
+            avatarURL: avatarURLString.flatMap(URL.init(string:)),
+            emailVerified: emailVerified
         )
     }
 }

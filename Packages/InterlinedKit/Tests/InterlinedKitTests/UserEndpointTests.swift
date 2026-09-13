@@ -134,41 +134,91 @@ final class UserEndpointTests: XCTestCase {
         XCTAssertTrue(response.identities.isEmpty)
     }
 
-    // MARK: - organizations (session-only)
+    // MARK: - organizations (Bearer — corrected 2026-09-09, G25)
 
-    func test_givenOrganizations_whenBuilt_thenUsesSessionAuth() {
+    func test_givenOrganizations_whenBuilt_thenUsesBearerAuth() {
+        // CORRECTED: this route was modelled as session-only per decision
+        // 0001. A raw `Authorization: Bearer` request with no cookie jar
+        // returns HTTP 200 live, and the published OpenAPI document marks the
+        // operation `x-auth-type: sync-token`.
         let request = User.organizations()
         XCTAssertEqual(request.path, "/api/user/organizations")
-        XCTAssertEqual(request.auth, .session)
+        XCTAssertEqual(request.auth, .bearer)
+    }
+
+    func test_givenRoleFilter_whenOrganizationsBuilt_thenSendsRoleQuery() {
+        // The OpenAPI document declares an optional `role` query parameter.
+        let request = User.organizations(role: "owner")
+        let sent = request.query.filter { $0.value != nil }
+        XCTAssertEqual(sent.map(\.name), ["role"])
+        XCTAssertEqual(sent.first?.value, "owner")
+    }
+
+    func test_givenNoRoleFilter_whenOrganizationsBuilt_thenOmitsRoleQuery() {
+        // Boundary: a nil filter must not put an empty `?role=` on the wire.
+        // A nil filter leaves the item valueless, and valueless items are
+        // dropped when the URL is built — no empty `?role=` on the wire.
+        let request = User.organizations()
+        XCTAssertTrue(request.query.filter { $0.value != nil }.isEmpty)
     }
 
     func test_givenOrganizationsEnvelope_whenSent_thenDecodesRoleAndMetadata() async throws {
-        // Happy path through the session transport.
-        let session = StubHTTPDataTransport()
-        await session.enqueue(.json(#"""
+        // Happy path over the **bearer** transport, with the membership
+        // context fields the live route actually returns.
+        let (client, transport, _) = makeClient()
+        await transport.enqueue(.json(#"""
         {"organizations":[{"id":"o1","name":"Acme","slug":"acme","description":"x",
           "avatar":null,"isPublic":true,"isSystem":false,
           "createdAt":"2026-01-01T00:00:00.000Z","updatedAt":"2026-01-01T00:00:00.000Z",
-          "deletedAt":null,"role":"admin","joinedAt":"2026-02-01T00:00:00.000Z"}]}
+          "deletedAt":null,"role":"admin","joinedAt":"2026-02-01T00:00:00.000Z",
+          "userRole":"admin","memberCount":3}]}
         """#))
-        let (client, _, _) = makeClient(sessionTransport: session)
 
         let response = try await client.send(User.organizations())
         XCTAssertEqual(response.organizations.first?.role, "admin")
         XCTAssertEqual(response.organizations.first?.name, "Acme")
+        XCTAssertEqual(response.organizations.first?.userRole, "admin")
+        XCTAssertEqual(response.organizations.first?.memberCount, 3)
+        XCTAssertEqual(response.organizations.first?.isSystem, false)
+    }
+
+    func test_givenSystemOrgRow_whenSent_thenDecodesIsSystemTrue() async throws {
+        // "The Public" is the row the leave rule must recognise.
+        let (client, transport, _) = makeClient()
+        await transport.enqueue(.json(#"""
+        {"organizations":[{"id":"00000000-0000-0000-0000-000000000001",
+          "name":"The Public","slug":"the-public","isPublic":true,"isSystem":true,
+          "role":"member","memberCount":22}]}
+        """#))
+
+        let response = try await client.send(User.organizations())
+        XCTAssertEqual(response.organizations.first?.isSystem, true)
     }
 
     func test_givenOrganizationsFailure_whenSent_thenThrowsForbidden() async throws {
-        // Upstream API failure on the session transport.
-        let session = StubHTTPDataTransport()
-        await session.enqueue(.json(#"{"error":"No access"}"#, status: 403))
-        let (client, _, _) = makeClient(sessionTransport: session)
+        // Upstream API failure on the bearer transport.
+        let (client, transport, _) = makeClient()
+        await transport.enqueue(.json(#"{"error":"No access"}"#, status: 403))
         do {
             _ = try await client.send(User.organizations())
             XCTFail("Expected forbidden")
         } catch let error as APIError {
             XCTAssertEqual(error, .forbidden(serverMessage: "No access"))
         }
+    }
+
+    // MARK: - joinOrganization (G25)
+
+    func test_givenOrganizationId_whenJoinBuilt_thenPostsOrganizationIdBody() throws {
+        // Happy path: the join verb + body, confirmed from the shipped web
+        // client and the OpenAPI document (never exercised as a live write).
+        let request = User.joinOrganization(organizationId: "org_1")
+        XCTAssertEqual(request.method, .post)
+        XCTAssertEqual(request.path, "/api/user/organizations")
+        XCTAssertEqual(request.auth, .bearer)
+        let body = try encodedBody(request)
+        XCTAssertEqual(body["organizationId"] as? String, "org_1")
+        XCTAssertEqual(body.count, 1, "The join body carries only organizationId")
     }
 
     // MARK: - update

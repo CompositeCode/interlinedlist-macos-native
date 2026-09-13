@@ -31,6 +31,12 @@ struct OrganizationsRootView: View {
     @State private var viewModel: OrganizationsListViewModel?
     @State private var selection: UserOrganization?
     @State private var showCreateSheet: Bool = false
+    @State private var showJoinSheet: Bool = false
+    /// The membership awaiting a Leave confirmation, if any.
+    @State private var pendingLeave: UserOrganization?
+    /// The membership awaiting a Delete confirmation, if any. Delete is not
+    /// reversible, so it gets its own confirmation that names the org.
+    @State private var pendingDelete: UserOrganization?
 
     var body: some View {
         NavigationStack {
@@ -54,6 +60,12 @@ struct OrganizationsRootView: View {
                                 .help("Refreshing organizations…")
                         }
                         Button {
+                            showJoinSheet = true
+                        } label: {
+                            Label("Browse Organizations", systemImage: "magnifyingglass")
+                        }
+                        .help("Find a public organization to join")
+                        Button {
                             showCreateSheet = true
                         } label: {
                             Label("New Organization", systemImage: "plus")
@@ -75,7 +87,10 @@ struct OrganizationsRootView: View {
                 guard environment.currentUserStore.currentUserID != nil else { return }
                 let vm = OrganizationsListViewModel(
                     orgService: environment.orgService,
-                    userService: environment.userService
+                    userService: environment.userService,
+                    // Leaving an org is removing yourself from its members,
+                    // so the list needs to know who "yourself" is.
+                    currentUserId: environment.currentUserStore.currentUserID
                 )
                 viewModel = vm
                 await vm.load()
@@ -83,6 +98,11 @@ struct OrganizationsRootView: View {
                 // Re-appearance past the freshness TTL — revalidate; within
                 // the TTL we trust the cache and skip the network.
                 await vm.load()
+            }
+        }
+        .sheet(isPresented: $showJoinSheet) {
+            if let viewModel {
+                BrowseOrganizationsSheet(listViewModel: viewModel)
             }
         }
         .sheet(isPresented: $showCreateSheet) {
@@ -116,7 +136,24 @@ struct OrganizationsRootView: View {
         } else {
             List(viewModel.memberships, selection: $selection) { membership in
                 NavigationLink(value: membership) {
-                    OrgRowView(membership: membership)
+                    OrgRowView(
+                        membership: membership,
+                        isPending: viewModel.pendingOperations.contains(membership.organization.id)
+                    )
+                }
+                .contextMenu {
+                    // Ownership-gated actions are hidden, not disabled, when
+                    // they don't apply (PLAN.md §6 M2 rule).
+                    if viewModel.canLeave(membership) {
+                        Button("Leave \(membership.organization.name)") {
+                            pendingLeave = membership
+                        }
+                    }
+                    if viewModel.canDelete(membership) {
+                        Button("Delete \(membership.organization.name)…", role: .destructive) {
+                            pendingDelete = membership
+                        }
+                    }
                 }
             }
             .listStyle(.inset)
@@ -124,6 +161,54 @@ struct OrganizationsRootView: View {
                 OrganizationDetailView(membership: membership)
             }
             .refreshable { await viewModel.load() }
+            .overlay(alignment: .bottom) {
+                if let error = viewModel.actionError {
+                    Text(error.localizedDescription)
+                        .font(.ilMono(10))
+                        .foregroundStyle(Color.accentColor)
+                        .padding(8)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                        .padding(8)
+                        .accessibilityLabel("Organization action failed: \(error.localizedDescription)")
+                }
+            }
+            .confirmationDialog(
+                "Leave \(pendingLeave?.organization.name ?? "this organization")?",
+                isPresented: Binding(
+                    get: { pendingLeave != nil },
+                    set: { if !$0 { pendingLeave = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Leave", role: .destructive) {
+                    if let membership = pendingLeave {
+                        pendingLeave = nil
+                        Task { await viewModel.leave(membership) }
+                    }
+                }
+                Button("Cancel", role: .cancel) { pendingLeave = nil }
+            } message: {
+                Text("You'll lose access to this organization's shared content. You can rejoin later if it's public.")
+            }
+            .confirmationDialog(
+                "Delete \(pendingDelete?.organization.name ?? "this organization")?",
+                isPresented: Binding(
+                    get: { pendingDelete != nil },
+                    set: { if !$0 { pendingDelete = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete Organization", role: .destructive) {
+                    if let membership = pendingDelete {
+                        pendingDelete = nil
+                        Task { await viewModel.delete(membership) }
+                    }
+                }
+                Button("Cancel", role: .cancel) { pendingDelete = nil }
+            } message: {
+                // Name the org and say plainly that it cannot be undone.
+                Text("This permanently deletes \(pendingDelete?.organization.name ?? "the organization") and removes every member. This can't be undone.")
+            }
         }
     }
 
@@ -147,10 +232,13 @@ struct OrganizationsRootView: View {
 
 private struct OrgRowView: View {
     let membership: UserOrganization
+    var isPending: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "building.2.crop.circle.fill")
+            Image(systemName: membership.organization.isSystem
+                  ? "globe"
+                  : "building.2.crop.circle.fill")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 28, height: 28)
@@ -164,8 +252,26 @@ private struct OrgRowView: View {
                     Text(membership.role.displayName)
                         .font(.ilMono(10))
                         .foregroundStyle(.secondary)
+                    if let count = membership.organization.memberCount {
+                        Text(count == 1 ? "1 member" : "\(count) members")
+                            .font(.ilMono(10))
+                            .foregroundStyle(.secondary)
+                    }
+                    if let joined = membership.joinedAt {
+                        Text("joined \(joined.formatted(date: .abbreviated, time: .omitted))")
+                            .font(.ilMono(10))
+                            .foregroundStyle(.secondary)
+                    }
                     if membership.organization.isPublic {
                         Text("Public")
+                            .font(.ilMono(9))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.15), in: Capsule())
+                    }
+                    if membership.organization.isSystem {
+                        // Explains up front why this row has no Leave action.
+                        Text("System")
                             .font(.ilMono(9))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1)
@@ -174,6 +280,11 @@ private struct OrgRowView: View {
                 }
             }
             Spacer()
+            if isPending {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityLabel("Updating organization")
+            }
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -181,8 +292,94 @@ private struct OrgRowView: View {
     }
 
     private var rowAccessibilityLabel: String {
-        let visibility = membership.organization.isPublic ? ", public" : ""
-        return "\(membership.organization.name), \(membership.role.displayName)\(visibility)"
+        var parts = [membership.organization.name, membership.role.displayName]
+        if let count = membership.organization.memberCount {
+            parts.append(count == 1 ? "1 member" : "\(count) members")
+        }
+        if let joined = membership.joinedAt {
+            parts.append("joined \(joined.formatted(date: .abbreviated, time: .omitted))")
+        }
+        if membership.organization.isPublic { parts.append("public") }
+        if membership.organization.isSystem { parts.append("system organization, can't be left") }
+        return parts.joined(separator: ", ")
+    }
+}
+
+// MARK: - BrowseOrganizationsSheet
+
+/// Find and join a public organization.
+///
+/// Joining is free for every account — only *creating* an org is
+/// subscriber-gated — so nothing here is entitlement-gated.
+private struct BrowseOrganizationsSheet: View {
+
+    @Bindable var listViewModel: OrganizationsListViewModel
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Browse Organizations")
+                .font(.ilSubtitle())
+                .padding([.top, .horizontal], 20)
+
+            Group {
+                if listViewModel.isBrowsing, listViewModel.browsableOrganizations.isEmpty {
+                    ProgressView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = listViewModel.browseError,
+                          listViewModel.browsableOrganizations.isEmpty {
+                    OrgErrorState(error: error, retry: { await listViewModel.browse() })
+                } else if listViewModel.browsableOrganizations.isEmpty {
+                    Text("You already belong to every public organization.")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List(listViewModel.browsableOrganizations) { org in
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(org.name)
+                                    .font(.ilBody())
+                                if let description = org.description, !description.isEmpty {
+                                    Text(description)
+                                        .font(.ilMono(10))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                            Spacer()
+                            if listViewModel.pendingOperations.contains(org.id) {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Button("Join") {
+                                    Task { await listViewModel.join(organizationId: org.id) }
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .listStyle(.inset)
+                }
+            }
+            .frame(height: 320)
+
+            if let error = listViewModel.actionError {
+                Text(error.localizedDescription)
+                    .font(.ilMono(10))
+                    .foregroundStyle(Color.accentColor)
+                    .padding(.horizontal, 20)
+            }
+
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding(20)
+        }
+        .frame(width: 460)
+        .task { await listViewModel.browse() }
     }
 }
 

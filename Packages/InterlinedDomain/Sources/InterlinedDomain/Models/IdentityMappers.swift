@@ -43,11 +43,17 @@ extension UserOrganization {
             description: dto.description,
             isPublic: dto.isPublic ?? false,
             createdAt: dto.createdAt,
-            updatedAt: dto.updatedAt
+            updatedAt: dto.updatedAt,
+            slug: dto.slug,
+            // Carries the "The Public" flag through to the leave rule.
+            isSystem: dto.isSystem ?? false,
+            memberCount: dto.memberCount
         )
         self.init(
             organization: organization,
-            role: OrgRole(wireToken: dto.role),
+            // `role` is required on this row; `userRole` is the server's
+            // duplicate of it and is used only if `role` were ever blank.
+            role: OrgRole(wireToken: dto.role.isEmpty ? (dto.userRole ?? dto.role) : dto.role),
             joinedAt: dto.joinedAt
         )
     }
