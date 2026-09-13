@@ -3,40 +3,60 @@ import Foundation
 /// Role granted to a watcher on a shared list (PLAN.md §1 "List sharing", §6
 /// M3).
 ///
-/// **Assumption (not yet documented upstream).** The role taxonomy for
-/// `PUT /api/lists/[id]/watchers/[userId]` is not enumerated in the API docs
-/// — `/API-backend-prompts-to-build.md` item 1.2 records this gap and proposes
-/// `owner | editor | viewer` as the working set. The M3 share-sheet picker
-/// renders against that set; if the upstream taxonomy lands with a different
-/// shape, this enum is the one place to update.
+/// **The taxonomy is now documented.** `/help/api/lists` states: "A watcher's
+/// role is one of `watcher`, `collaborator`, or `manager`", and an invalid or
+/// missing `role` on `PUT /api/lists/:id/watchers/:userId` is a `400`. The
+/// three cases below are the client-side names for exactly those three roles;
+/// `wireToken` emits the documented strings.
+///
+/// - Warning: before work-consolidation.md G23 this enum emitted
+///   `owner` / `editor` / `viewer` as wire tokens — none of which the API
+///   accepts — so every role change was rejected with a `400`. The case names
+///   are kept (the pickers and `.other` fallback depend on them); only the
+///   wire mapping and the UI labels moved onto the documented vocabulary.
 ///
 /// `other(String)` preserves any unrecognised wire string so an unexpected
 /// role round-trips through the UI rather than crashing a switch.
-public enum WatcherRole: Sendable, Equatable, Hashable {
+public enum WatcherRole: Sendable, Equatable, Hashable, CaseIterable {
 
-    /// Full control. By the working assumption: read, edit rows, edit schema,
-    /// manage watchers, delete the list.
+    /// Full control — the API's `manager`. Read, edit rows, edit schema,
+    /// manage watchers, delete the list. The web labels this **Admin**.
     case owner
 
-    /// Edit access. By the working assumption: read and edit rows; cannot
-    /// edit schema, manage watchers, or delete the list.
+    /// Edit access — the API's `collaborator`. Read and edit rows. The web
+    /// labels this **Edit**.
     case editor
 
-    /// Read-only access. By the working assumption: read rows.
+    /// Read-only access — the API's `watcher`. The web labels this
+    /// **Read-only**.
     case viewer
 
     /// A role token the client does not yet recognise. Treated as no-edit /
     /// no-share for safety; preserved for display.
     case other(String)
 
-    /// The canonical wire token for this role. The wire taxonomy is the
-    /// open question above — this aligns with the prompts-file proposal.
+    /// The three roles a picker offers. `.other` is a decode-tolerance case,
+    /// never something the user can choose, so it is excluded.
+    public static var allCases: [WatcherRole] { [.viewer, .editor, .owner] }
+
+    /// The canonical wire token, per `/help/api/lists`.
     public var wireToken: String {
         switch self {
-        case .owner: return "owner"
-        case .editor: return "editor"
-        case .viewer: return "viewer"
+        case .owner: return "manager"
+        case .editor: return "collaborator"
+        case .viewer: return "watcher"
         case .other(let raw): return raw
+        }
+    }
+
+    /// UI-facing label, matching the web's vocabulary on `/help/lists`
+    /// (Read-only → `watcher`, Edit → `collaborator`, Admin → `manager`).
+    public var label: String {
+        switch self {
+        case .owner: return "Admin"
+        case .editor: return "Edit"
+        case .viewer: return "Read-only"
+        case .other(let raw): return raw.capitalized
         }
     }
 
@@ -44,8 +64,8 @@ public enum WatcherRole: Sendable, Equatable, Hashable {
     /// preserve their original casing under `.other`.
     public init(wireToken: String) {
         switch wireToken.lowercased() {
-        case "owner": self = .owner
-        case "editor", "collaborator", "manager": self = .editor
+        case "owner", "manager": self = .owner
+        case "editor", "collaborator": self = .editor
         case "viewer", "watcher", "reader": self = .viewer
         default: self = .other(wireToken)
         }
@@ -59,12 +79,17 @@ public struct ListWatcher: Sendable, Equatable, Hashable, Identifiable {
     /// The watching user's id. Identity for `Identifiable`.
     public let userId: String
 
-    /// The watching user's username when the API includes it on this row
-    /// (`/watchers/users` returns it; the per-list `/watchers` may omit it).
+    /// The watching user's username, read from the row's nested `user` object
+    /// (with the older flat `username` field as a fallback).
     public let username: String?
 
-    /// The watcher's role on this list. See `WatcherRole` for the taxonomy
-    /// assumption.
+    /// The watching user's display name, when the nested `user` carries one.
+    public let displayName: String?
+
+    /// The watching user's avatar, when the nested `user` carries one.
+    public let avatarURL: URL?
+
+    /// The watcher's role on this list. See `WatcherRole`.
     public let role: WatcherRole
 
     /// When the watcher was added, when the API includes the timestamp.
@@ -72,14 +97,26 @@ public struct ListWatcher: Sendable, Equatable, Hashable, Identifiable {
 
     public var id: String { userId }
 
+    /// Best available human label: display name, then username, then a neutral
+    /// fallback so a row never renders blank.
+    public var displayLabel: String {
+        if let displayName, !displayName.isEmpty { return displayName }
+        if let username, !username.isEmpty { return username }
+        return "User"
+    }
+
     public init(
         userId: String,
         username: String? = nil,
+        displayName: String? = nil,
+        avatarURL: URL? = nil,
         role: WatcherRole,
         createdAt: Date? = nil
     ) {
         self.userId = userId
         self.username = username
+        self.displayName = displayName
+        self.avatarURL = avatarURL
         self.role = role
         self.createdAt = createdAt
     }

@@ -865,10 +865,10 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenListHasWatchers_whenLoadingWatchers_thenMapsRoles() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.watchersArray([
-            (userId: "u-1", role: "owner"),
-            (userId: "u-2", role: "editor"),
-            (userId: "u-3", role: "viewer")
+        await api.enqueue(json: Fixtures.watchersEnvelope([
+            (userId: "u-1", role: "manager"),
+            (userId: "u-2", role: "collaborator"),
+            (userId: "u-3", role: "watcher")
         ]))
         let service = ListsService(api: api)
 
@@ -885,7 +885,7 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenListHasNoWatchers_whenLoadingWatchers_thenReturnsEmptyArray() async throws {
         // Given — boundary: a brand-new list nobody has shared with.
         let api = StubAPIClient()
-        await api.enqueue(json: "[]")
+        await api.enqueue(json: Fixtures.watchersEnvelope([]))
         let service = ListsService(api: api)
 
         // When
@@ -913,7 +913,7 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenWatcherWithUnknownRole_whenLoadingWatchers_thenPreservesRoleAsOther() async throws {
         // Given — boundary: an unknown role string preserves under `.other`.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.watchersArray([(userId: "u-1", role: "admin")]))
+        await api.enqueue(json: Fixtures.watchersEnvelope([(userId: "u-1", role: "admin")]))
         let service = ListsService(api: api)
 
         // When
@@ -971,9 +971,9 @@ final class OwnedListsServiceTests: XCTestCase {
     // MARK: - set / remove watcher
 
     func test_givenUserAndRole_whenSettingWatcher_thenPutsAndMapsResponse() async throws {
-        // Given
+        // Given — the live route answers `{ role }`, not the watcher row.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.watcherObject(userId: "u-9", role: "editor"))
+        await api.enqueue(json: Fixtures.setWatcherRoleEnvelope(role: "collaborator"))
         let service = ListsService(api: api)
 
         // When
@@ -991,10 +991,31 @@ final class OwnedListsServiceTests: XCTestCase {
         XCTAssertEqual(recorded.first?.path, "/api/lists/books/watchers/u-9")
     }
 
-    func test_givenSetWatcherAPIFailure_whenSettingWatcher_thenThrows() async throws {
-        // Given
+    func test_givenSetWatcherRejectedAsNonSubscriber_whenSettingWatcher_thenThrowsSubscriberRequired() async throws {
+        // Given — role changes are subscriber-gated server-side, so a free
+        // owner's 403 must reach the UI as the upsell case, not a raw HTTP
+        // error (work-consolidation.md G23).
         let api = StubAPIClient()
-        await api.enqueue(failure: .forbidden(serverMessage: "only owners can share"))
+        await api.enqueue(failure: .forbidden(serverMessage: "Subscribe to share lists."))
+        let service = ListsService(api: api)
+
+        // When / Then
+        do {
+            _ = try await service.setWatcher(
+                listId: "books",
+                userId: "u-9",
+                role: .editor
+            )
+            XCTFail("Expected ListsError.subscriberRequired")
+        } catch let error as ListsError {
+            XCTAssertEqual(error, .subscriberRequired)
+        }
+    }
+
+    func test_givenSetWatcherAPIFailure_whenSettingWatcher_thenThrows() async throws {
+        // Given — a non-403 failure still surfaces as the raw `APIError`.
+        let api = StubAPIClient()
+        await api.enqueue(failure: .notFound(serverMessage: "no such list"))
         let service = ListsService(api: api)
 
         // When / Then
@@ -1006,7 +1027,7 @@ final class OwnedListsServiceTests: XCTestCase {
             )
             XCTFail("Expected APIError")
         } catch let error as APIError {
-            XCTAssertEqual(error, .forbidden(serverMessage: "only owners can share"))
+            XCTAssertEqual(error, .notFound(serverMessage: "no such list"))
         }
     }
 
