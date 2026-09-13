@@ -80,7 +80,28 @@ extension Message {
             // `compactMap` drops entries whose `url` string will not parse so a
             // `LinkPreview` always carries a usable `URL`. Not persisted in
             // SwiftData — re-derived from the DTO on every load (see Message).
-            linkPreviews: (dto.linkMetadata?.links ?? []).compactMap(LinkPreview.init(from:))
+            linkPreviews: (dto.linkMetadata?.links ?? []).compactMap(LinkPreview.init(from:)),
+            // GitHub #55: the destinations a queued post will fan out to. Stays
+            // `nil` when the server sent no config — the normal case for an
+            // already-published message — so the UI can tell "not a scheduled
+            // post" apart from "scheduled with nothing selected". Not persisted
+            // in SwiftData; re-derived on every load (see Message).
+            scheduledDestinations: dto.scheduledCrossPostConfig.map(ScheduledDestinations.init(from:))
+        )
+    }
+}
+
+extension ScheduledDestinations {
+    /// Resolves the DTO's four independent optionals into definite values: an
+    /// omitted key means the network is not a destination. A config object that
+    /// selects nothing maps to `.none` rather than `nil`, preserving the
+    /// distinction between "scheduled, no cross-posts" and "not scheduled".
+    public init(from dto: ScheduledCrossPostConfigDTO) {
+        self.init(
+            mastodonProviderIds: dto.mastodonProviderIds ?? [],
+            bluesky: dto.crossPostToBluesky ?? false,
+            linkedIn: dto.crossPostToLinkedIn ?? false,
+            twitter: dto.crossPostToTwitter ?? false
         )
     }
 }
