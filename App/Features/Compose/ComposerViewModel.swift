@@ -45,6 +45,15 @@ final class ComposerViewModel {
     /// domain `MessagesService` enforces the same status as a backstop.
     private(set) var entitlements: EntitlementsService
 
+    /// The composed capability gate — account status, email verification, and
+    /// subscription tier as one answer (GitHub #40 / #41 / #42).
+    ///
+    /// `entitlements` alone cannot tell the composer why a post will fail: a
+    /// subscriber who is `restricted`, or who has not verified their email, is
+    /// entitled but still cannot post. This is the gate the Post button and the
+    /// media affordance consult.
+    private(set) var capabilities: CapabilityGate
+
     /// Reads a local file's bytes at send time. Injected so tests can supply
     /// bytes without touching the filesystem; production reads the file URL.
     private let readData: @Sendable (URL) async throws -> Data
@@ -181,6 +190,31 @@ final class ComposerViewModel {
         entitlements.isSubscriber
     }
 
+    /// Why this draft cannot be posted right now, or `nil` if it can.
+    ///
+    /// An edit republishes an existing message rather than posting a new one,
+    /// but the platform gates both the same way, so the same action is asked
+    /// about in either mode.
+    var postDenial: CapabilityDenial? {
+        capabilities.denial(for: .postMessage)
+    }
+
+    /// Why media cannot be attached right now, or `nil` if it can.
+    var attachmentDenial: CapabilityDenial? {
+        capabilities.denial(for: .mediaAttachments)
+    }
+
+    /// The inline, non-modal explanation shown under the composer when posting
+    /// is blocked. Never blocks typing — the draft must survive (GitHub #41).
+    var postBlockedMessage: String? {
+        postDenial?.message
+    }
+
+    /// The next step to offer beside ``postBlockedMessage``, if any.
+    var postBlockedRemedy: CapabilityRemedy? {
+        postDenial?.remedy
+    }
+
     /// Whether the M6 controls should appear at all. Edits don't expose media /
     /// schedule / cross-post — those apply to a fresh message only.
     var showsSubscriberControls: Bool {
@@ -279,6 +313,11 @@ final class ComposerViewModel {
         if showsSubscriberControls, isScheduled, scheduledAt <= Date() {
             return false
         }
+        // Account status / email verification / tier. Asked before the user
+        // clicks Post rather than discovered from a server error afterwards.
+        if postDenial != nil {
+            return false
+        }
         return true
     }
 
@@ -289,6 +328,8 @@ final class ComposerViewModel {
         eventBus: ComposerEventBus,
         mode: ComposerMode = .newPost,
         entitlements: EntitlementsService = EntitlementsService(customerStatus: .free),
+        accountStatus: AccountStatus = .active,
+        isEmailVerified: Bool = true,
         readData: @escaping @Sendable (URL) async throws -> Data = { try Data(contentsOf: $0) },
         onSubscriberLapse: (@MainActor () async -> Void)? = nil,
         userService: UserServicing? = nil,
@@ -301,6 +342,11 @@ final class ComposerViewModel {
         self.eventBus = eventBus
         self.mode = mode
         self.entitlements = entitlements
+        self.capabilities = CapabilityGate(
+            accountStatus: accountStatus,
+            entitlements: entitlements,
+            isEmailVerified: isEmailVerified
+        )
         self.readData = readData
         self.onSubscriberLapse = onSubscriberLapse
         self.userService = userService
@@ -373,8 +419,16 @@ final class ComposerViewModel {
     /// non-subscribers (the affordance is disabled in the view, but this is
     /// defence-in-depth so a programmatic add can't bypass the gate's intent).
     func addAttachments(urls: [URL]) {
-        guard canUseSubscriberFeatures else {
-            error = MessagesError.subscriberRequired(.mediaAttachments)
+        if let denial = attachmentDenial {
+            // A tier denial keeps surfacing as `MessagesError.subscriberRequired`
+            // — the type the rest of the app already treats as "subscription
+            // lapse". Status and verification denials are a different problem
+            // with a different remedy, so they carry the denial itself.
+            if case .subscriberRequired(let feature) = denial {
+                error = MessagesError.subscriberRequired(feature)
+            } else {
+                error = ComposerError.blocked(denial)
+            }
             return
         }
         var rejected = false
@@ -621,10 +675,16 @@ enum ComposerError: Error, LocalizedError, Equatable {
     /// A picked / dropped file isn't a supported image or video type.
     case unsupportedAttachment
 
+    /// The account may not perform this action — because of its status or an
+    /// unverified email, rather than its subscription tier (GitHub #41 / #42).
+    case blocked(CapabilityDenial)
+
     var errorDescription: String? {
         switch self {
         case .unsupportedAttachment:
             return "That file isn't a supported image or video."
+        case .blocked(let denial):
+            return denial.message
         }
     }
 }

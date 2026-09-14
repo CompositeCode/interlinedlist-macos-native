@@ -15,9 +15,10 @@
 // Photo attachments (work-consolidation.md G22): up to 8 per message via a
 // shared `DMAttachmentDraft`, uploaded immediately before the send. A
 // failed upload never costs the user their draft — the text still sends
-// and the failure is surfaced. Photo sending requires a verified email;
-// the server's 403 is surfaced verbatim. TODO(#41): the verification gate
-// is owned by issue #41 — do not add a second check here.
+// and the failure is surfaced. Photo sending requires a verified email:
+// since #41 the attach affordance is disabled and explained up front via
+// `CapabilityGate.evaluate(.directMessageImages)`. The service keeps no
+// competing pre-check — the server's 403 stays authoritative.
 //
 // The recipient list is the mutual-follower set (`recipients()`), which is
 // why the empty state explains the mutual-follow rule rather than just
@@ -105,12 +106,34 @@ final class NewMessageViewModel {
     init(
         service: DirectMessagesServicing,
         eventBus: DirectMessagesEventBus? = nil,
-        readData: @escaping @Sendable (URL) async throws -> Data = { try Data(contentsOf: $0) }
+        readData: @escaping @Sendable (URL) async throws -> Data = { try Data(contentsOf: $0) },
+        capabilities: @escaping @Sendable () -> CapabilityGate = { CapabilityGate(user: nil) }
     ) {
         self.service = service
         self.bus = eventBus
         self.readData = readData
+        self.capabilities = capabilities
     }
+
+    /// The live capability gate. A closure, not a snapshot: verifying an email
+    /// or resolving a sign-in mid-session must re-enable the affordance without
+    /// a relaunch.
+    private let capabilities: @Sendable () -> CapabilityGate
+
+    /// Why photos cannot be attached right now, or `nil` if they can.
+    ///
+    /// Sending a DM photo needs a **verified email address**, which no amount of
+    /// subscription fixes — so this asks the composed gate rather than
+    /// `EntitlementsService`. A `nil` provider means "not wired", which
+    /// evaluates as an unrestricted account: the affordance stays enabled and
+    /// the server's 403 remains the backstop, exactly as before #41.
+    var attachmentDenial: CapabilityDenial? {
+        capabilities().denial(for: .directMessageImages)
+    }
+
+    /// The sentence shown beside a disabled attach control.
+    var attachmentBlockedMessage: String? { attachmentDenial?.message }
+
 
     // MARK: - Intents
 

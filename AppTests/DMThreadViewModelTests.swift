@@ -33,6 +33,17 @@ import InterlinedDomain
 import InterlinedKit
 @testable import InterlinedList
 
+/// An unrestricted account: active, verified, subscribed. The default so every
+/// pre-existing case keeps exercising what it was written for rather than
+/// silently acquiring an entitlement assertion.
+nonisolated private func unrestrictedDMGate() -> CapabilityGate {
+    CapabilityGate(
+        accountStatus: .active,
+        entitlements: EntitlementsService(customerStatus: .subscriber),
+        isEmailVerified: true
+    )
+}
+
 @MainActor
 final class DMThreadViewModelTests: XCTestCase {
 
@@ -43,7 +54,8 @@ final class DMThreadViewModelTests: XCTestCase {
 
     private func makeViewModel(
         pollInterval: Duration = .milliseconds(5),
-        readData: @escaping @Sendable (URL) async throws -> Data = { _ in Data([0x1]) }
+        readData: @escaping @Sendable (URL) async throws -> Data = { _ in Data([0x1]) },
+        capabilities: @escaping @Sendable () -> CapabilityGate = { unrestrictedDMGate() }
     ) -> (DMThreadViewModel, StubDirectMessagesService, DirectMessagesEventBus) {
         let service = StubDirectMessagesService()
         let bus = DirectMessagesEventBus()
@@ -53,7 +65,8 @@ final class DMThreadViewModelTests: XCTestCase {
             eventBus: bus,
             currentUserID: { [me] in me },
             pollInterval: pollInterval,
-            readData: readData
+            readData: readData,
+            capabilities: capabilities
         )
         return (vm, service, bus)
     }
@@ -484,5 +497,54 @@ final class DMThreadViewModelTests: XCTestCase {
         let recorded = await service.recorded
         XCTAssertTrue(recorded.isEmpty)
         XCTAssertEqual(vm.error as? DMThreadError, .bodyTooLong(limit: 10_000))
+    }
+
+    // MARK: - Photo attachments are gated on a verified email (GitHub #41)
+
+    func test_givenVerifiedSubscriber_whenAskingIfPhotosCanBeAttached_thenNothingBlocksIt() {
+        let (vm, _, _) = makeViewModel()
+
+        XCTAssertNil(vm.attachmentDenial)
+        XCTAssertNil(vm.attachmentBlockedMessage)
+    }
+
+    func test_givenUnverifiedEmail_whenAskingIfPhotosCanBeAttached_thenBlockedWithAVerificationReason() {
+        // The defect this closes: the composer advertised photo attachments and
+        // only discovered the refusal after the user had picked a file, because
+        // the server's 403 was the first and only signal.
+        let (vm, _, _) = makeViewModel(capabilities: {
+            CapabilityGate(
+                accountStatus: .active,
+                entitlements: EntitlementsService(customerStatus: .subscriber),
+                isEmailVerified: false
+            )
+        })
+
+        XCTAssertEqual(vm.attachmentDenial, .emailUnverified)
+        XCTAssertEqual(vm.attachmentBlockedMessage, CapabilityDenial.emailUnverified.message)
+    }
+
+    func test_givenSuspendedAccount_whenAskingIfPhotosCanBeAttached_thenStatusOutranksVerification() {
+        // Status is the harder gate and is evaluated first, so a suspended user
+        // is not told to "verify your email" — which would not unblock them.
+        let (vm, _, _) = makeViewModel(capabilities: {
+            CapabilityGate(
+                accountStatus: .suspended,
+                entitlements: EntitlementsService(customerStatus: .subscriber),
+                isEmailVerified: false
+            )
+        })
+
+        XCTAssertEqual(vm.attachmentDenial, .accountReadOnly(.suspended))
+    }
+
+    func test_givenNoGateWired_whenAskingIfPhotosCanBeAttached_thenFailsOpenAndLeavesTheServerAuthoritative() {
+        // Boundary: an un-injected gate must not invent a restriction. A signed-
+        // out or unresolved session is `.active` + unverified, so the *email*
+        // gate is what speaks — never a fabricated status block.
+        let (vm, _, _) = makeViewModel(capabilities: { CapabilityGate(user: nil) })
+
+        XCTAssertEqual(vm.attachmentDenial, .emailUnverified)
+        XCTAssertNotEqual(vm.attachmentDenial, .accountBanned)
     }
 }

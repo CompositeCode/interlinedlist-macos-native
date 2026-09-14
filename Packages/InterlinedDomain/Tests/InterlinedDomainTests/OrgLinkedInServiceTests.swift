@@ -24,7 +24,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
                    "pageLogoUrl":"https://cdn/l.png"}],
          "assignments":[{"userId":"u2","pageId":"p1","pageName":"Acme Corp"}]}
         """#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         let status = try await service.linkedInStatus(of: "o1")
 
@@ -47,7 +47,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         // not be offered the management controls.
         let api = StubAPIClient()
         await api.enqueue(json: #"{"credential":null,"role":"member"}"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         let status = try await service.linkedInStatus(of: "o1")
 
@@ -64,7 +64,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         await api.enqueue(json: #"""
         {"credential":{"expiresAt":"2026-12-01T00:00:00.000Z"},"role":"admin","pages":[]}
         """#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         let status = try await service.linkedInStatus(of: "o1")
 
@@ -77,7 +77,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         // Upstream API failure.
         let api = StubAPIClient()
         await api.enqueue(failure: .httpStatus(code: 502, serverMessage: "linkedin down"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         do {
             _ = try await service.linkedInStatus(of: "o1")
@@ -92,7 +92,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         // stay hidden rather than rendering an action the server will reject.
         let api = StubAPIClient()
         await api.enqueue(json: #"{"credential":null,"role":"guest"}"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         let status = try await service.linkedInStatus(of: "o1")
 
@@ -111,7 +111,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         {"connected":true,"role":"owner",
          "pages":[{"id":"p1","pageName":"Acme Corp"},{"id":"p2","pageName":"Acme Labs"}]}
         """#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         let status = try await service.syncLinkedInPages(of: "o1", callerRole: .owner)
 
@@ -125,7 +125,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
     func test_givenMember_whenSyncingPages_thenRejectsBeforeAnyServiceCall() async throws {
         // Invalid input: sync is owner/admin only.
         let api = StubAPIClient()
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         do {
             _ = try await service.syncLinkedInPages(of: "o1", callerRole: .member)
@@ -143,7 +143,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         // sync, so the caller can keep showing its stale page list.
         let api = StubAPIClient()
         await api.enqueue(failure: .httpStatus(code: 502, serverMessage: "linkedin down"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         do {
             _ = try await service.syncLinkedInPages(of: "o1", callerRole: .owner)
@@ -161,7 +161,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         let api = StubAPIClient()
         await api.enqueue(json: "{}")
         await api.enqueue(json: #"{"connected":true,"role":"owner","pages":[]}"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         let status = try await service.syncLinkedInPages(of: "o1", callerRole: .owner)
 
@@ -175,7 +175,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         // Happy path.
         let api = StubAPIClient()
         await api.enqueue(json: "{}")
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         try await service.assignLinkedInPage(in: "o1", userId: "u2", pageId: "p1", callerRole: .admin)
 
@@ -188,7 +188,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         // Boundary: clearing an assignment sends a null page reference.
         let api = StubAPIClient()
         await api.enqueue(json: "{}")
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         try await service.assignLinkedInPage(in: "o1", userId: "u2", pageId: nil, callerRole: .owner)
 
@@ -199,7 +199,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
     func test_givenMember_whenAssigningPage_thenRejectsBeforeAnyServiceCall() async throws {
         // Invalid input: assignment is owner/admin only.
         let api = StubAPIClient()
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         do {
             try await service.assignLinkedInPage(in: "o1", userId: "u2", pageId: "p1", callerRole: .member)
@@ -214,7 +214,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
     func test_givenBlankUserId_whenAssigningPage_thenRejectsBeforeAnyServiceCall() async throws {
         // Invalid input: an assignment needs someone to assign to.
         let api = StubAPIClient()
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         do {
             try await service.assignLinkedInPage(in: "o1", userId: "", pageId: "p1", callerRole: .owner)
@@ -230,7 +230,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         // Upstream API failure.
         let api = StubAPIClient()
         await api.enqueue(failure: .badRequest(serverMessage: "unknown page"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         do {
             try await service.assignLinkedInPage(in: "o1", userId: "u2", pageId: "nope", callerRole: .owner)
@@ -246,7 +246,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         // Happy path.
         let api = StubAPIClient()
         await api.enqueue(json: "{}")
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         try await service.disconnectLinkedIn(from: "o1", callerRole: .owner)
 
@@ -259,7 +259,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         // Invalid input: disconnect is owner/admin only — and it silently
         // redirects every assigned member's cross-posts, so the gate matters.
         let api = StubAPIClient()
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         do {
             try await service.disconnectLinkedIn(from: "o1", callerRole: .member)
@@ -275,7 +275,7 @@ final class OrgLinkedInServiceTests: XCTestCase {
         // Upstream API failure.
         let api = StubAPIClient()
         await api.enqueue(failure: .httpStatus(code: 500, serverMessage: "boom"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         do {
             try await service.disconnectLinkedIn(from: "o1", callerRole: .owner)

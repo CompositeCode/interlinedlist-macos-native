@@ -14,12 +14,12 @@
 //   • "Photos are resized automatically." → the resize happens in
 //     `DirectMessagesService.uploadImage` via the shared `ImagePrep` +
 //     `ContentLimits` path, not here and not with fresh constants.
-//   • "You'll need a verified email address to send images." → NOT checked
-//     here. The server's 403 carries the canonical wording and is surfaced
-//     verbatim. TODO(#41): issue #41 builds `CapabilityGate`
-//     (status → email verification → tier); when it merges, the composers
-//     should consult it to explain the refusal before the user picks a
-//     file. One gate, one owner — do not add a second check here.
+//   • "You'll need a verified email address to send images." → still NOT
+//     checked here, deliberately. Since #41 the *composers* consult
+//     `CapabilityGate.evaluate(.directMessageImages)` and disable the attach
+//     affordance with the reason up front; this draft holds picked files and
+//     has no business re-deciding entitlement. One gate, one owner — do not
+//     add a second check here. The server's 403 remains the backstop.
 //
 // The upload loop is deliberately failure-tolerant: an upload that fails
 // must not cost the user their draft. Successful uploads are kept, the

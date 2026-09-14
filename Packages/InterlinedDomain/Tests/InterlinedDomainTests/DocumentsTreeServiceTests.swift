@@ -249,9 +249,9 @@ final class DocumentsTreeServiceTests: XCTestCase {
             _ = try await service.createDocument(
                 inFolder: "f1", title: "Notes", body: "", isPublic: false, relativePath: nil
             )
-            XCTFail("Expected DocumentsError.subscriberRequired")
+            XCTFail("Expected DocumentsError.subscriberRequired(.documentCreation)")
         } catch let error as DocumentsError {
-            XCTAssertEqual(error, .subscriberRequired)
+            XCTAssertEqual(error, .subscriberRequired(.documentCreation))
         }
         let recorded = await api.recorded
         XCTAssertTrue(recorded.isEmpty, "the gate must run before the HTTP call")
@@ -268,9 +268,9 @@ final class DocumentsTreeServiceTests: XCTestCase {
             _ = try await service.createDocument(
                 inFolder: "f1", title: "Notes", body: "", isPublic: false, relativePath: nil
             )
-            XCTFail("Expected DocumentsError.subscriberRequired")
+            XCTFail("Expected DocumentsError.subscriberRequired(.documentCreation)")
         } catch let error as DocumentsError {
-            XCTAssertEqual(error, .subscriberRequired)
+            XCTAssertEqual(error, .subscriberRequired(.documentCreation))
         }
     }
 

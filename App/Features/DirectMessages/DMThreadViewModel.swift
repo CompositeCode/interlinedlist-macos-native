@@ -28,8 +28,10 @@
 // `DirectMessagesServicing.uploadImage` immediately before the send. An
 // upload that fails does NOT abort the message — the text still goes out,
 // the failure is surfaced, and nothing the user typed or picked is lost.
-// Photo sending requires a verified email; the server's 403 is surfaced
-// verbatim. TODO(#41): the verification gate is owned by issue #41.
+// Photo sending requires a verified email: since #41 the attach affordance
+// is disabled and explained up front via
+// `CapabilityGate.evaluate(.directMessageImages)`, with the server's 403
+// retained as the authoritative backstop.
 //
 // Bubble alignment uses `DirectMessage.isOutgoing(currentUserId:)` with
 // the id from the injected `currentUserID` closure so the view model
@@ -157,7 +159,8 @@ final class DMThreadViewModel {
         eventBus: DirectMessagesEventBus? = nil,
         currentUserID: @MainActor @escaping () -> String? = { nil },
         pollInterval: Duration = defaultPollInterval,
-        readData: @escaping @Sendable (URL) async throws -> Data = { try Data(contentsOf: $0) }
+        readData: @escaping @Sendable (URL) async throws -> Data = { try Data(contentsOf: $0) },
+        capabilities: @escaping @Sendable () -> CapabilityGate = { CapabilityGate(user: nil) }
     ) {
         self.username = username
         self.service = service
@@ -165,7 +168,28 @@ final class DMThreadViewModel {
         self.currentUserIDProvider = currentUserID
         self.pollInterval = pollInterval
         self.readData = readData
+        self.capabilities = capabilities
     }
+
+    /// The live capability gate. A closure, not a snapshot: verifying an email
+    /// or resolving a sign-in mid-session must re-enable the affordance without
+    /// a relaunch.
+    private let capabilities: @Sendable () -> CapabilityGate
+
+    /// Why photos cannot be attached right now, or `nil` if they can.
+    ///
+    /// Sending a DM photo needs a **verified email address**, which no amount of
+    /// subscription fixes — so this asks the composed gate rather than
+    /// `EntitlementsService`. A `nil` provider means "not wired", which
+    /// evaluates as an unrestricted account: the affordance stays enabled and
+    /// the server's 403 remains the backstop, exactly as before #41.
+    var attachmentDenial: CapabilityDenial? {
+        capabilities().denial(for: .directMessageImages)
+    }
+
+    /// The sentence shown beside a disabled attach control.
+    var attachmentBlockedMessage: String? { attachmentDenial?.message }
+
 
     // MARK: - Lifecycle
 

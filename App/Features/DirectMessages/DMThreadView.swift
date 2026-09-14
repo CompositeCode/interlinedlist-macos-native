@@ -46,7 +46,10 @@ struct DMThreadView: View {
                     username: username,
                     service: environment.directMessages,
                     eventBus: environment.directMessagesEventBus,
-                    currentUserID: currentUserID
+                    currentUserID: currentUserID,
+                    // Read live, not captured: verifying an email in a browser
+                    // must re-enable the attach control without a relaunch.
+                    capabilities: { environment.liveCapabilities }
                 )
                 viewModel = vm
                 await vm.startPolling()
@@ -235,22 +238,26 @@ struct DMThreadView: View {
             }
             HStack(spacing: 8) {
                 // G22: photo attachments. Sending photos needs a verified
-                // email address; the server refuses with an explanation when
-                // it isn't, and that message is what the error line shows.
-                // TODO(#41): once issue #41's `CapabilityGate` merges,
-                // disable this and explain up front rather than after the
-                // attempt.
+                // email address. Since #41 the gate is asked *before* the user
+                // picks a file, so the control is disabled with the reason in
+                // its tooltip rather than failing after the attempt. The
+                // server's 403 remains the backstop if the gate is stale.
                 Button {
                     isPhotoImporterPresented = true
                 } label: {
                     Image(systemName: "photo.on.rectangle")
                 }
                 .buttonStyle(.bordered)
-                .disabled(composerDisabled || viewModel.attachmentsAreFull)
+                .disabled(
+                    composerDisabled
+                        || viewModel.attachmentsAreFull
+                        || viewModel.attachmentDenial != nil
+                )
                 .help(
-                    viewModel.attachmentsAreFull
-                        ? "Up to \(viewModel.maxAttachments) photos per message"
-                        : "Attach photos"
+                    viewModel.attachmentBlockedMessage
+                        ?? (viewModel.attachmentsAreFull
+                            ? "Up to \(viewModel.maxAttachments) photos per message"
+                            : "Attach photos")
                 )
                 .accessibilityLabel("Attach photos")
 

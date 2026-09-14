@@ -70,6 +70,11 @@ struct ComposerWindowView: View {
                     // B): a subscriber sees the M6 controls enabled, a free /
                     // signed-out account sees them disabled with an upsell.
                     entitlements: environment.liveEntitlements,
+                    // GitHub #42 / #41 — the other two reasons a post can be
+                    // refused. Passed alongside the tier so the composer can
+                    // say *which* one applies before the user writes anything.
+                    accountStatus: environment.currentUserStore.currentUser?.accountStatus ?? .active,
+                    isEmailVerified: environment.currentUserStore.currentUser?.isEmailVerified ?? true,
                     // PLAN.md §8 — a gated 403 mid-flow re-fetches the
                     // customerStatus so the composer re-gates.
                     onSubscriberLapse: { await environment.refreshEntitlements() },
@@ -682,6 +687,44 @@ struct ComposerWindowView: View {
 
     @ViewBuilder
     private func footer(viewModel: ComposerViewModel) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Why Post is disabled, said before the user clicks it (GitHub
+            // #41 / #42). Inline and non-modal on purpose: the draft keeps its
+            // text, and the user can still type, copy, and save it elsewhere.
+            if let message = viewModel.postBlockedMessage {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text(message)
+                        .font(.ilSubtitle())
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let destination = viewModel.postBlockedRemedy?.webDestination {
+                        Link(remedyLabel(for: viewModel.postBlockedRemedy), destination: destination.url())
+                            .font(.ilSubtitle())
+                    }
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+            }
+
+            footerControls(viewModel: viewModel)
+        }
+    }
+
+    /// The label for the remedy link beside a blocked-post explanation.
+    private func remedyLabel(for remedy: CapabilityRemedy?) -> String {
+        switch remedy {
+        case .verifyEmail: return "Verify email"
+        case .contactSupport: return "Contact support"
+        case .upgrade: return "Manage subscription"
+        case .noneAvailable, nil: return ""
+        }
+    }
+
+    @ViewBuilder
+    private func footerControls(viewModel: ComposerViewModel) -> some View {
         HStack {
             Button("Cancel", role: .cancel) {
                 dismiss()

@@ -62,6 +62,9 @@ struct InterlinedListApp: App {
     /// than writing the badge directly, so neither clobbers the other.
     @State private var badgeAggregator: UnreadBadgeAggregator?
 
+    /// Drives the capability-gate refresh below.
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             AppRootView(store: environment.currentUserStore)
@@ -136,6 +139,15 @@ struct InterlinedListApp: App {
                         dmDockBadge = dmCoordinator
                         dmCoordinator.start()
                     }
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    // #41/#42 — the capability gate is only as fresh as the
+                    // session it is built from, and `SessionService.restore()`
+                    // is the ONLY re-fetch path. Without this, verifying an
+                    // email or fixing an account status in a browser leaves the
+                    // Mac app gated until the next launch.
+                    guard phase == .active else { return }
+                    Task { _ = try? await environment.currentUserStore.restore() }
                 }
         }
         .windowToolbarStyle(.unified)

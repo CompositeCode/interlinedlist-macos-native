@@ -77,6 +77,36 @@ final class ContractTests: XCTestCase {
         XCTAssertNotNil(try store.read())
     }
 
+    /// Live-shape contract for `accountStatus` (GitHub #42).
+    ///
+    /// The OpenAPI schema types this as a bare string with no enum, so the only
+    /// way to know what the server actually sends is to ask it. Read-only.
+    func test_givenLiveCredentials_whenFetchingUser_thenAccountStatusIsPresentAndKnown() async throws {
+        guard let credentials = credentialsFromEnvironment() else {
+            throw XCTSkip("Live credentials not set — skipping contract test.")
+        }
+
+        let store = InMemoryTokenStore()
+        let (client, service) = makeLiveStack(tokenStore: store)
+        _ = try await service.signIn(email: credentials.email, password: credentials.password)
+
+        let response = try await client.send(User.current())
+
+        // The field the client used to drop entirely.
+        XCTAssertNotNil(response.user.accountStatus, "GET /api/user should carry accountStatus")
+
+        // If the server ever introduces a value outside the documented set,
+        // this fails loudly here rather than silently mis-gating the whole app.
+        // The client still fails *open* at runtime — this is the early warning.
+        let documented = ["new", "active", "restricted", "suspended", "banned"]
+        if let status = response.user.accountStatus {
+            XCTAssertTrue(
+                documented.contains(status.lowercased()),
+                "Undocumented accountStatus \"\(status)\" — the gating matrix may need revisiting"
+            )
+        }
+    }
+
     func test_givenLiveCredentials_whenFetchingTimeline_thenReturns200AndDecodes() async throws {
         guard let credentials = credentialsFromEnvironment() else {
             throw XCTSkip("Live credentials not set — skipping contract test.")

@@ -54,6 +54,11 @@ public struct CurrentUser: Sendable, Equatable, Identifiable {
     public let summary: UserSummary
     public let email: String
     public let customerStatus: CustomerStatus
+    /// The account's lifecycle status, which gates behaviour independently of
+    /// `customerStatus` and of `isEmailVerified` — a subscriber who is
+    /// `.restricted` still cannot post. Ask ``CapabilityGate`` rather than
+    /// reading this directly at a call site.
+    public let accountStatus: AccountStatus
     public let isEmailVerified: Bool
     public let isPrivateAccount: Bool
     /// The account's "new posts are public by default" preference. Carried here
@@ -79,6 +84,7 @@ public struct CurrentUser: Sendable, Equatable, Identifiable {
         summary: UserSummary,
         email: String,
         customerStatus: CustomerStatus,
+        accountStatus: AccountStatus = .active,
         isEmailVerified: Bool,
         isPrivateAccount: Bool,
         defaultPubliclyVisible: Bool = true,
@@ -87,6 +93,7 @@ public struct CurrentUser: Sendable, Equatable, Identifiable {
         self.summary = summary
         self.email = email
         self.customerStatus = customerStatus
+        self.accountStatus = accountStatus
         self.isEmailVerified = isEmailVerified
         self.isPrivateAccount = isPrivateAccount
         self.defaultPubliclyVisible = defaultPubliclyVisible

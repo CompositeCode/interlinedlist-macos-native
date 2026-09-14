@@ -61,11 +61,12 @@ public protocol DirectMessagesServicing: Sendable {
     ///
     /// Sending photos requires a **verified email address**. This method does
     /// NOT pre-check that: the server's 403 is surfaced verbatim instead.
-    /// TODO(#41): the email-verification gate is owned by issue #41, which
-    /// builds `CapabilityGate` (status → email verification → tier). When that
-    /// branch merges, have the DM composers ask the gate so the affordance is
-    /// explained *before* the user picks a file. Do not add a second check
-    /// here — one gate, one owner.
+    /// Resolved by #41 (2026-09-14): `CapabilityGate` now exists and the DM
+    /// composers ask it for `.directMessageImages` so the affordance is
+    /// disabled and explained *before* the user picks a file. This service
+    /// deliberately keeps **no** competing pre-check — the server's 403 stays
+    /// the authoritative answer, and one gate with one owner cannot disagree
+    /// with itself.
     func uploadImage(_ data: Data) async throws -> String
 
     func thread(username: String, cursor: String?) async throws -> DMThread
@@ -134,10 +135,11 @@ public final class DirectMessagesService: DirectMessagesServicing {
         // A 403 here is the documented "verified email required" refusal. It
         // propagates untouched: `APIError.forbidden` preserves the server's own
         // wording, which is the canonical explanation for the user.
-        // TODO(#41): the email-verification gate is owned by issue #41 and
-        // arrives as `CapabilityGate`. When it lands, the composer should
-        // disable the attach affordance up front and explain why. Do not add a
-        // competing pre-check in this service.
+        // #41 (2026-09-14): the composer now disables the attach affordance up
+        // front via `CapabilityGate.evaluate(.directMessageImages)`. This stays
+        // un-pre-checked on purpose — the gate is advisory for the call and the
+        // server remains authoritative, so a stale client verdict can never
+        // block a request the server would have accepted.
         let response = try await api.send(
             DirectMessages.uploadImage(prepared.data, contentType: prepared.format.mimeType)
         )

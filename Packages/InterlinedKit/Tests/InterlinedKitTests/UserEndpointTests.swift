@@ -82,6 +82,70 @@ final class UserEndpointTests: XCTestCase {
         XCTAssertFalse(response.user.emailVerified)
     }
 
+    // MARK: - accountStatus (GitHub #42)
+
+    /// Happy path: the field the client previously dropped on the floor.
+    /// Verified against the live payload 2026-09-09 (`"accountStatus":"active"`).
+    func test_givenUserEnvelopeWithAccountStatus_whenDecoded_thenCarriesRawStatus() throws {
+        let json = #"""
+        { "user": { "id": "u1", "email": "a@b.c", "username": "ada",
+          "emailVerified": true, "customerStatus": "subscriber",
+          "accountStatus": "active",
+          "createdAt": "2026-01-01T00:00:00Z" } }
+        """#
+
+        let response = try JSONCoders.makeDecoder().decode(UserResponse.self, from: Data(json.utf8))
+
+        XCTAssertEqual(response.user.accountStatus, "active")
+    }
+
+    /// Boundary: the field is absent, as it is on any older server. It must
+    /// decode to nil rather than failing — the domain layer supplies the
+    /// fail-open default.
+    func test_givenUserEnvelopeWithoutAccountStatus_whenDecoded_thenNilNotAThrow() throws {
+        let json = #"""
+        { "user": { "id": "u1", "email": "a@b.c", "username": "ada",
+          "emailVerified": false, "customerStatus": "free",
+          "createdAt": "2026-01-01T00:00:00Z" } }
+        """#
+
+        let response = try JSONCoders.makeDecoder().decode(UserResponse.self, from: Data(json.utf8))
+
+        XCTAssertNil(response.user.accountStatus)
+    }
+
+    /// Upstream drift: the OpenAPI schema declares `accountStatus` as a bare
+    /// string with no enum, so the server may send a value this client has
+    /// never seen. Decoding it loosely means one unknown status can never fail
+    /// the whole account decode and sign the user out.
+    func test_givenUnrecognisedAccountStatus_whenDecoded_thenPreservedNotRejected() throws {
+        let json = #"""
+        { "user": { "id": "u1", "email": "a@b.c", "username": "ada",
+          "emailVerified": true, "customerStatus": "free",
+          "accountStatus": "shadow-realm",
+          "createdAt": "2026-01-01T00:00:00Z" } }
+        """#
+
+        let response = try JSONCoders.makeDecoder().decode(UserResponse.self, from: Data(json.utf8))
+
+        XCTAssertEqual(response.user.accountStatus, "shadow-realm")
+    }
+
+    /// Invalid input: a null literal is distinct from an absent key on the
+    /// wire, and must land on the same nil rather than throwing.
+    func test_givenNullAccountStatus_whenDecoded_thenNil() throws {
+        let json = #"""
+        { "user": { "id": "u1", "email": "a@b.c", "username": "ada",
+          "emailVerified": true, "customerStatus": "free",
+          "accountStatus": null,
+          "createdAt": "2026-01-01T00:00:00Z" } }
+        """#
+
+        let response = try JSONCoders.makeDecoder().decode(UserResponse.self, from: Data(json.utf8))
+
+        XCTAssertNil(response.user.accountStatus)
+    }
+
     func test_givenUnauthorized_whenCurrentSent_thenThrowsUnauthorized() async throws {
         // Upstream API failure. With no token the request still sends; the 401
         // safety net retries through the (empty) session transport, whose

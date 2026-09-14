@@ -22,6 +22,44 @@ The July web-parity batch (`feature/web-parity-batch-2026-07`) merged into `dev`
 
 Milestones **M0–M7** feature work is complete; post-milestone items NW-1…NW-6, S1/S3/S4, B8 are done.
 
+**Capability gating — ✅ SHIPPED 2026-09-14 (GitHub [#42](https://github.com/CompositeCode/interlinedlist-macos-native/issues/42) / [#40](https://github.com/CompositeCode/interlinedlist-macos-native/issues/40) / [#41](https://github.com/CompositeCode/interlinedlist-macos-native/issues/41) / [#39](https://github.com/CompositeCode/interlinedlist-macos-native/issues/39)).**
+
+`accountStatus` is modelled, the entitlement matrix went from **3 `Feature` cases to 11**, and email
+verification gates the surfaces that need it. `CapabilityGate` answers all three as one question —
+**status → email verification → tier, hardest first** — so the user gets the reason they can act on
+rather than whichever check happened to run first.
+
+The rule the matrix encodes: **creation is gated; managing, moving and leaving what you already have
+is free.** A lapsed subscriber keeps existing content fully usable.
+
+- **Gated:** post/reply media, scheduled posts, cross-posting, list creation, document creation,
+  document-template creation, organization creation, sharing-with-people (including
+  `ListsService.addWatcher`), email invites, share links, AI — **and org LinkedIn
+  `syncLinkedInPages` / `assignLinkedInPage`**, which establish a publishing destination and are
+  therefore `.crossPosting`, aligning org LinkedIn with the personal cross-post gate.
+- **Free:** every read, `moveDocument`, org `delete` / `leave` / `setMemberSuspended`, and
+  `disconnectLinkedIn` — a user must always be able to undo a connection, including *because* their
+  subscription lapsed.
+- **No `listFolderCreation` case.** List folders are not returning to macOS
+  ([#49](https://github.com/CompositeCode/interlinedlist-macos-native/issues/49), owner decision
+  2026-09-14), so gating them would be dead code that reads like a promise.
+
+**Three defects fixed on the way.**
+1. **The staleness hole.** `EntitlementsService` is built from `user?.customerStatus` and
+   `SessionService.restore()` was the *only* re-fetch path — launch and sign-in. Verifying an email
+   in a browser left the Mac app gated until relaunch. The app now re-resolves the session on
+   `scenePhase == .active`.
+2. **`send-verification-email` was annotated `.bearer` on the strength of a 401 for an
+   *unauthenticated* caller** — which only ever proved anonymous fails. A live probe (2026-09-14)
+   returns **401 under a valid Bearer token**; the route really is `x-auth-type: session`. The
+   resend affordance deep-links to web Settings ▸ Security, and the builder now says so.
+3. **#39 — the AI copy told subscribers to "add your own AI provider key"**, a setting that does not
+   exist. AI is included in the subscription, so an empty `providers[]` is a *service-side* outage.
+   The copy no longer asks the user to fix something they cannot.
+
+Test baseline after this change: Kit **483** · Domain **1012** · Persistence **140** · App **968**.
+
+
 **Merged since this doc was consolidated (2026-08-18 → 2026-09-02):**
 - **G4 · GitHub issue integration** (PR #12, merged 2026-08-18) — Kit + Domain client + the full App UI (issue browser in GitHub-backed lists, "create issue from a message", close/reopen + label/assignee editing). Client-complete; only the issue **update** and **comment** routes stay backend-blocked (see [§1 · G4](#g4-github-issue-integration) / [§2 · P1-H2](#p1-h2-github-issue-update-comment-routes)). Also in PR #12: G7 verify, G14 tail, ERD schema-entity view, timeline New Message button, G11a LinkedIn target, force-directed connections layout, Preferences pane, per-item Markdown export.
 - **Sharing collaborators / invites / visibility** (PR #13, merged 2026-09-02) — extends the G3 sharing group: per-person document collaborators (search/add/set-role/remove), email invites for lists **and** documents, and a make-public visibility toggle. Full stack (Kit `SharingEndpoint`/`SharingDTO`, Domain `Sharing` models + `SharingService`, App `DocumentCollaborators*`/`Invites*`/`Visibility*` views + VMs) with Kit/Domain/App tests. Create paths are subscriber-gated.

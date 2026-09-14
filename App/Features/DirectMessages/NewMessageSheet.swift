@@ -51,7 +51,10 @@ struct NewMessageSheet: View {
             if viewModel == nil, let environment {
                 let vm = NewMessageViewModel(
                     service: environment.directMessages,
-                    eventBus: environment.directMessagesEventBus
+                    eventBus: environment.directMessagesEventBus,
+                    // Read live, not captured: verifying an email in a browser
+                    // must re-enable the attach control without a relaunch.
+                    capabilities: { environment.liveCapabilities }
                 )
                 viewModel = vm
                 await vm.loadRecipients(preselectUsername: preselectUsername)
@@ -146,10 +149,10 @@ struct NewMessageSheet: View {
             }
 
             // G22: photo attachments, up to 8. Sending photos needs a
-            // verified email address; the server refuses with an explanation
-            // when it isn't, and that message is what the error line shows.
-            // TODO(#41): once issue #41's `CapabilityGate` merges, disable
-            // this and explain up front rather than after the attempt.
+            // verified email address. Since #41 the gate is asked *before* the
+            // user picks a file, so the control is disabled with the reason in
+            // its tooltip rather than failing after the attempt. The server's
+            // 403 remains the backstop if the gate's view is stale.
             VStack(alignment: .leading, spacing: 6) {
                 if !viewModel.attachments.isEmpty {
                     DMAttachmentStrip(
@@ -164,11 +167,12 @@ struct NewMessageSheet: View {
                     Label("Add photos", systemImage: "photo.on.rectangle")
                 }
                 .buttonStyle(.bordered)
-                .disabled(viewModel.attachmentsAreFull)
+                .disabled(viewModel.attachmentsAreFull || viewModel.attachmentDenial != nil)
                 .help(
-                    viewModel.attachmentsAreFull
-                        ? "Up to \(viewModel.maxAttachments) photos per message"
-                        : "Attach photos"
+                    viewModel.attachmentBlockedMessage
+                        ?? (viewModel.attachmentsAreFull
+                            ? "Up to \(viewModel.maxAttachments) photos per message"
+                            : "Attach photos")
                 )
             }
 

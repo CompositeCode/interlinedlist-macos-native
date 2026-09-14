@@ -15,7 +15,7 @@ final class OrgServiceTests: XCTestCase {
         await api.enqueue(json: Fixtures.paginatedOrganizations(
             ids: ["o-1", "o-2"], limit: 20, offset: 0, hasMore: true
         ))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let page = try await service.organizations(isPublic: true, userId: "u-9", limit: 20, offset: 0)
@@ -39,7 +39,7 @@ final class OrgServiceTests: XCTestCase {
         // the malformed envelope fails rather than being silently accepted.
         let api = StubAPIClient()
         await api.enqueue(json: #"{"data":{"oops":true},"pagination":{"total":0,"limit":20,"offset":0,"hasMore":false}}"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -54,7 +54,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — upstream API failure.
         let api = StubAPIClient()
         await api.enqueue(failure: .httpStatus(code: 500, serverMessage: "boom"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -69,7 +69,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — boundary: zero-item page.
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.paginatedOrganizations(ids: [], hasMore: false))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let page = try await service.organizations(isPublic: nil, userId: nil, limit: 20, offset: 0)
@@ -86,7 +86,7 @@ final class OrgServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-new", name: "Acme", isPublic: false))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let org = try await service.create(name: "Acme", description: "We make things", isPublic: false)
@@ -104,7 +104,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — invalid input: response missing required `name`.
         let api = StubAPIClient()
         await api.enqueue(json: #"{"organization":{"id":"o-new"}}"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -119,7 +119,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — upstream API failure (e.g. quota / permissions).
         let api = StubAPIClient()
         await api.enqueue(failure: .forbidden(serverMessage: "not allowed"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -134,7 +134,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — boundary: empty description string is accepted by the API.
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-2", description: nil))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let org = try await service.create(name: "Acme", description: "", isPublic: true)
@@ -150,7 +150,7 @@ final class OrgServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-7", name: "Globex"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let org = try await service.organization(id: "o-7")
@@ -166,7 +166,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — upstream API failure.
         let api = StubAPIClient()
         await api.enqueue(failure: .notFound(serverMessage: "no such org"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -181,7 +181,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — invalid input.
         let api = StubAPIClient()
         await api.enqueue(json: #"{"organization":{"oops":true}}"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -196,7 +196,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — boundary: server omits createdAt / updatedAt.
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-8", includeTimestamps: false))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let org = try await service.organization(id: "o-8")
@@ -212,7 +212,7 @@ final class OrgServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-7", name: "Renamed"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When — only `name` changes.
         let org = try await service.update(id: "o-7", name: "Renamed", description: nil, isPublic: nil)
@@ -229,7 +229,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — upstream API failure.
         let api = StubAPIClient()
         await api.enqueue(failure: .badRequest(serverMessage: "bad name"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -244,7 +244,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — invalid input.
         let api = StubAPIClient()
         await api.enqueue(json: #"not json"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -259,7 +259,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — boundary: a no-op patch (all fields nil).
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.organizationEnvelope(id: "o-7"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let org = try await service.update(id: "o-7", name: nil, description: nil, isPublic: nil)
@@ -276,7 +276,7 @@ final class OrgServiceTests: XCTestCase {
         await api.enqueue(json: Fixtures.paginatedOrgMembers(
             userIds: ["u-1", "u-2"], role: "admin", limit: 10, offset: 0, hasMore: true
         ))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let page = try await service.members(of: "o-7", limit: 10, offset: 0)
@@ -295,7 +295,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — upstream API failure.
         let api = StubAPIClient()
         await api.enqueue(failure: .forbidden(serverMessage: "not a member"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -311,7 +311,7 @@ final class OrgServiceTests: XCTestCase {
         // surfaces a `DecodingError`; assert the malformed envelope throws.
         let api = StubAPIClient()
         await api.enqueue(json: #"{"data":"nope"}"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -326,7 +326,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — boundary: zero-item page.
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.paginatedOrgMembers(userIds: [], hasMore: false))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let page = try await service.members(of: "o-7", limit: 10, offset: 0)
@@ -344,7 +344,7 @@ final class OrgServiceTests: XCTestCase {
         await api.enqueue(json: Fixtures.orgMembershipResponse(
             membershipId: "m-1", userId: "u-3", organizationId: "o-7", role: "member"
         ))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let member = try await service.addMember(to: "o-7", userId: "u-3", role: .member)
@@ -362,7 +362,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — upstream API failure.
         let api = StubAPIClient()
         await api.enqueue(failure: .badRequest(serverMessage: "already a member"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -377,7 +377,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — invalid input: missing `membership`.
         let api = StubAPIClient()
         await api.enqueue(json: #"{"message":"ok"}"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -394,7 +394,7 @@ final class OrgServiceTests: XCTestCase {
         await api.enqueue(json: Fixtures.orgMembershipResponse(
             membershipId: "m-2", userId: "u-4", organizationId: "o-7", role: "billing-admin"
         ))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let member = try await service.addMember(to: "o-7", userId: "u-4", role: .member)
@@ -411,7 +411,7 @@ final class OrgServiceTests: XCTestCase {
         await api.enqueue(json: Fixtures.orgMembershipResponse(
             membershipId: "m-1", userId: "u-3", organizationId: "o-7", role: "admin"
         ))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let member = try await service.updateMember(in: "o-7", userId: "u-3", role: .admin, active: true)
@@ -428,7 +428,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — upstream API failure (e.g. caller is not an owner).
         let api = StubAPIClient()
         await api.enqueue(failure: .forbidden(serverMessage: "owners only"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -443,7 +443,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — invalid input.
         let api = StubAPIClient()
         await api.enqueue(json: #"{"membership":{"id":"m-1"}}"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -460,7 +460,7 @@ final class OrgServiceTests: XCTestCase {
         await api.enqueue(json: Fixtures.orgMembershipResponse(
             membershipId: "m-1", userId: "u-3", organizationId: "o-7", role: "member", active: nil
         ))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let member = try await service.updateMember(in: "o-7", userId: "u-3", role: .member, active: nil)
@@ -475,7 +475,7 @@ final class OrgServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: #"{}"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         try await service.removeMember(from: "o-7", userId: "u-3")
@@ -490,7 +490,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — upstream API failure.
         let api = StubAPIClient()
         await api.enqueue(failure: .notFound(serverMessage: "not a member"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -505,7 +505,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — invalid input boundary: empty user id → server 400.
         let api = StubAPIClient()
         await api.enqueue(failure: .badRequest(serverMessage: "missing user id"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -525,7 +525,7 @@ final class OrgServiceTests: XCTestCase {
             (id: "u-1", role: "owner"),
             (id: "u-2", role: "member")
         ]))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let users = try await service.users(of: "o-7")
@@ -542,7 +542,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — upstream API failure.
         let api = StubAPIClient()
         await api.enqueue(failure: .httpStatus(code: 503, serverMessage: "down"))
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -557,7 +557,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — invalid input: object where an array is expected.
         let api = StubAPIClient()
         await api.enqueue(json: #"{"users":[]}"#)
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -572,7 +572,7 @@ final class OrgServiceTests: XCTestCase {
         // Given — boundary: empty roster.
         let api = StubAPIClient()
         await api.enqueue(json: "[]")
-        let service = OrgService(api: api)
+        let service = OrgService(api: api, entitlements: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let users = try await service.users(of: "o-7")

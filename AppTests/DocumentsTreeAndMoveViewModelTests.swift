@@ -335,7 +335,7 @@ final class DocumentsTreeAndMoveViewModelTests: XCTestCase {
         // column, and the error must reach the view.
         let stub = StubDocumentsService()
         await stub.enqueueDocuments(success: [])
-        await stub.enqueueCreateInFolder(failure: DocumentsError.subscriberRequired)
+        await stub.enqueueCreateInFolder(failure: DocumentsError.subscriberRequired(.documentCreation))
         let viewModel = DocumentsListViewModel(documents: stub)
         await viewModel.reload(in: "F1")
 
@@ -343,6 +343,6 @@ final class DocumentsTreeAndMoveViewModelTests: XCTestCase {
 
         XCTAssertNil(created)
         XCTAssertTrue(viewModel.documentsLoaded.isEmpty)
-        XCTAssertEqual(viewModel.error as? DocumentsError, .subscriberRequired)
+        XCTAssertEqual(viewModel.error as? DocumentsError, .subscriberRequired(.documentCreation))
     }
 }

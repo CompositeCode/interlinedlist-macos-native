@@ -1,6 +1,31 @@
 import Foundation
 import InterlinedKit
 
+// MARK: - OrgError
+
+/// Domain-level errors surfaced by `OrgService`.
+public enum OrgError: Error, Sendable, Equatable {
+
+    /// Creating an organization requires an active subscription. Raised before
+    /// any HTTP call so a free account sees an upgrade prompt rather than an
+    /// opaque server 403 (GitHub #40).
+    ///
+    /// **Creation only.** Joining an organization is free on every tier, and a
+    /// lapsed subscriber keeps their existing organizations fully usable.
+    case subscriberRequired(Feature)
+}
+
+extension OrgError: LocalizedError, CustomStringConvertible {
+    public var errorDescription: String? { description }
+
+    public var description: String {
+        switch self {
+        case .subscriberRequired(let feature):
+            return feature.upgradeMessage
+        }
+    }
+}
+
 // MARK: - OrgServicing
 
 /// The organizations surface the App layer codes against (PLAN.md §1
@@ -154,6 +179,10 @@ public final class OrgService: OrgServicing {
 
     private let api: APIClientProtocol
     private let decoder: JSONDecoder
+    /// The entitlement gate consulted by `create` and by the org-LinkedIn
+    /// writes. A provider, not a snapshot — see `DocumentsService` for why.
+    private let entitlements: @Sendable () -> EntitlementsService
+
     private let baseURL: URL
 
     /// - Parameters:
@@ -161,15 +190,25 @@ public final class OrgService: OrgServicing {
     ///   - decoder: shared kit JSON configuration, used to split the paginated
     ///     envelope. Defaults to the kit's `JSONCoders` decoder so dates parse
     ///     identically to the client.
+    ///   - entitlements: the gate for `create` and the org-LinkedIn writes.
+    ///     Defaults to `.free` so an un-injected gate is never *wrongly
+    ///     entitled* — the same choice `DocumentsService` makes, and the
+    ///     invariant #40 standardises on. `AppEnvironment` injects the
+    ///     signed-in account's entitlements in production; tests that exercise
+    ///     a gated path pass `.subscriber` explicitly.
     ///   - baseURL: origin for the browser-redirect OAuth URL. Mirrors
     ///     `UserService`'s parameter of the same name.
     public init(
         api: APIClientProtocol,
         decoder: JSONDecoder = JSONCoders.makeDecoder(),
+        entitlements: @escaping @Sendable () -> EntitlementsService = {
+            EntitlementsService(customerStatus: .free)
+        },
         baseURL: URL = URL(string: "https://interlinedlist.com")!
     ) {
         self.api = api
         self.decoder = decoder
+        self.entitlements = entitlements
         self.baseURL = baseURL
     }
 
@@ -208,6 +247,9 @@ public final class OrgService: OrgServicing {
         description: String,
         isPublic: Bool
     ) async throws -> Organization {
+        guard entitlements().isEnabled(.organizationCreation) else {
+            throw OrgError.subscriberRequired(.organizationCreation)
+        }
         let body = CreateOrganizationRequest(name: name, description: description, isPublic: isPublic)
         // The live create answers `{ message, organization }`; unwrap it.
         let dto = try await api.send(Organizations.create(body)).organization
@@ -361,11 +403,14 @@ public final class OrgService: OrgServicing {
         OrgLinkedInStatus(from: try await api.send(Organizations.linkedInStatus(id: orgId)))
     }
 
+    /// Discovering the org's LinkedIn company pages. Gated on
+    /// `.crossPosting` — see `requireCrossPosting()`.
     public func syncLinkedInPages(
         of orgId: String,
         callerRole: OrgRole?
     ) async throws -> OrgLinkedInStatus {
         try requireLinkedInManager(callerRole)
+        try requireCrossPosting()
         // The 201 body is unmodelled upstream — ignore it and re-read status,
         // which is the only route that returns the discovered pages.
         try await api.sendVoid(Organizations.syncLinkedInPages(id: orgId))
@@ -379,6 +424,7 @@ public final class OrgService: OrgServicing {
         callerRole: OrgRole?
     ) async throws {
         try requireLinkedInManager(callerRole)
+        try requireCrossPosting()
         guard !userId.isEmpty else { throw OrgLifecycleError.unknownCurrentUser }
         let body = UpdateOrgLinkedInAssignmentRequest(userId: userId, pageId: pageId)
         try await api.sendVoid(Organizations.assignLinkedInPage(id: orgId, body))
@@ -391,6 +437,24 @@ public final class OrgService: OrgServicing {
 
     public func linkedInAuthorizeURL(organizationId: String) -> URL? {
         OrgLinkedInAuthorization.url(baseURL: baseURL, organizationId: organizationId)
+    }
+
+    /// Entitlement gate for the org-LinkedIn writes that *establish* a
+    /// cross-posting destination.
+    ///
+    /// Gated on `.crossPosting`, the same feature that already gates personal
+    /// cross-posting on `dev`. Leaving these free would let an org route
+    /// quietly establish a publishing destination that the personal route
+    /// refuses to create — one product capability with two different answers.
+    ///
+    /// Deliberately **not** applied to `disconnectLinkedIn`: a user must always
+    /// be able to undo a connection, including after a subscription lapses.
+    /// Nor to `linkedInStatus` / `linkedInAuthorizeURL`, which are a read and a
+    /// pure projection.
+    private func requireCrossPosting() throws {
+        guard entitlements().isEnabled(.crossPosting) else {
+            throw OrgError.subscriberRequired(.crossPosting)
+        }
     }
 
     /// Owner/admin gate shared by the three org-LinkedIn writes.

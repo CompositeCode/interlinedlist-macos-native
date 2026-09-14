@@ -58,6 +58,17 @@ final class AppEnvironment: ObservableObject {
         EntitlementsService(user: currentUserStore.currentUser)
     }
 
+    /// The composed capability gate — account status, email verification, and
+    /// subscription tier answered as one question (GitHub #40 / #41 / #42).
+    ///
+    /// Features should prefer this over `liveEntitlements`: a subscriber who is
+    /// `restricted`, or who has not verified their email, is entitled but still
+    /// cannot post, and only the composed gate knows that. Derived live from
+    /// `currentUserStore.currentUser`, exactly like `liveEntitlements`.
+    var liveCapabilities: CapabilityGate {
+        CapabilityGate(user: currentUserStore.currentUser)
+    }
+
     /// The visibility a new-message composer draft opens on — the signed-in
     /// account's "new posts are public by default" preference. Derived live from
     /// `currentUserStore.currentUser`, exactly like `liveEntitlements` above, so
@@ -505,10 +516,10 @@ final class AppEnvironment: ObservableObject {
             store: documentStore,
             // Live image ceilings for `uploadImage` prep (G14 tail).
             contentLimits: contentLimits,
-            // work-consolidation.md G24 — `POST /api/documents/folders/{id}/
-            // documents` is subscriber-gated upstream. Same live box the
+            // Gate for document *creation* only (#40 matrix) — moving,
+            // editing and deleting stay free on every tier. Same live box the
             // messages gate reads, so a mid-session subscribe or lapse re-gates
-            // creating documents in a folder without a relaunch.
+            // without a relaunch.
             entitlementsProvider: { liveEntitlements.current() }
         )
         // Server document templates (work-consolidation.md G12). Reuses the same
@@ -539,7 +550,8 @@ final class AppEnvironment: ObservableObject {
         // decision-0001 session allowlist, both already routed by the shared
         // `authTransport`. `UserService` takes the default production base URL
         // for the browser-handoff OAuth link flow.
-        let orgService = OrgService(api: api)
+        // Subscriber gate for organization *creation* only (GitHub #40).
+        let orgService = OrgService(api: api, entitlements: { liveEntitlements.current() })
         // Org-memberships cache (work-consolidation.md) — the Organizations switcher's
         // initial-view data. On-disk in Application Support with disposable /
         // auto-rebuild semantics; falls back to `NullOrgStore` if the container

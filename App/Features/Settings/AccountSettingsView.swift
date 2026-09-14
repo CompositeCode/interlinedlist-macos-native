@@ -118,6 +118,46 @@ struct AccountSettingsView: View {
                     }
                 }
 
+                // Resend verification (GitHub #41). `POST /api/auth/
+                // send-verification-email` is `x-auth-type: session` and rejects
+                // this client's Bearer token, so the action opens the web page
+                // that can actually do it rather than shipping a button that
+                // silently 401s. The server owns the 10-minute rate limit; the
+                // copy states it so the user is not left guessing.
+                if vm.currentUser?.isEmailVerified == false {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("Verify your email before posting messages or attaching media.")
+                            .font(.ilBody())
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Link(
+                            "Resend verification email",
+                            destination: AccountWebDestination.settings.url()
+                        )
+                        .font(.ilBody())
+                    }
+
+                    Text("You can resend once every \(Int(EmailVerificationResend.cooldown / 60)) minutes.")
+                        .font(.ilMono(9))
+                        .foregroundStyle(.secondary)
+                }
+
+                // Account status (GitHub #42) — the third reason an action can
+                // be refused, shown here as well as in the timeline banner so
+                // Settings is a complete picture of the account.
+                if let status = vm.currentUser?.accountStatus, status.warrantsBanner {
+                    HStack {
+                        Text("Account status")
+                            .font(.ilBody())
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(status.rawValue.capitalized)
+                            .font(.ilMono(9))
+                            .foregroundStyle(status.isWriteRestricted ? ILColor.amber : ILColor.primary)
+                    }
+                }
+
                 TextField("New email address", text: $vm.newEmail)
                     .font(.ilBody())
                     .textFieldStyle(.roundedBorder)

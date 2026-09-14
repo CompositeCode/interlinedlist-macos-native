@@ -8,6 +8,21 @@ import InterlinedKit
 /// domain-layer error cases the kit cannot express.
 public enum DocumentsError: Error, Sendable, Equatable {
 
+    /// Creating a document requires an active subscription. Raised before any
+    /// HTTP call so a free account sees an upgrade prompt instead of an opaque
+    /// server 403 (GitHub #40).
+    ///
+    /// **Creation only** — reading, editing, deleting and *moving* an existing
+    /// document stay free, because a lapsed subscription keeps existing
+    /// documents "fully usable".
+    ///
+    /// Carries the `Feature` so the message comes from the one published
+    /// matrix (`Feature.upgradeMessage`) rather than being written twice. The
+    /// richer `CapabilityGate` — which also weighs account status and email
+    /// verification, hardest first — is consumed at the App layer, where a
+    /// denial can be explained; a service-layer throw only needs to be correct.
+    case subscriberRequired(Feature)
+
     /// The requested document id was not found.
     case notFound
 
@@ -20,25 +35,6 @@ public enum DocumentsError: Error, Sendable, Equatable {
     /// Wraps `ImagePrepError.tooLargeAfterAllAttempts` so view code switches
     /// on `DocumentsError`, not the imaging error.
     case imageTooLargeAfterPrep
-
-    /// A subscriber-only documents action was attempted by a free account.
-    /// Raised **before** any HTTP call so the UI can gate the affordance
-    /// rather than surfacing a bare 403. Carries nothing: the only gated
-    /// documents action today is creating a document, and the message is the
-    /// same whichever route it came in on.
-    ///
-    /// TODO(#40): issue #40 owns `EntitlementsService` and is building a
-    /// `CapabilityGate` whose denials carry a reason and run
-    /// status → email-verification → tier, hardest first. When it lands, this
-    /// case should carry that denial instead of standing alone, and the gate
-    /// below should ask it rather than reading `isSubscriber`. Deliberately not
-    /// done here: adding a `Feature` case means editing the file #40 owns, so
-    /// this consumes the existing seam and leaves the enum untouched.
-    ///
-    /// Note the gate matches #40's published matrix: **creation only**. Moving,
-    /// editing and deleting documents stay free on every tier, so a lapsed
-    /// subscriber keeps existing content fully usable.
-    case subscriberRequired
 
     /// The sync engine refused to complete a cycle. Carries the underlying
     /// transport / API failure unchanged so the UI can still inspect it.
@@ -53,6 +49,8 @@ extension DocumentsError: LocalizedError, CustomStringConvertible {
 
     public var description: String {
         switch self {
+        case .subscriberRequired(let feature):
+            return feature.upgradeMessage
         case .notFound:
             return "Document not found."
         case .conflict(let localId, let serverVersion):
@@ -229,7 +227,6 @@ public final class DocumentsService: DocumentsServicing {
     /// G14 tail). When present, `uploadImage` enforces the live `GET /api/limits`
     /// image ceilings; when `nil` the built-in `ImagePrep` constants apply.
     private let contentLimits: ContentLimitsProviding?
-
     /// Live entitlements, evaluated at call time on every gated write.
     ///
     /// A closure, not a stored value, for the same reason `MessagesService`
@@ -241,12 +238,10 @@ public final class DocumentsService: DocumentsServicing {
     /// Defaults to `.free` — a signed-out or unresolved session is never
     /// wrongly entitled.
     ///
-    /// TODO(#40): the gate reads `EntitlementsService.isSubscriber` directly
-    /// because `Feature` has no documents case yet. Issue #40 owns
-    /// `EntitlementsService`; when its `CapabilityGate` lands, add a
-    /// `Feature.documentCreation` case (named for creation, not `.documents`,
-    /// to keep it unmissable that only creation is gated) and switch
-    /// `requireSubscriber()` below to ask the gate. One line, no call sites.
+    /// Resolved by #40 (2026-09-14): `Feature.documentCreation` exists and
+    /// `requireSubscriber()` asks for it by name. The case is deliberately
+    /// spelled for *creation*, not `.documents`, so it stays unmissable that
+    /// moving, editing and deleting are free on every tier.
     private let entitlementsProvider: @Sendable () -> EntitlementsService
 
     /// - Parameters:
@@ -346,6 +341,9 @@ public final class DocumentsService: DocumentsServicing {
         folderId: String?,
         isPublic: Bool
     ) async throws -> Document {
+        guard entitlementsProvider().isEnabled(.documentCreation) else {
+            throw DocumentsError.subscriberRequired(.documentCreation)
+        }
         let req = CreateDocumentRequest(
             title: title,
             content: body,
@@ -419,7 +417,7 @@ public final class DocumentsService: DocumentsServicing {
             // The server gates this route too. Translate its 403 into the same
             // typed error the local gate raises so callers branch once.
             if case .forbidden = error {
-                throw DocumentsError.subscriberRequired
+                throw DocumentsError.subscriberRequired(.documentCreation)
             }
             throw error
         }
@@ -654,12 +652,17 @@ public final class DocumentsService: DocumentsServicing {
 
     // MARK: - Entitlement gate
 
-    /// Throws `DocumentsError.subscriberRequired` when the live account is not
-    /// a subscriber. The single place the documents surface consults
-    /// entitlements, so the #40 follow-up is a one-line change here.
+    /// Throws `DocumentsError.subscriberRequired` when document **creation** is
+    /// not enabled for the live account. The single place the documents surface
+    /// consults entitlements.
+    ///
+    /// Asks for `.documentCreation` specifically rather than `isSubscriber`, so
+    /// this path is governed by the same published matrix as every other gated
+    /// feature and cannot drift from it. Evaluated per call, so a mid-session
+    /// subscribe or lapse re-gates without a relaunch.
     private func requireSubscriber() throws {
-        guard entitlementsProvider().isSubscriber else {
-            throw DocumentsError.subscriberRequired
+        guard entitlementsProvider().isEnabled(.documentCreation) else {
+            throw DocumentsError.subscriberRequired(.documentCreation)
         }
     }
 
