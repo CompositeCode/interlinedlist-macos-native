@@ -35,7 +35,7 @@ final class AIServiceTests: XCTestCase {
         XCTAssertEqual(availability.quota?.remaining, 47)
     }
 
-    func test_givenSubscriberWithNoProviderKey_whenAvailabilityFetched_thenExplainsWhy() async throws {
+    func test_givenSubscriberAndNoProvidersConfigured_whenAvailabilityFetched_thenBlamesTheServiceNotTheUser() async throws {
         let api = StubAPIClient()
         await api.enqueue(json: #"{"subscriber": true, "providers": []}"#)
 
@@ -44,7 +44,7 @@ final class AIServiceTests: XCTestCase {
         XCTAssertFalse(availability.isAvailable)
         XCTAssertEqual(
             availability.unavailableReason,
-            "Add your own AI provider key in Settings on interlinedlist.com to use AI features."
+            "AI features are temporarily unavailable. Nothing is wrong with your account — please try again later."
         )
     }
 

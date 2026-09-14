@@ -41,8 +41,11 @@ public enum Feature: Sendable, Equatable, Hashable, CaseIterable {
     /// Creating a new list. Editing an existing list, and adding rows to it,
     /// are free.
     case listCreation
-    /// Creating a new list folder.
-    case listFolderCreation
+    // NOTE: there is deliberately no `listFolderCreation` case. List folders
+    // were removed from macOS in PR #19 and the owner confirmed on 2026-09-14
+    // that they are not returning (GitHub #49) — the divergence from the web is
+    // intentional. A gate for a feature the client does not have would be dead
+    // code that reads like a promise.
     /// Creating a new document. Editing an existing document is free.
     case documentCreation
     /// Creating a new document template. Reading templates is free.
@@ -83,8 +86,6 @@ public enum Feature: Sendable, Equatable, Hashable, CaseIterable {
             return "Cross-posting requires an active subscription."
         case .listCreation:
             return "Creating lists requires an active subscription."
-        case .listFolderCreation:
-            return "Creating list folders requires an active subscription."
         case .documentCreation:
             return "Creating documents requires an active subscription."
         case .documentTemplateCreation:
@@ -159,7 +160,7 @@ public struct EntitlementsService: Sendable, Equatable {
     public func isEnabled(_ feature: Feature) -> Bool {
         switch feature {
         case .mediaAttachments, .scheduledPosts, .crossPosting,
-             .listCreation, .listFolderCreation,
+             .listCreation,
              .documentCreation, .documentTemplateCreation,
              .organizationCreation,
              .sharingWithPeople, .emailInvites, .shareLinkCreation,

@@ -118,7 +118,7 @@ final class EntitlementsServiceTests: XCTestCase {
         let service = EntitlementsService(customerStatus: .subscriber)
         let documented: [Feature] = [
             .mediaAttachments, .scheduledPosts, .crossPosting,
-            .listCreation, .listFolderCreation,
+            .listCreation,
             .documentCreation, .documentTemplateCreation,
             .organizationCreation,
             .sharingWithPeople, .emailInvites, .shareLinkCreation,

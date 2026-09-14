@@ -42,7 +42,7 @@ final class AIAssistantViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.hasCheckedAvailability)
     }
 
-    func test_givenSubscriberWithoutProviderKey_whenRefreshed_thenExplainsWhatIsMissing() async {
+    func test_givenSubscriberAndNoProvidersConfigured_whenRefreshed_thenBlamesTheServiceNotTheUser() async {
         let service = StubAIService()
         await service.enqueueAvailability(AIAvailability(isSubscriber: true, providers: []))
         let viewModel = AIAssistantViewModel(ai: service)
@@ -52,7 +52,7 @@ final class AIAssistantViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isAvailable)
         XCTAssertEqual(
             viewModel.unavailableReason,
-            "Add your own AI provider key in Settings on interlinedlist.com to use AI features."
+            "AI features are temporarily unavailable. Nothing is wrong with your account — please try again later."
         )
     }
 

@@ -11,6 +11,15 @@
 // surfaces both actions; `actionError` captures the last mutation failure
 // without replacing the loaded list.
 //
+// GitHub #55: the reschedule intent now routes through the service's single
+// `updateScheduled(messageId:edit:)` entry point and validates the new date
+// locally first. Content and destination edits are deliberately absent — the
+// live API has no route for them (`PATCH /api/messages/[id]` honours
+// `scheduledAt` alone and silently discards a `content` sent beside it), so the
+// view shows those fields read-only rather than offering an edit that could not
+// be saved. Destinations themselves are now displayed, from the message's
+// `scheduledDestinations`.
+//
 // Per Decision 0003 this view model consumes only `InterlinedDomain`.
 
 import Foundation
@@ -157,29 +166,29 @@ final class ScheduledPostsViewModel {
     /// `scheduledAt`, calls the service, then on success replaces the
     /// optimistic copy with the server's authoritative value. On failure,
     /// restores the snapshot.
+    ///
+    /// A date at or before now is rejected **before** the optimistic mutation:
+    /// the list is left untouched and no service call is made, so an invalid
+    /// pick can never flash a bad time into the row (GitHub #55).
+    ///
+    /// The optimistic copy comes from `byRescheduling(to:)` rather than a
+    /// hand-built `Message`. The hand-built one omitted every fetch-time field,
+    /// so rescheduling visibly dropped the row's destination chips and link
+    /// previews until the next refresh.
     func reschedule(post: Message, to newDate: Date) async {
         guard let index = posts.firstIndex(where: { $0.id == post.id }) else { return }
+        guard newDate > Date() else {
+            actionError = MessagesError.scheduledDateNotInFuture
+            return
+        }
         let snapshot = posts
-        let optimistic = Message(
-            id: post.id,
-            author: post.author,
-            text: post.text,
-            createdAt: post.createdAt,
-            updatedAt: post.updatedAt,
-            tags: post.tags,
-            visibility: post.visibility,
-            digCount: post.digCount,
-            didDig: post.didDig,
-            repostCount: post.repostCount,
-            replyCount: post.replyCount,
-            parentID: post.parentID,
-            repost: post.repost,
-            scheduledAt: newDate
-        )
-        posts[index] = optimistic
+        posts[index] = post.byRescheduling(to: newDate)
         actionError = nil
         do {
-            let confirmed = try await messages.reschedule(messageId: post.id, newDate: newDate)
+            let confirmed = try await messages.updateScheduled(
+                messageId: post.id,
+                edit: ScheduledPostEdit(scheduledAt: newDate)
+            )
             if let currentIdx = posts.firstIndex(where: { $0.id == post.id }) {
                 posts[currentIdx] = confirmed
             }
@@ -187,5 +196,11 @@ final class ScheduledPostsViewModel {
             posts = snapshot
             actionError = error
         }
+    }
+
+    /// Clears the error left by the last failed cancel / reschedule so a sheet
+    /// can dismiss its banner without re-running the action.
+    func clearActionError() {
+        actionError = nil
     }
 }

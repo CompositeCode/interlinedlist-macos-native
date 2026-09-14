@@ -5,8 +5,10 @@ import Foundation
 /// ## Why this deep-links instead of calling the API
 ///
 /// `POST /api/auth/send-verification-email` is declared `x-auth-type: session`
-/// in the live OpenAPI document (confirmed 2026-09-09; it is one of 45
-/// session-only operations, against 187 `sync-token` ones). This client
+/// in the live OpenAPI document (confirmed 2026-09-09, **re-confirmed by live
+/// probe 2026-09-14: a valid Bearer sync-token gets `401 Unauthorized`**). The
+/// 2026-09-14 re-measure counted 32 session-only operations against 207
+/// `sync-token` ones; this is one of only four that constrain a native client. This client
 /// authenticates with a Bearer sync-token and therefore **cannot** call it —
 /// shipping a button that silently 401s is exactly what issue #41 rules out.
 ///

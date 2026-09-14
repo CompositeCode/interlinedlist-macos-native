@@ -23,6 +23,11 @@ struct OwnedListsRootView: View {
 
     @Environment(\.appEnvironment) private var environment
     @State private var viewModel: OwnedListsViewModel?
+    /// Drives the "Shared with me" sidebar section — lists other people own
+    /// and gave this account access to (work-consolidation.md G23 / issue #48).
+    /// A separate view model so a failing `GET /api/lists/watching` scopes its
+    /// error to that section and leaves the owned lists rendering.
+    @State private var watchedViewModel: WatchedListsViewModel?
     @State private var rowsViewModel: ListRowsViewModel?
     @State private var showsNewListSheet: Bool = false
     /// Drives the "Draft with AI" sheet (work-consolidation.md G15).
@@ -37,6 +42,7 @@ struct OwnedListsRootView: View {
     @State private var showsInvites: Bool = false
     @State private var showsVisibility: Bool = false
     @State private var showsConnections: Bool = false
+    @State private var showsContributors: Bool = false
     @State private var showsIssues: Bool = false
     @State private var listIDPendingDelete: String?
 
@@ -66,6 +72,18 @@ struct OwnedListsRootView: View {
                 // Re-appearance past the freshness TTL — revalidate; within
                 // the TTL we trust the cache and skip the network.
                 await model.refresh()
+            }
+
+            // "Shared with me" loads independently of the owned lists above,
+            // and on its own TTL, so neither section can block or blank the
+            // other (issue #48 acceptance criteria).
+            if watchedViewModel == nil {
+                let watched = WatchedListsViewModel(lists: environment.lists)
+                watchedViewModel = watched
+                await watched.load()
+                await subscribeWatchedEventBus(viewModel: watched, bus: environment.listsEventBus)
+            } else if let watched = watchedViewModel, watched.shouldRefresh {
+                await watched.load()
             }
         }
         .task(id: viewModel?.selectedListID) {
@@ -101,8 +119,15 @@ struct OwnedListsRootView: View {
                     .frame(minWidth: 220, idealWidth: 260)
 
                 Group {
+                    // The sidebar's single selection spans both sections, so
+                    // the rows pane resolves it against the owned lists first
+                    // and the shared-with-me lists second.
                     if let selected = viewModel.selectedList, let rowsVM = rowsViewModel {
                         ListRowsView(list: selected, viewModel: rowsVM)
+                    } else if let watched = selectedWatchedList(viewModel: viewModel), let rowsVM = rowsViewModel {
+                        // A `watcher`-role share is read-only: hide the row
+                        // write affordances rather than letting them 403.
+                        ListRowsView(list: watched.list, viewModel: rowsVM, isReadOnly: !watched.canEdit)
                     } else {
                         placeholderSelectListState
                     }
@@ -167,27 +192,42 @@ struct OwnedListsRootView: View {
                       ? "Refresh from GitHub source"
                       : "Refresh lists")
 
+                // Owner-only actions gate on an *owned* selection, not merely
+                // on "something is selected": every route behind them is
+                // owner-only server-side, so leaving them live for a list
+                // someone shared with you renders an enabled-but-broken
+                // control (work-consolidation.md G23).
                 Button {
                     showsSchemaEditor = true
                 } label: {
                     Label("Edit Schema", systemImage: "tablecells")
                 }
-                .disabled(viewModel.selectedListID == nil)
+                .disabled(viewModel.selectedList == nil)
 
                 Button {
                     showsWatchers = true
                 } label: {
                     Label("Watchers", systemImage: "person.2")
                 }
-                .disabled(viewModel.selectedListID == nil)
+                .disabled(viewModel.selectedList == nil)
                 .help("Manage who can see and edit this list")
+
+                // Contributors is readable by anyone with access, so it stays
+                // enabled for a shared list too.
+                Button {
+                    showsContributors = true
+                } label: {
+                    Label("Contributors", systemImage: "person.3")
+                }
+                .disabled(viewModel.selectedListID == nil)
+                .help("See who has added and edited rows on this list")
 
                 Button {
                     showsShareLinks = true
                 } label: {
                     Label("Share Links", systemImage: "link.badge.plus")
                 }
-                .disabled(viewModel.selectedListID == nil)
+                .disabled(viewModel.selectedList == nil)
                 .help("Create and manage shareable links for this list")
 
                 Button {
@@ -195,7 +235,7 @@ struct OwnedListsRootView: View {
                 } label: {
                     Label("Invite by Email", systemImage: "envelope")
                 }
-                .disabled(viewModel.selectedListID == nil)
+                .disabled(viewModel.selectedList == nil)
                 .help("Invite people to this list by email")
 
                 Button {
@@ -203,7 +243,7 @@ struct OwnedListsRootView: View {
                 } label: {
                     Label("Make Public", systemImage: "globe")
                 }
-                .disabled(viewModel.selectedListID == nil)
+                .disabled(viewModel.selectedList == nil)
                 .help("Control whether anyone with the link can view this list")
 
                 Button {
@@ -211,7 +251,7 @@ struct OwnedListsRootView: View {
                 } label: {
                     Label("Connections", systemImage: "point.3.connected.trianglepath.dotted")
                 }
-                .disabled(viewModel.selectedListID == nil)
+                .disabled(viewModel.selectedList == nil)
 
                 Button {
                     showsIssues = true
@@ -262,6 +302,11 @@ struct OwnedListsRootView: View {
         .sheet(isPresented: $showsWatchers) {
             if let environment, let listId = viewModel.selectedListID {
                 WatchersView(listId: listId, environment: environment)
+            }
+        }
+        .sheet(isPresented: $showsContributors) {
+            if let environment, let listId = viewModel.selectedListID {
+                ContributorsView(listId: listId, environment: environment)
             }
         }
         .sheet(isPresented: $showsShareLinks) {
@@ -357,11 +402,70 @@ struct OwnedListsRootView: View {
                 }
             }
             } // Section("Lists")
+
+            sharedWithMeSection
         }
         .listStyle(.sidebar)
         .refreshable {
             await viewModel.refresh()
+            await watchedViewModel?.load()
         }
+    }
+
+    /// The "Shared with me" sidebar section — lists other people own and gave
+    /// this account access to (work-consolidation.md G23 / issue #48). Mirrors
+    /// the web's `/lists` datagrid columns: title, owner, and your role.
+    ///
+    /// The section is omitted entirely when nothing is shared and nothing went
+    /// wrong, so an account nobody shares with sees the sidebar it always saw.
+    @ViewBuilder
+    private var sharedWithMeSection: some View {
+        if let watched = watchedViewModel {
+            if let error = watched.error, watched.watched.isEmpty {
+                Section("Shared with me") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Couldn't load shared lists", systemImage: "exclamationmark.triangle")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(error.localizedDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Button("Retry") {
+                            Task { await watched.load() }
+                        }
+                        .font(.caption)
+                    }
+                    .padding(.vertical, 4)
+                }
+            } else if watched.watched.isEmpty {
+                // Nothing shared and no error: render nothing rather than an
+                // empty-state row that would sit there forever.
+                EmptyView()
+            } else {
+                // Grouped by the caller's role so "what I can edit" reads
+                // apart from "what I can only look at".
+                ForEach(watched.groupedByRole, id: \.role) { group in
+                    Section("Shared with me — \(group.role.label)") {
+                        ForEach(group.lists) { entry in
+                            WatchedListSidebarRow(entry: entry)
+                                .tag(entry.id)
+                        }
+                    }
+                }
+                if watched.hasMore {
+                    Button("Load more shared lists") {
+                        Task { await watched.loadMore() }
+                    }
+                    .font(.caption)
+                }
+            }
+        }
+    }
+
+    /// Resolves the sidebar selection against the shared-with-me lists. Only
+    /// consulted after the owned lists miss, so an id can never resolve twice.
+    private func selectedWatchedList(viewModel: OwnedListsViewModel) -> WatchedList? {
+        watchedViewModel?.list(withID: viewModel.selectedListID)
     }
 
     private var placeholderSelectListState: some View {
@@ -402,6 +506,18 @@ struct OwnedListsRootView: View {
         }
     }
 
+    private func subscribeWatchedEventBus(
+        viewModel: WatchedListsViewModel,
+        bus: ListsEventBus
+    ) async {
+        Task { [weak viewModel] in
+            for await event in bus.events() {
+                guard let viewModel else { return }
+                viewModel.apply(event: event)
+            }
+        }
+    }
+
     private func subscribeRowsEventBus(
         viewModel: ListRowsViewModel,
         bus: ListsEventBus
@@ -412,6 +528,49 @@ struct OwnedListsRootView: View {
                 viewModel.apply(event: event)
             }
         }
+    }
+}
+
+// MARK: - Shared-with-me sidebar row
+
+/// One row in the "Shared with me" section: the list title, who owns it, and
+/// the caller's role — the same three columns the web's `/lists` datagrid
+/// shows (work-consolidation.md G23).
+private struct WatchedListSidebarRow: View {
+    let entry: WatchedList
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "person.crop.rectangle.stack")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(entry.title)
+                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    if let owner = entry.owner {
+                        Text(owner.displayLabel)
+                            .lineLimit(1)
+                    }
+                    // The parent projection is a label only — a shared child
+                    // does not imply access to its parent, so it never links.
+                    if let parentTitle = entry.parentTitle {
+                        Text("· in \(parentTitle)")
+                            .lineLimit(1)
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: String {
+        let owner = entry.owner.map { ", owned by \($0.displayLabel)" } ?? ""
+        return "\(entry.title)\(owner), your access: \(entry.role.label)"
     }
 }
 

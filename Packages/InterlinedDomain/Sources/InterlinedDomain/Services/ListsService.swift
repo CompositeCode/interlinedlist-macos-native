@@ -23,6 +23,11 @@ public enum ListsError: Error, Sendable, Equatable {
     /// is included so the editor can fall back to raw-text mode rather than
     /// silently surfacing an empty schema.
     case malformedSchema(raw: String, reason: SchemaDSLError)
+
+    /// An add-watcher call named no user. Raised before any HTTP call because
+    /// the route treats a missing `userId` as "subscribe *me* to this list",
+    /// which is a different action entirely (work-consolidation.md G23).
+    case invalidWatcher
 }
 
 extension ListsError: LocalizedError, CustomStringConvertible {
@@ -34,6 +39,8 @@ extension ListsError: LocalizedError, CustomStringConvertible {
             return "Managing lists requires an active subscription."
         case .malformedSchema(let raw, let reason):
             return "Schema \"\(raw)\" could not be parsed: \(reason.description)"
+        case .invalidWatcher:
+            return "Choose a person to share this list with."
         }
     }
 }
@@ -158,18 +165,51 @@ public protocol ListsServicing: Sendable {
     /// Deletes a row.
     func deleteRow(listId: String, rowId: String) async throws
 
+    // MARK: - G23 shared with me
+
+    /// Loads one page of lists **other people** shared with the caller
+    /// (`GET /api/lists/watching`). Distinct from `myLists`, which returns the
+    /// caller's own lists; the two collections never overlap.
+    func watching(limit: Int, offset: Int) async throws -> WatchedListsPage
+
+    /// Loads a list's ranked contributors, in the server's ranking order.
+    /// Unpaged — the route returns every contributor.
+    func contributors(of listId: String) async throws -> [ListContributor]
+
+    /// Grants `userId` access to `listId` at `role`.
+    ///
+    /// Subscriber-gated server-side: a free owner gets `403`, which this
+    /// method surfaces as `ListsError.subscriberRequired` so the UI can show
+    /// the upsell rather than a raw HTTP error. Pass `notify: false` to grant
+    /// access without emailing the recipient.
+    func addWatcher(
+        listId: String,
+        userId: String,
+        role: WatcherRole,
+        notify: Bool
+    ) async throws
+
     // MARK: - M3 watchers
 
-    /// Loads every watcher on a list.
+    /// Loads every watcher on a list. Owner-only server-side.
     func watchers(of listId: String) async throws -> [ListWatcher]
 
     /// Loads the caller's own watcher status on a list.
     func myWatcherStatus(of listId: String) async throws -> WatcherStatus
 
-    /// Loads the watcher list with `username` populated.
-    func watcherUsers(of listId: String) async throws -> [ListWatcher]
+    /// Searches people the owner could add as watchers
+    /// (`GET /api/lists/[id]/watchers/users`). The server auto-excludes the
+    /// list's current watchers, so every result is addable.
+    ///
+    /// Note this is a **candidate** search, not the watcher list — use
+    /// `watchers(of:)` for who already has access.
+    func watcherCandidates(
+        of listId: String,
+        search: String?,
+        limit: Int
+    ) async throws -> [CollaboratorCandidate]
 
-    /// Grants or updates a watcher's role on a list.
+    /// Updates an existing watcher's role on a list.
     func setWatcher(
         listId: String,
         userId: String,
@@ -435,11 +475,76 @@ public final class ListsService: ListsServicing {
         try await api.sendVoid(Lists.deleteRow(listId: listId, rowId: rowId))
     }
 
+    // MARK: - G23 shared with me
+
+    /// Lists shared *with* the caller. Free on every tier — seeing what someone
+    /// gave you access to is not a subscriber feature, and gating it would hide
+    /// content a free user is entitled to read (#40 matrix: creation only).
+    public func watching(limit: Int, offset: Int) async throws -> WatchedListsPage {
+        let request = Lists.watching(limit: limit, offset: offset)
+        let (data, _) = try await api.sendRaw(request)
+        let key = request.paginationKey ?? "data"
+        let paginated = try PaginatedDecoder.decode(
+            ListDTO.self,
+            collectionKey: key,
+            from: data,
+            decoder: decoder
+        )
+        // Deliberately *not* written through `store`: the owned-list cache is a
+        // single slice keyed under one domain, and folding watched lists into
+        // it would make them reappear in the owned sidebar on the next
+        // cache-first paint.
+        return WatchedListsPage(from: paginated)
+    }
+
+    /// Free: inspecting who contributes to a list is a read.
+    public func contributors(of listId: String) async throws -> [ListContributor] {
+        let response = try await api.send(Lists.contributors(listId: listId))
+        return response.contributors.map(ListContributor.init(from:))
+    }
+
+    public func addWatcher(
+        listId: String,
+        userId: String,
+        role: WatcherRole,
+        notify: Bool
+    ) async throws {
+        // Reject an empty id before spending a round-trip: an empty `userId`
+        // would silently flip the route into its *self-subscribe* branch
+        // (documented on /help/api/lists) and add the caller instead of the
+        // intended recipient.
+        let trimmedUserId = userId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedUserId.isEmpty else { throw ListsError.invalidWatcher }
+        // Granting someone else access is `sharingWithPeople`, not list
+        // creation — the same entitlement that gates document collaborators and
+        // email invites. Checked *after* the empty-id guard so an invalid call
+        // reports what is wrong with it rather than an entitlement the caller
+        // may well have.
+        guard entitlements.isEnabled(.sharingWithPeople) else {
+            throw ListsError.subscriberRequired
+        }
+        let request = AddListWatcherRequest(
+            userId: trimmedUserId,
+            role: role.wireToken,
+            notify: notify
+        )
+        do {
+            _ = try await api.send(Lists.addWatcher(listId: listId, request))
+        } catch let error as APIError where error.httpStatusCode == 403 {
+            // The server is the real subscriber gate today — see the TODO on
+            // `requireListManagement()`. Project its 403 onto the domain error
+            // the sharing UI already renders as an upsell.
+            throw ListsError.subscriberRequired
+        }
+    }
+
     // MARK: - M3 watchers
 
     public func watchers(of listId: String) async throws -> [ListWatcher] {
-        let dtos = try await api.send(Lists.watchers(listId: listId))
-        return dtos.map(ListWatcher.init(from:))
+        // Reading who watches a list is free on every tier (#40 matrix:
+        // creation is gated, inspection is not).
+        let response = try await api.send(Lists.watchers(listId: listId))
+        return response.watchers.map(ListWatcher.init(from:))
     }
 
     public func myWatcherStatus(of listId: String) async throws -> WatcherStatus {
@@ -447,9 +552,32 @@ public final class ListsService: ListsServicing {
         return WatcherStatus(from: dto)
     }
 
-    public func watcherUsers(of listId: String) async throws -> [ListWatcher] {
-        let dtos = try await api.send(Lists.watcherUsers(listId: listId))
-        return dtos.map(ListWatcher.init(from:))
+    public func watcherCandidates(
+        of listId: String,
+        search: String?,
+        limit: Int
+    ) async throws -> [CollaboratorCandidate] {
+        // Listing who *could* be added is a read; the gate lives on
+        // `addWatcher`, the action that actually shares the list.
+        // Blank searches are sent as `nil` so the route returns its default
+        // (unfiltered) candidate page rather than matching on an empty string.
+        let trimmed = search?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let response = try await api.send(
+            Lists.watcherCandidates(
+                listId: listId,
+                search: (trimmed?.isEmpty ?? true) ? nil : trimmed,
+                limit: limit
+            )
+        )
+        return response.users.map {
+            CollaboratorCandidate(
+                id: $0.id,
+                username: $0.username,
+                displayName: $0.displayName,
+                email: $0.email,
+                avatar: $0.avatar.flatMap(URL.init(string:))
+            )
+        }
     }
 
     public func setWatcher(
@@ -458,8 +586,17 @@ public final class ListsService: ListsServicing {
         role: WatcherRole
     ) async throws -> ListWatcher {
         let request = UpdateListWatcherRequest(role: role.wireToken)
-        let dto = try await api.send(Lists.setWatcher(listId: listId, userId: userId, request))
-        return ListWatcher(from: dto)
+        do {
+            // The route answers `{ role }` only, so the caller's own `userId`
+            // completes the row. The server echoes the role it actually
+            // applied; we prefer that over the requested one.
+            let response = try await api.send(Lists.setWatcher(listId: listId, userId: userId, request))
+            let applied = response.role.map(WatcherRole.init(wireToken:)) ?? role
+            return ListWatcher(userId: userId, role: applied)
+        } catch let error as APIError where error.httpStatusCode == 403 {
+            // Role changes are subscriber-gated exactly like add-watcher.
+            throw ListsError.subscriberRequired
+        }
     }
 
     public func removeWatcher(listId: String, userId: String) async throws {
@@ -500,6 +637,13 @@ public final class ListsService: ListsServicing {
     /// Throws `ListsError.subscriberRequired` before any HTTP call when the
     /// account may not create lists. Reads, edits, row CRUD, watchers, and
     /// connections deliberately do not call this (GitHub #40).
+    ///
+    /// **Why this is not applied wholesale.** Before #40 this one seam guarded
+    /// *every* write method — 24 call sites on `dev`, including pure reads.
+    /// `canManageLists` was permissive-by-default (`?? true`), so that was
+    /// harmless; tightening it without first removing the read call sites would
+    /// have stopped free users reading their own lists. #40 removes those call
+    /// sites, so the gate can now be honest.
     private func requireListManagement() throws {
         guard entitlements.canManageLists else {
             throw ListsError.subscriberRequired

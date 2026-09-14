@@ -140,7 +140,16 @@ public struct AIAvailability: Sendable, Equatable {
             return "AI features are part of a subscription."
         }
         if providers.isEmpty {
-            return "Add your own AI provider key in Settings on interlinedlist.com to use AI features."
+            // GitHub #39. This used to read "Add your own AI provider key in
+            // Settings on interlinedlist.com" — which was wrong and, worse,
+            // actionable-sounding: it sent subscribers hunting for a setting
+            // that does not exist. Per /help/ai and /help/settings, AI is
+            // powered by Claude and provided by InterlinedList as part of the
+            // subscription; there is no user-supplied key and no separate AI
+            // bill. An empty `providers[]` is therefore a *service-side* state,
+            // not a user misconfiguration, so the copy says so and asks for
+            // nothing the user cannot do.
+            return "AI features are temporarily unavailable. Nothing is wrong with your account — please try again later."
         }
         if let quota, !quota.hasRemaining {
             return "You've used today's \(quota.dailyLimit) AI requests. The limit resets tomorrow."

@@ -20,6 +20,7 @@ struct RecordedUserCall: Sendable, Equatable {
     enum Kind: Sendable, Equatable {
         case identities
         case organizations
+        case joinOrganization(id: String)
         case identityLinkURL(provider: String, instance: String?)
         case requestEmailChange(newEmail: String)
         case uploadAvatar(contentType: String)
@@ -32,6 +33,8 @@ struct RecordedUserCall: Sendable, Equatable {
         case linkIdentityNative(provider: String, code: String, state: String)
         case settings
         case updateSettings
+        /// The composer gear's single-field write, with the value it sent.
+        case setShowAdvancedPostSettings(enabled: Bool)
     }
     let kind: Kind
 }
@@ -44,6 +47,7 @@ final class StubUserService: UserServicing, @unchecked Sendable {
 
     private var identitiesOutcomes: [Result<[LinkedIdentity], Error>] = []
     private var organizationsOutcomes: [Result<[UserOrganization], Error>] = []
+    private var joinOrganizationOutcomes: [Result<[UserOrganization], Error>] = []
     private var requestEmailChangeOutcomes: [Result<Void, Error>] = []
     private var uploadAvatarOutcomes: [Result<URL?, Error>] = []
     private var deleteAccountOutcomes: [Result<Void, Error>] = []
@@ -54,6 +58,7 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     private var linkIdentityNativeOutcomes: [Result<LinkedIdentity, Error>] = []
     private var settingsOutcomes: [Result<UserSettings, Error>] = []
     private var updateSettingsOutcomes: [Result<UserSettings, Error>] = []
+    private var setShowAdvancedPostSettingsOutcomes: [Result<UserSettings, Error>] = []
 
     /// The settings snapshot passed to the most recent `updateSettings` call,
     /// so a test can assert what was sent.
@@ -94,6 +99,16 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func enqueueOrganizations(failure error: Error) {
         lock.lock(); defer { lock.unlock() }
         organizationsOutcomes.append(.failure(error))
+    }
+
+    func enqueueJoinOrganization(success orgs: [UserOrganization]) {
+        lock.lock(); defer { lock.unlock() }
+        joinOrganizationOutcomes.append(.success(orgs))
+    }
+
+    func enqueueJoinOrganization(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        joinOrganizationOutcomes.append(.failure(error))
     }
 
     func enqueueRequestEmailChange(success: Void = ()) {
@@ -181,6 +196,15 @@ final class StubUserService: UserServicing, @unchecked Sendable {
         updateSettingsOutcomes.append(.failure(error))
     }
 
+    func enqueueSetShowAdvancedPostSettings(success settings: UserSettings) {
+        lock.lock(); defer { lock.unlock() }
+        setShowAdvancedPostSettingsOutcomes.append(.success(settings))
+    }
+    func enqueueSetShowAdvancedPostSettings(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        setShowAdvancedPostSettingsOutcomes.append(.failure(error))
+    }
+
     /// The settings snapshot passed to the most recent `updateSettings` call.
     var lastUpdatedSettings: UserSettings? {
         lock.lock(); defer { lock.unlock() }
@@ -211,6 +235,17 @@ final class StubUserService: UserServicing, @unchecked Sendable {
 
     func cachedOrganizations() async -> [UserOrganization] {
         readCachedOrganizations()
+    }
+
+    /// Joins an org (work-consolidation.md G25). Mirrors the real service:
+    /// a blank id is rejected before anything is recorded, and success returns
+    /// the refreshed membership list rather than an optimistic row.
+    func joinOrganization(id: String) async throws -> [UserOrganization] {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw OrgLifecycleError.unknownCurrentUser }
+        return try perform(label: "joinOrganization", record: .joinOrganization(id: trimmed)) {
+            $0.joinOrganizationOutcomes
+        } set: { $0.joinOrganizationOutcomes = $1 }
     }
 
     /// Synchronous lock-guarded read — factored out so the `async` protocol
@@ -323,6 +358,14 @@ final class StubUserService: UserServicing, @unchecked Sendable {
         recordLastUpdatedSettings(settings)
         return try perform(label: "updateSettings", record: .updateSettings) { $0.updateSettingsOutcomes }
             set: { $0.updateSettingsOutcomes = $1 }
+    }
+
+    func setShowAdvancedPostSettings(_ enabled: Bool) async throws -> UserSettings {
+        try perform(
+            label: "setShowAdvancedPostSettings",
+            record: .setShowAdvancedPostSettings(enabled: enabled)
+        ) { $0.setShowAdvancedPostSettingsOutcomes }
+            set: { $0.setShowAdvancedPostSettingsOutcomes = $1 }
     }
 
     /// Synchronous lock-guarded write so the `async` `updateSettings` never

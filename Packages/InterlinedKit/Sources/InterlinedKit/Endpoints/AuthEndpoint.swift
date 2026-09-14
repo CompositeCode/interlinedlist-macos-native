@@ -10,8 +10,14 @@ import Foundation
 ///
 /// Auth requirements per decision 0001 and the live probe:
 /// - `forgotPassword`, `resetPassword`, `verifyEmail` — `.none` (public).
-/// - `sendVerificationEmail` — `.bearer` (the live endpoint returned 401 for an
-///   unauthenticated request, i.e. it identifies the account from the session).
+/// - `sendVerificationEmail` — ⚠️ **UNREACHABLE under Bearer. Do not wire this up.**
+///   Corrected 2026-09-14 by live probe: `POST /api/auth/send-verification-email`
+///   with a valid Bearer sync-token returns **401 `{"error":"Unauthorized"}`**, and
+///   the live OpenAPI marks it `x-auth-type: session`. The earlier `.bearer`
+///   annotation inferred the wrong thing from a 401 for an *unauthenticated*
+///   caller — that only ever proved anonymous fails, never that Bearer succeeds.
+///   The resend affordance therefore deep-links to web Settings ▸ Security; see
+///   `EmailVerificationResend.resendURL(baseURL:)` in InterlinedDomain.
 /// - `logout` — `.session` (clears the cookie session; the bearer token is a
 ///   separate, client-held secret cleared by `TokenStore.delete()`).
 public enum Auth {
@@ -41,8 +47,15 @@ public enum Auth {
     }
 
     /// `POST /api/auth/send-verification-email` — (re)send the verification
-    /// email for the given address. `.bearer` because the live endpoint
-    /// requires an authenticated caller.
+    /// email for the given address.
+    ///
+    /// ⚠️ **This route rejects Bearer (401), verified live 2026-09-14.** The
+    /// builder is retained so the operation stays inventoried against the spec,
+    /// but nothing in the App or Domain layer calls it and nothing should: use
+    /// `EmailVerificationResend.resendURL(baseURL:)` to hand the user to the web
+    /// session that can actually perform it. Kept `.bearer` rather than
+    /// `.session` because this client has no cookie-session transport at all —
+    /// relabelling it would imply a capability that does not exist.
     public static func sendVerificationEmail(email: String) -> Request<MessageResponse> {
         Request(
             method: .post,

@@ -25,7 +25,7 @@ final class SubscriberCreateGateTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.documentEnvelope(id: "d-new", title: "New", content: "Body"))
-        let service = DocumentsService(api: api, entitlements: subscriber())
+        let service = DocumentsService(api: api, entitlementsProvider: subscriber())
 
         // When
         let doc = try await service.create(title: "New", body: "Body", folderId: nil, isPublic: false)
@@ -41,12 +41,12 @@ final class SubscriberCreateGateTests: XCTestCase {
     func test_givenFreeAccount_whenCreatingDocument_thenThrowsBeforeAnyAPICall() async throws {
         // Given
         let api = StubAPIClient()
-        let service = DocumentsService(api: api, entitlements: free())
+        let service = DocumentsService(api: api, entitlementsProvider: free())
 
         // When / Then — the client predicts the server's 403.
         do {
             _ = try await service.create(title: "New", body: "Body", folderId: nil, isPublic: false)
-            XCTFail("Expected DocumentsError.subscriberRequired")
+            XCTFail("Expected DocumentsError.subscriberRequired(.documentCreation)")
         } catch let error as DocumentsError {
             XCTAssertEqual(error, .subscriberRequired(.documentCreation))
         }
@@ -63,7 +63,7 @@ final class SubscriberCreateGateTests: XCTestCase {
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.documentEnvelope(id: "d-1", title: "Existing", content: "Body"))
         await api.enqueue(json: Fixtures.documentEnvelope(id: "d-1", title: "Edited", content: "Body"))
-        let service = DocumentsService(api: api, entitlements: free())
+        let service = DocumentsService(api: api, entitlementsProvider: free())
 
         // When — a read, then an edit.
         let read = try await service.document(id: "d-1")
@@ -85,7 +85,7 @@ final class SubscriberCreateGateTests: XCTestCase {
         // caller unchanged rather than being masked as an entitlement problem.
         let api = StubAPIClient()
         await api.enqueue(failure: .badRequest(serverMessage: "title required"))
-        let service = DocumentsService(api: api, entitlements: subscriber())
+        let service = DocumentsService(api: api, entitlementsProvider: subscriber())
 
         // When / Then
         do {
@@ -156,14 +156,14 @@ final class SubscriberCreateGateTests: XCTestCase {
         // Given — a provider whose answer changes between calls.
         let api = StubAPIClient()
         let isSubscriber = MutableFlag()
-        let service = DocumentsService(api: api, entitlements: {
+        let service = DocumentsService(api: api, entitlementsProvider: {
             EntitlementsService(customerStatus: isSubscriber.value ? .subscriber : .free)
         })
 
         // When — first attempt while free.
         do {
             _ = try await service.create(title: "N", body: "B", folderId: nil, isPublic: false)
-            XCTFail("Expected DocumentsError.subscriberRequired")
+            XCTFail("Expected DocumentsError.subscriberRequired(.documentCreation)")
         } catch let error as DocumentsError {
             XCTAssertEqual(error, .subscriberRequired(.documentCreation))
         }

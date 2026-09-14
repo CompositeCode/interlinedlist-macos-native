@@ -104,3 +104,90 @@ public struct DMThread: Sendable, Equatable {
         self.olderCursor = olderCursor
     }
 }
+
+// MARK: - DMLimits
+
+/// The documented Direct Message ceilings (work-consolidation.md G22).
+///
+/// These are **not** in `GET /api/limits` — that endpoint reports the *public
+/// post* limits (`message.maxContentLength` was 5000 live on 2026-09-09),
+/// which is a different surface. The DM numbers come from
+/// `https://interlinedlist.com/help/direct-messages`:
+///
+///   "You can attach photos to a direct message, up to 8 per message."
+///   "you can use Markdown for formatting, up to 10,000 characters"
+///
+/// The per-image *size* ceilings are separate and DO come from the server —
+/// they run through `ContentLimits.imagePrepLimits`, shared with the post
+/// composer, so nothing here duplicates a server-driven value.
+public enum DMLimits {
+    /// Maximum photos attachable to one direct message.
+    public static let maxImagesPerMessage = 8
+    /// Maximum body length in characters. Markdown is counted raw.
+    public static let maxBodyCharacters = 10_000
+}
+
+// MARK: - DMConversationSummary
+
+/// One server-grouped conversation row from `GET /api/dm/conversations`
+/// (work-consolidation.md G22).
+///
+/// This is the domain projection of the *real* inbox. It replaces collapsing a
+/// folder page client-side, which could only ever see the conversations whose
+/// newest message happened to land on the fetched page.
+///
+/// `latestMessage` is optional because the populated server shape is
+/// unverified (the shared test account's inbox is empty and we may not write to
+/// it) — a row whose message we could not decode still renders as a
+/// conversation rather than vanishing or crashing.
+public struct DMConversationSummary: Sendable, Equatable, Hashable, Identifiable {
+    /// Stable row identity: the `pairKey` when the server sends one, else the
+    /// other participant's id, else the newest message's id. Never empty.
+    public let id: String
+    /// The server's grouping key, when reported.
+    public let pairKey: String?
+    /// The other participant in the conversation.
+    public let otherUser: UserSummary?
+    /// Unread inbound messages in this conversation (0 when unreported).
+    public let unreadCount: Int
+    /// The newest message, rendered as the row preview.
+    public let latestMessage: DirectMessage?
+
+    public init(
+        id: String,
+        pairKey: String? = nil,
+        otherUser: UserSummary? = nil,
+        unreadCount: Int = 0,
+        latestMessage: DirectMessage? = nil
+    ) {
+        self.id = id
+        self.pairKey = pairKey
+        self.otherUser = otherUser
+        self.unreadCount = unreadCount
+        self.latestMessage = latestMessage
+    }
+
+    /// The username used to open the thread. Empty only when the server named
+    /// neither the other user nor a decodable message.
+    public var otherUsername: String {
+        otherUser?.username ?? latestMessage?.sender?.username ?? ""
+    }
+
+    /// One-line preview for the row.
+    public var preview: String { latestMessage?.body ?? "" }
+}
+
+// MARK: - DMConversationPage
+
+/// A cursor-paginated page of server-grouped conversations.
+public struct DMConversationPage: Sendable, Equatable {
+    public let conversations: [DMConversationSummary]
+    public let nextCursor: String?
+
+    public init(conversations: [DMConversationSummary], nextCursor: String? = nil) {
+        self.conversations = conversations
+        self.nextCursor = nextCursor
+    }
+
+    public static let empty = DMConversationPage(conversations: [], nextCursor: nil)
+}

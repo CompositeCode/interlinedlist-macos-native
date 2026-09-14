@@ -163,6 +163,112 @@ public enum Documents {
         Request(method: .delete, path: "/api/documents/folders/\(id)", auth: .bearer)
     }
 
+    // MARK: - Sidebar tree (work-consolidation.md G24)
+
+    /// `GET /api/documents/tree` — the entire sidebar in a single call:
+    /// every folder (flat, nested via `parentId`) with its documents inline,
+    /// plus the unfiled documents as a sibling `rootDocuments` array.
+    ///
+    /// VERIFIED live 2026-09-09 (read-only Bearer probe, `.env` test account):
+    /// HTTP 200, and `OPTIONS` reports `Allow: GET, HEAD, OPTIONS`. The live
+    /// OpenAPI spec marks it `x-auth-type: sync-token`, `x-subscription-tier:
+    /// free`. See `DocumentTreeResponse` for the body and its two consumer
+    /// constraints (root documents are a sibling array; `_templates` comes
+    /// back inline).
+    ///
+    /// This replaces the sidebar's `folders(limit:offset:)` fetch. It does
+    /// **not** replace `folderDocuments(id:)` / `list()`: the tree's inline
+    /// document rows carry no `content` and no `updatedAt`, so a list column
+    /// that orders by recency or an editor that opens a body still needs the
+    /// heavier per-folder read.
+    public static func tree() -> Request<DocumentTreeResponse> {
+        Request(method: .get, path: "/api/documents/tree", auth: .bearer)
+    }
+
+    // MARK: - Public documents by user (work-consolidation.md G24)
+
+    /// `GET /api/users/[username]/documents` — a user's public documents.
+    ///
+    /// VERIFIED live 2026-09-09: `auth: .none` is deliberate and checked —
+    /// the spec reports `x-auth-type: none` and the route returned the same
+    /// body with and without an `Authorization` header. Sending Bearer here
+    /// would work but would misreport the endpoint's contract.
+    public static func publicDocuments(username: String) -> Request<PublicUserDocumentsResponse> {
+        Request(
+            method: .get,
+            path: "/api/users/\(username)/documents",
+            auth: .none
+        )
+    }
+
+    // MARK: - Create inside a folder (work-consolidation.md G24)
+
+    /// `POST /api/documents/folders/[id]/documents` — create a document
+    /// **directly in a folder**.
+    ///
+    /// VERIFIED live 2026-09-09 via `OPTIONS`, which reports
+    /// `Allow: GET, HEAD, OPTIONS, POST` (no write was performed — the test
+    /// account is shared). The spec marks it `x-subscription-tier: subscriber`
+    /// and answers `201`.
+    ///
+    /// This is the *only* route that files a new document into a folder. The
+    /// live reference is explicit that `POST /api/documents` "always creates
+    /// at root: there is no `folderId` in its body", so passing a folder there
+    /// is silently ignored. `DocumentsService.createDocument(inFolder:…)`
+    /// routes here whenever a folder is selected.
+    public static func createInFolder(
+        folderId: String,
+        _ body: CreateDocumentInFolderRequest
+    ) -> Request<DocumentResponse> {
+        Request(
+            method: .post,
+            path: "/api/documents/folders/\(folderId)/documents",
+            body: .json(body),
+            auth: .bearer
+        )
+    }
+
+    // MARK: - Move between folders (work-consolidation.md G24)
+
+    /// `PATCH /api/documents/[id]` carrying only `folderId` — move a document
+    /// into a folder, or out to root when `folderId` is `nil`.
+    ///
+    /// Split out from `update(id:_:)` because only `MoveDocumentRequest` can
+    /// encode the explicit `null` that means "no folder (root)"; the general
+    /// `UpdateDocumentRequest` omits nil keys, which the server reads as
+    /// "leave the folder alone". The live reference states `PUT` and `PATCH`
+    /// "accept `folderId` to move a document into (or out of) a folder".
+    public static func move(id: String, toFolderId folderId: String?) -> Request<DocumentResponse> {
+        Request(
+            method: .patch,
+            path: "/api/documents/\(id)",
+            body: .json(MoveDocumentRequest(folderId: folderId)),
+            auth: .bearer
+        )
+    }
+
+    // MARK: - Invite landing (work-consolidation.md G24)
+
+    /// `GET /api/documents/invite/[token]` — resolve an email invite for its
+    /// landing page. Public: `auth: .none`.
+    ///
+    /// VERIFIED live 2026-09-09 unauthenticated: an unknown token answers
+    /// `404 {"error":"Invite not found, expired, or revoked","code":
+    /// "not_found"}`, and `OPTIONS` reports `Allow: GET, HEAD, OPTIONS, POST`.
+    ///
+    /// **There is deliberately no accept builder.** `POST /api/documents/
+    /// invite/[token]` is `x-auth-type: session` in the live spec — it is
+    /// authenticated by the browser session cookie only, so a Bearer sync-token
+    /// client cannot claim an invite no matter how the request is shaped. The
+    /// Mac renders the landing state and hands the accept step to the browser.
+    public static func invite(token: String) -> Request<DocumentInviteLandingDTO> {
+        Request(
+            method: .get,
+            path: "/api/documents/invite/\(token)",
+            auth: .none
+        )
+    }
+
     /// `GET /api/documents/folders/[id]/documents`
     public static func folderDocuments(
         id: String,

@@ -35,6 +35,24 @@ public protocol SharingServicing: Sendable {
     func resolveListShare(token: String) async throws -> ResolvedShare
     func claimListShare(token: String) async throws -> ShareClaim
 
+    /// Reads one page of a token-shared list's rows
+    /// (`GET /api/lists/shared/{token}/data`, work-consolidation.md G23).
+    ///
+    /// The **token is the capability**: rows are served with no session and
+    /// regardless of the list's `isPublic` flag, which is what lets a
+    /// read-only share render a private list. Pairs with
+    /// `resolveListShare(token:)` — resolve gives the title and role, this
+    /// gives the rows.
+    func sharedListRows(token: String, limit: Int, offset: Int) async throws -> RowsPage
+
+    /// Resolves an email invite for its landing page
+    /// (`GET /api/lists/invite/{token}`, work-consolidation.md G23).
+    ///
+    /// There is deliberately no `claimListInvite`: the accept half
+    /// (`POST /api/lists/invite/{token}`) is session-only in the live spec, so
+    /// a Bearer client cannot reach it. The landing hands accept to the browser.
+    func resolveListInvite(token: String) async throws -> ResolvedListInvite
+
     // Documents
     func documentShareLinks(documentId: String) async throws -> [ShareLink]
     func createDocumentShareLink(documentId: String, role: ShareRole, expiresAt: Date?) async throws -> ShareLink
@@ -73,13 +91,16 @@ public final class SharingService: SharingServicing {
 
     private let api: APIClientProtocol
     private let entitlements: EntitlementsService
+    private let decoder: JSONDecoder
 
     public init(
         api: APIClientProtocol,
-        entitlements: EntitlementsService = EntitlementsService(customerStatus: .free)
+        entitlements: EntitlementsService = EntitlementsService(customerStatus: .free),
+        decoder: JSONDecoder = JSONCoders.makeDecoder()
     ) {
         self.api = api
         self.entitlements = entitlements
+        self.decoder = decoder
     }
 
     // MARK: Lists
@@ -109,6 +130,27 @@ public final class SharingService: SharingServicing {
     public func claimListShare(token: String) async throws -> ShareClaim {
         let dto = try await api.send(Sharing.claimListShare(token: token))
         return ShareClaim(resourceId: dto.listId, role: dto.role.flatMap(ShareRole.init(rawValue:)))
+    }
+
+    public func sharedListRows(token: String, limit: Int, offset: Int) async throws -> RowsPage {
+        // Ungated on both axes: no entitlement check (reading a share you were
+        // given is always free) and no auth (`Lists.sharedRows` is `.none`).
+        let request = Lists.sharedRows(token: token, limit: limit, offset: offset)
+        let (data, _) = try await api.sendRaw(request)
+        let key = request.paginationKey ?? "data"
+        let paginated = try PaginatedDecoder.decode(
+            ListRowDTO.self,
+            collectionKey: key,
+            from: data,
+            decoder: decoder
+        )
+        return RowsPage(from: paginated)
+    }
+
+    public func resolveListInvite(token: String) async throws -> ResolvedListInvite {
+        // Accepting an invite is documented as always free, so no entitlement
+        // gate belongs on the landing read either.
+        ResolvedListInvite(from: try await api.send(Lists.invite(token: token)))
     }
 
     // MARK: Documents

@@ -22,6 +22,44 @@ The July web-parity batch (`feature/web-parity-batch-2026-07`) merged into `dev`
 
 Milestones **M0–M7** feature work is complete; post-milestone items NW-1…NW-6, S1/S3/S4, B8 are done.
 
+**Capability gating — ✅ SHIPPED 2026-09-14 (GitHub [#42](https://github.com/CompositeCode/interlinedlist-macos-native/issues/42) / [#40](https://github.com/CompositeCode/interlinedlist-macos-native/issues/40) / [#41](https://github.com/CompositeCode/interlinedlist-macos-native/issues/41) / [#39](https://github.com/CompositeCode/interlinedlist-macos-native/issues/39)).**
+
+`accountStatus` is modelled, the entitlement matrix went from **3 `Feature` cases to 11**, and email
+verification gates the surfaces that need it. `CapabilityGate` answers all three as one question —
+**status → email verification → tier, hardest first** — so the user gets the reason they can act on
+rather than whichever check happened to run first.
+
+The rule the matrix encodes: **creation is gated; managing, moving and leaving what you already have
+is free.** A lapsed subscriber keeps existing content fully usable.
+
+- **Gated:** post/reply media, scheduled posts, cross-posting, list creation, document creation,
+  document-template creation, organization creation, sharing-with-people (including
+  `ListsService.addWatcher`), email invites, share links, AI — **and org LinkedIn
+  `syncLinkedInPages` / `assignLinkedInPage`**, which establish a publishing destination and are
+  therefore `.crossPosting`, aligning org LinkedIn with the personal cross-post gate.
+- **Free:** every read, `moveDocument`, org `delete` / `leave` / `setMemberSuspended`, and
+  `disconnectLinkedIn` — a user must always be able to undo a connection, including *because* their
+  subscription lapsed.
+- **No `listFolderCreation` case.** List folders are not returning to macOS
+  ([#49](https://github.com/CompositeCode/interlinedlist-macos-native/issues/49), owner decision
+  2026-09-14), so gating them would be dead code that reads like a promise.
+
+**Three defects fixed on the way.**
+1. **The staleness hole.** `EntitlementsService` is built from `user?.customerStatus` and
+   `SessionService.restore()` was the *only* re-fetch path — launch and sign-in. Verifying an email
+   in a browser left the Mac app gated until relaunch. The app now re-resolves the session on
+   `scenePhase == .active`.
+2. **`send-verification-email` was annotated `.bearer` on the strength of a 401 for an
+   *unauthenticated* caller** — which only ever proved anonymous fails. A live probe (2026-09-14)
+   returns **401 under a valid Bearer token**; the route really is `x-auth-type: session`. The
+   resend affordance deep-links to web Settings ▸ Security, and the builder now says so.
+3. **#39 — the AI copy told subscribers to "add your own AI provider key"**, a setting that does not
+   exist. AI is included in the subscription, so an empty `providers[]` is a *service-side* outage.
+   The copy no longer asks the user to fix something they cannot.
+
+Test baseline after this change: Kit **483** · Domain **1012** · Persistence **140** · App **968**.
+
+
 **Merged since this doc was consolidated (2026-08-18 → 2026-09-02):**
 - **G4 · GitHub issue integration** (PR #12, merged 2026-08-18) — Kit + Domain client + the full App UI (issue browser in GitHub-backed lists, "create issue from a message", close/reopen + label/assignee editing). Client-complete; only the issue **update** and **comment** routes stay backend-blocked (see [§1 · G4](#g4-github-issue-integration) / [§2 · P1-H2](#p1-h2-github-issue-update-comment-routes)). Also in PR #12: G7 verify, G14 tail, ERD schema-entity view, timeline New Message button, G11a LinkedIn target, force-directed connections layout, Preferences pane, per-item Markdown export.
 - **Sharing collaborators / invites / visibility** (PR #13, merged 2026-09-02) — extends the G3 sharing group: per-person document collaborators (search/add/set-role/remove), email invites for lists **and** documents, and a make-public visibility toggle. Full stack (Kit `SharingEndpoint`/`SharingDTO`, Domain `Sharing` models + `SharingService`, App `DocumentCollaborators*`/`Invites*`/`Visibility*` views + VMs) with Kit/Domain/App tests. Create paths are subscriber-gated.
@@ -148,20 +186,63 @@ Live and available to the test account: `GET /api/ai/status` returns `{"subscrib
 > Envelope note: `/api/link-metadata` answers `{"link":{…}}` (the single-resource convention) but `/api/messages/{id}/metadata` answers the **bare** `{"links":[…]}` with no envelope key.
 
 <a id="g22-dm-completeness"></a>
-**G22 · Direct-message completeness — MEDIUM. Size S.**
-Three routes the DM feature shipped without: `GET /api/dm/conversations` (one row per conversation grouped by `pairKey`, newest first — verified live, `{"items":[],"nextCursor":null}` — this is the natural inbox list, versus today's folder-based `GET /api/dm`), `GET /api/dm/{id}` (single message), and `POST /api/dm/images/upload` (DM image attachments, which the DM composer advertises but cannot perform).
+**G22 · Direct-message completeness** — ✅ **Shipped 2026-09-09 (issue #53, branch `feat/dm-inbox-photos-g22`).** All three routes are wired.
+
+- **`GET /api/dm/conversations`** — `DirectMessages.conversations(cursor:)` → domain `DMConversationPage`. The **Inbox now reads this feed**; Sent and Deleted keep the folder listing, which this route does not replace. That removes the old failure mode where a conversation whose newest message fell off the fetched folder page was simply invisible.
+- **`GET /api/dm/{id}`** — `DirectMessages.message(id:)` → `DirectMessagesService.message(id:)`. Consumed by `DirectMessagesListViewModel.conversationUsername(forMessageID:)`, which answers from the loaded listing first and only fetches for an id it doesn't hold. Reachable via the new `.directMessagesOpenMessage` notification; **nothing posts it yet** — there is no direct-message `NotificationKind`, so the producer arrives with whatever surface introduces DM notifications or a URL scheme.
+- **`POST /api/dm/images/upload`** — `DirectMessagesService.uploadImage` through the **shared `ImagePrep` + `ContentLimits` path** (G14 tail), not fresh constants. Both DM composers attach up to **8 photos** (`DMLimits.maxImagesPerMessage`) and enforce the **10,000-character** DM body ceiling (`DMLimits.maxBodyCharacters`) — deliberately *not* the post composer's `/api/limits` 5,000, which is a different surface. Thread bubbles now render `imageURLs`; previously received photos were not displayed at all.
+
+> **Probe note (2026-09-09, read-only — GET/OPTIONS only).** `GET /api/dm/conversations` → 200 `{"items":[],"nextCursor":null}`, Bearer accepted; `OPTIONS /api/dm/{id}` → `GET, HEAD, OPTIONS` and an unknown id → 404 `{"error":"Message not found.","code":"not_found"}`; `OPTIONS /api/dm/images/upload` → `OPTIONS, POST` (a `GET` is 405). **The populated `items[]` shape is still unverified** — the shared test account's inbox is empty and sending a DM to populate it was not permitted. `DMConversationDTO` and `DMMessageResponse` are therefore **deliberately permissive** (nested *and* flattened rows; `{message}` / `{data}` / bare), with tests pinning that tolerance so a shape change degrades one field rather than failing the page — the G21 all-nil decode defect is the lesson being applied. **Tighten both decoders to the real keys once a populated payload is captured.**
+
+> **Open dependency.** Photo sending requires a **verified email address**. No client-side gate is built here by design: the server's 403 is surfaced verbatim. `TODO(#41)` markers (7 sites) name issue #41's `CapabilityGate` as the single owner — wire the composers to it when that branch merges so the affordance is explained before the user picks a file.
 
 <a id="g23-lists-gaps"></a>
-**G23 · Lists: shared-with-me, contributors, watcher add — MEDIUM. Size M.**
-`GET /api/lists/watching` (verified live, returns real rows) is the **"shared with me" / watched-lists** surface the sidebar lacks. Also `GET /api/lists/{id}/contributors` (full ranked contributor list), `POST /api/lists/{id}/watchers` (add watchers — the client can only read and delete), `GET /api/lists/shared/{token}/data` (row data for a token-shared list, the read-only viewer's missing half), and the invite landing pair `GET`/`POST /api/lists/invite/{token}`.
+**G23 · Lists: shared-with-me, contributors, watcher add — ✅ SHIPPED 2026-09-09 (branch `feat/lists-sharing-g23`, GitHub issue #48).**
+All five routes are built: `GET /api/lists/watching` (the **"shared with me"** sidebar section the client had no equivalent of), `GET /api/lists/{id}/contributors` (ranked contributor panel), `POST /api/lists/{id}/watchers` (add a watcher — the client could previously only read and delete), `GET /api/lists/shared/{token}/data` (the read-only viewer's missing half: a share landing now renders the rows), and `GET /api/lists/invite/{token}` (the email-invite landing).
+
+> **The accept half stays in the browser.** `POST /api/lists/invite/{token}` and `POST /api/lists/shared/{token}` are declared `x-auth-type: session` in the live OpenAPI spec, so a Bearer-only client cannot claim either. The invite landing therefore ends in "Accept in Browser" rather than a native Accept button that would 401 every time. That backend ask is filed separately; `InviteLandingViewModel.acceptInBrowserURL` is the single seam a Bearer-reachable claim route would replace.
+
+> **The read-only probe that preceded this work found four shipping defects in the *existing* watcher surface, all fixed here.** None had been caught because each fails silently at the decoder or as a 400 the UI reports as a generic error:
+> 1. `GET /api/lists/{id}/watchers` answers `{"watchers":[…],"pagination":{…}}`, but the builder declared a bare `[ListWatcherDTO]` — so the sharing panel could never list anyone.
+> 2. `GET /api/lists/{id}/watchers/me` answers `{"watching":…}`, not `{"isWatching":…}` — the flag decoded to `nil` on every call, so the client believed the caller watched nothing.
+> 3. `GET /api/lists/{id}/watchers/users` is a **candidate search** ("people you could add", `{"users":[…],"total","pagination"}`), not the watcher list. It was typed as `[ListWatcherDTO]`, which cannot decode it at all — and the watchers panel was calling it to populate itself.
+> 4. `WatcherRole.wireToken` emitted `owner`/`editor`/`viewer`, none of which the API accepts. `/help/api/lists` documents the taxonomy as `watcher`/`collaborator`/`manager`, and an invalid role is a `400` — so every role change was rejected. UI labels now follow the web's vocabulary (Read-only / Edit / Admin) on both `WatcherRole` and `ShareRole`.
+
+> **Still open, found during the same probe and deliberately out of scope:** `GET /api/lists/{id}` answers the `{"data":{…}}` envelope while `Lists.get(id:)` decodes a bare `ListDTO`, so `ListsService.detail(listId:)` cannot decode a live response. Not exercised by any G23 path (the shared-with-me rows come from the `watching` payload itself), so it is filed rather than fixed here.
+
+> **Entitlements:** granting a named user access is subscriber-gated server-side (`403 {"error":"Subscribe to share lists."}`), as is a role change. `ListsService` projects that 403 onto `ListsError.subscriberRequired` so the UI shows the same upsell Share Links and Invite by Email already use. The client-side pre-flight gate is left to GitHub #40 (`CapabilityGate`) — every `ListsService` write routes through one permissive `canManageLists` seam today, so tightening it here would have blocked free users from reading their own lists.
 
 <a id="g24-documents-gaps"></a>
-**G24 · Documents: sidebar tree, public docs, invites, presence — MEDIUM. Size M.**
-`GET /api/documents/tree` returns `{folders, rootDocuments}` in **one** call — today the sidebar assembles that from several. `GET /api/users/{username}/documents` is public documents by user (the profile page has no documents tab). `GET`/`POST /api/documents/invite/{token}` are the invite landing/claim pair matching the list ones. `POST /api/documents/folders/{id}/documents` creates a document directly in a folder. `POST`/`DELETE /api/documents/{id}/presence` is the live-cursor heartbeat — **defer**: it is a collaborative-editing feature with a polling cost, worth building only if multi-user editing is a goal.
+**G24 · Documents: sidebar tree, public docs, invites, presence — SHIPPED 2026-09-09 (GitHub #52), minus the deferred presence pair.**
+Built on `feat/documents-tree-g24`. `GET /api/documents/tree` now backs the sidebar in **one** call (`FolderTreeViewModel.documentTree()`), which also gives the sidebar per-folder document counts for free. `GET /api/users/{username}/documents` backs a documents column on the profile page. `POST /api/documents/folders/{id}/documents` creates a document directly in a folder, subscriber-gated. `GET /api/documents/invite/{token}` renders an invite landing that ends in "Accept in Browser".
+
+Four things the live probe (read-only, 2026-09-09) settled, each of which changed the plan:
+
+- **The tree does not retire the document-list fetch.** Its inline document rows carry only `id`, `title`, `relativePath`, `isPublic` — no body, no `updatedAt`, no `folderId`. Only the *folder* fetch retired; the middle column and the editor still need their own reads. Modelled as `DocumentSummary`, deliberately not as `Document`.
+- **`POST /api/documents` silently ignored the folder.** The reference is explicit that it "always creates at root: there is no `folderId` in its body" — so every New Document created with a folder selected was landing at root. Fixed by routing through the folder route.
+- **Moving to root needs an explicit `null`.** Codable omits nil optionals, and an omitted `folderId` means "leave it alone", so a dedicated `MoveDocumentRequest` always writes the key.
+- **The invite accept half is genuinely out of reach.** `POST /api/documents/invite/{token}` is `x-auth-type: session`; a Bearer client cannot claim, so the landing hands off to the browser. Backend ask filed separately.
+
+Also closed here: **Move to folder** (editor settings menu + list context menu, with "No folder (root)", `_templates` excluded as a destination). **Seed defaults was already shipped** — `Documents.seedDefaultTemplates()` → `DocumentTemplatesService.seedDefaultTemplates()` → `ServerTemplatesViewModel.seedDefaults()`, wired in `DocumentTemplatePickerView`; that bullet closes as already-done.
+
+Still deferred: `POST`/`DELETE /api/documents/{id}/presence`, the live-cursor heartbeat — a collaborative-editing feature with a polling cost, worth building only if multi-user editing becomes a goal.
 
 <a id="g25-org-admin"></a>
-**G25 · Organization admin + LinkedIn org pages — MEDIUM. Size M. (This is [G11b](#2d-upstream-blocked--deferred-confirm-demand-before-building), no longer upstream-blocked.)**
-`PUT /api/organizations/{id}` and `DELETE /api/organizations/{id}` (the client can create and read but not rename or delete — and it sends `PATCH`, see [V4](#1c-live-verb-defects--fix-first)), plus the org LinkedIn set that was recorded as 404/not-deployed and now exists: `GET /api/organizations/{id}/linkedin/status`, `POST /api/organizations/{id}/linkedin/sync-pages`, `PUT /api/organizations/{id}/linkedin/assignments`, `DELETE /api/organizations/{id}/linkedin/credential`. Personal-scope `PUT /api/linkedin/posting-targets` and `POST /api/linkedin/sync-pages` also exist, which closes the "needs a verified per-target wire shape" note on [G11a](#g11a-linkedin-posting-target).
+**G25 · Organization admin + LinkedIn org pages — ✅ SHIPPED 2026-09-09 (GitHub [#54](https://github.com/CompositeCode/interlinedlist-macos-native/issues/54), branch `feat/orgs-lifecycle-g25`). Size M. (Was [G11b](#2d-upstream-blocked--deferred-confirm-demand-before-building).)**
+Delivered: `DELETE /api/organizations/{id}`, leave-an-org, suspend/restore a member, **My Organizations** with role / joined-at / member count, join, and the four org-LinkedIn routes (`linkedin/status`, `sync-pages`, `assignments`, `credential`). Last-owner protection and the system-org no-leave rule are enforced client-side in `OrgOwnershipRules` before any network call.
+
+What the 2026-09-09 read-only recon settled — all of it verified without a single write, since the test account is shared:
+
+- **`GET /api/user/organizations` is a Bearer route, not session-only.** Decision 0001 recorded it as session-only and the kit shipped `auth: .session`. A raw `curl` carrying only `Authorization: Bearer` returns HTTP 200, and `GET /api/openapi.json` marks it `x-auth-type: sync-token`. Corrected in `UserEndpoint.swift`. (The same spec correctly reports `session` for `/api/user/engagement`, so the field is trustworthy — worth re-checking the rest of the session-only list against it.)
+- **The members listing could never decode.** `GET /api/organizations/{id}/members` keys rows by `id`, not `userId`, and dates them `joinedAt`, not `createdAt`. `OrganizationMemberDTO` required `userId`, so every real response failed with `keyNotFound` and the roster never rendered — the same silent-decode family as [G21](#g21-link-metadata). The row also carries the member's identity (`username`, `displayName`, `avatar`, `emailVerified`), so no second lookup is needed.
+- **`POST /api/user/organizations` is the join path**, body `{ "organizationId": … }`. Confirmed twice without writing: the shipped web bundle posts exactly that, and the OpenAPI operation declares that one property. There is no `/api/organizations/{id}/join` — it 404s.
+- **There is no leave route.** Leaving is `DELETE /api/organizations/{id}/members/{yourUserId}`, which is what the web client does.
+- **Suspension is not a route** — it is `active: false` on the member-update body, sent alongside the member's existing role.
+- **`/help/api/organizations` is stale on two rows.** It documents `GET` on `linkedin/sync-pages` and on `linkedin/assignments`; both answer **405** live and neither appears in the OpenAPI document. So `linkedin/status` is the only readable org-LinkedIn route, and it is where the discovered pages and current assignments have to come from.
+- **`PUT linkedin/assignments` takes one `{userId, pageId}` pair**, per the OpenAPI body schema — not the "assignment map" the help page describes. Where the two sources disagree, OpenAPI has now won twice.
+- **`LinkedInTargetDTO.kind` had the wrong taxonomy.** The real tokens are `personal` / `orgPage` / `personalPage` (with `pageId` / `personalPageId` / `linkedInPageId` / `logoUrl`); the client modelled `personal` / `org`, so every org-page target decoded as unknown and lost its page identity. This is why the composer's "Posting as …" line was wrong: per `/help/organizations` an assigned member's *default* LinkedIn destination is the company page, so the line named their personal profile while the server published to the company page. Fixed via `LinkedInPostingTargets.defaultDestination`.
+
+Not verifiable read-only, and flagged rather than guessed: the **connected** shape of `linkedin/status` (no reachable org has a credential — the client accepts both the observed `{credential, role}` and the documented `{connected, expiresAt, pages}`), the 201 bodies of `join` and `sync-pages` (both ignored via `sendVoid` + a re-read rather than decoding an unseen shape), and whether a `nil` `pageId` is how an assignment is cleared.
 
 <a id="g26-identities"></a>
 **G26 · Identity management: unlink + verify — LOW–MEDIUM. Size S.**

@@ -141,10 +141,95 @@ public enum Lists {
         Request(method: .delete, path: "/api/lists/\(listId)/data/\(rowId)", auth: .bearer)
     }
 
+    // MARK: - Shared with me (work-consolidation.md G23 / issue #48)
+
+    /// `GET /api/lists/watching` — lists **other people** shared with the
+    /// caller. The web renders this as the datagrid on `/lists`; the macOS
+    /// sidebar had no equivalent before G23.
+    ///
+    /// VERIFIED live 2026-09-09 (`200`, three rows, `allow: GET, HEAD,
+    /// OPTIONS`): `{ "lists": [ …list superset… ], "pagination": {…} }`. Each
+    /// row carries `role` (the *caller's* role), an embedded `user` (the
+    /// owner), and a `parent` projection — see `ListDTO`.
+    public static func watching(
+        limit: Int? = nil,
+        offset: Int? = nil,
+        page: Int? = nil
+    ) -> Request<Paginated<ListDTO>> {
+        Request(
+            method: .get,
+            path: "/api/lists/watching",
+            query: [
+                .int("limit", limit),
+                .int("offset", offset),
+                .int("page", page)
+            ],
+            auth: .bearer,
+            paginationKey: "lists"
+        )
+    }
+
+    /// `GET /api/lists/[id]/contributors` — the full ranked contributor list.
+    ///
+    /// VERIFIED live 2026-09-09 (`200`, `allow: GET, HEAD, OPTIONS`). Unpaged
+    /// by design ("no server paging" — live OpenAPI summary).
+    public static func contributors(listId: String) -> Request<ListContributorsResponse> {
+        Request(method: .get, path: "/api/lists/\(listId)/contributors", auth: .bearer)
+    }
+
+    // MARK: - Token-scoped share reads (no auth)
+    //
+    // The share-*link* builders live in `SharingEndpoint` (`Sharing.…`); these
+    // two sit here because they are list-shaped reads that the Lists UI
+    // consumes directly, and because issue #48 scopes them to this file. The
+    // matching write halves (`POST /api/lists/shared/{token}` and
+    // `POST /api/lists/invite/{token}`) are declared `x-auth-type: session` in
+    // the live spec and are therefore deliberately absent: a Bearer-only
+    // client cannot reach them, so there is no builder to call.
+
+    /// `GET /api/lists/shared/{token}/data` — read-only row data for a
+    /// token-shared list. Public: the **token is the capability**, so rows are
+    /// served regardless of `isPublic` and with no session at all.
+    ///
+    /// VERIFIED live 2026-09-09: `allow: GET, HEAD, OPTIONS`, and an unknown
+    /// token answers `404 {"error":"Share link not found, expired, or
+    /// revoked","code":"not_found"}`. `/help/api/sharing` states it "returns
+    /// the same row payload shape" as `GET /api/lists/:id/data`, i.e. the
+    /// `{ rows, pagination }` envelope.
+    public static func sharedRows(
+        token: String,
+        limit: Int? = nil,
+        offset: Int? = nil
+    ) -> Request<Paginated<ListRowDTO>> {
+        Request(
+            method: .get,
+            path: "/api/lists/shared/\(token)/data",
+            query: [
+                .int("limit", limit),
+                .int("offset", offset)
+            ],
+            auth: .none,
+            paginationKey: "rows"
+        )
+    }
+
+    /// `GET /api/lists/invite/{token}` — the email-invite landing payload.
+    ///
+    /// VERIFIED live 2026-09-09: reachable with no auth; an unknown token
+    /// answers `404 {"error":"Invite not found, expired, or revoked"}`.
+    /// Authentication is *optional* — signing in only changes `canClaim` /
+    /// `wrongAccount`; the invited address is never returned.
+    public static func invite(token: String) -> Request<ResolvedListInviteDTO> {
+        Request(method: .get, path: "/api/lists/invite/\(token)", auth: .none)
+    }
+
     // MARK: - Watchers / sharing
 
-    /// `GET /api/lists/[id]/watchers`
-    public static func watchers(listId: String) -> Request<[ListWatcherDTO]> {
+    /// `GET /api/lists/[id]/watchers` — owner-only.
+    ///
+    /// VERIFIED live 2026-09-09: answers `{ watchers: [...], pagination }`, not
+    /// a bare array. See `ListWatchersResponse`.
+    public static func watchers(listId: String) -> Request<ListWatchersResponse> {
         Request(method: .get, path: "/api/lists/\(listId)/watchers", auth: .bearer)
     }
 
@@ -153,21 +238,59 @@ public enum Lists {
         Request(method: .get, path: "/api/lists/\(listId)/watchers/me", auth: .bearer)
     }
 
-    /// `GET /api/lists/[id]/watchers/users`
-    public static func watcherUsers(listId: String) -> Request<[ListWatcherDTO]> {
-        Request(method: .get, path: "/api/lists/\(listId)/watchers/users", auth: .bearer)
+    /// `GET /api/lists/[id]/watchers/users` — search **candidates** to add.
+    ///
+    /// Owner-only. `excludeWatchers` takes comma-separated ids; when it is
+    /// omitted the server auto-excludes the list's current watchers, which is
+    /// what the add-watcher picker wants, so the builder leaves it off.
+    ///
+    /// VERIFIED live 2026-09-09: answers `{ users, total, pagination }` —
+    /// people rows, not watcher rows. See `ListWatcherCandidatesResponse`.
+    public static func watcherCandidates(
+        listId: String,
+        search: String? = nil,
+        limit: Int? = nil,
+        offset: Int? = nil
+    ) -> Request<ListWatcherCandidatesResponse> {
+        Request(
+            method: .get,
+            path: "/api/lists/\(listId)/watchers/users",
+            query: [
+                .string("search", search),
+                .int("limit", limit),
+                .int("offset", offset)
+            ],
+            auth: .bearer
+        )
     }
 
-    /// `PUT /api/lists/[id]/watchers/[userId]`
+    /// `POST /api/lists/[id]/watchers` — add a watcher (work-consolidation.md
+    /// G23). Owner-granting a named user is **subscriber-gated** server-side
+    /// (`403 {"error":"Subscribe to share lists."}` for a free owner); the
+    /// self-subscribe branch (no `userId`) is free.
+    ///
+    /// VERIFIED live 2026-09-09 by `OPTIONS`: `allow: GET, HEAD, OPTIONS, POST`.
+    /// The body/response shapes come from `/help/api/lists` — the write itself
+    /// was not exercised (the recon account is shared; G23 recon was read-only).
+    public static func addWatcher(
+        listId: String,
+        _ body: AddListWatcherRequest
+    ) -> Request<AddListWatcherResponse> {
+        Request(method: .post, path: "/api/lists/\(listId)/watchers", body: .json(body), auth: .bearer)
+    }
+
+    /// `PUT /api/lists/[id]/watchers/[userId]` — change a role. Owner-only and
+    /// subscriber-gated. Answers `{ role }`, not the watcher row.
     public static func setWatcher(
         listId: String,
         userId: String,
         _ body: UpdateListWatcherRequest
-    ) -> Request<ListWatcherDTO> {
+    ) -> Request<SetListWatcherRoleResponse> {
         Request(method: .put, path: "/api/lists/\(listId)/watchers/\(userId)", body: .json(body), auth: .bearer)
     }
 
-    /// `DELETE /api/lists/[id]/watchers/[userId]`
+    /// `DELETE /api/lists/[id]/watchers/[userId]` — not subscriber-gated, so a
+    /// downgraded owner can always revoke access.
     public static func removeWatcher(listId: String, userId: String) -> Request<EmptyResponse> {
         Request(method: .delete, path: "/api/lists/\(listId)/watchers/\(userId)", auth: .bearer)
     }

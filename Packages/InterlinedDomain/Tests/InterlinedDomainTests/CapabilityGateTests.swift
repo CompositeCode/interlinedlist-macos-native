@@ -113,7 +113,7 @@ final class CapabilityGateTests: XCTestCase {
         let locked: [GatedAction] = [
             .directMessages, .directMessageImages, .mediaAttachments,
             .crossPosting, .scheduledPosts,
-            .listCreation, .listFolderCreation,
+            .listCreation,
             .documentCreation, .documentTemplateCreation, .organizationCreation,
         ]
         for action in locked {

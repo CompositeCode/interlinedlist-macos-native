@@ -92,7 +92,12 @@ struct ComposerWindowView: View {
                     // The account's public/private default for new posts. Read
                     // synchronously off the session-cached `CurrentUser`, so the
                     // picker opens on the right value with no fetch and no flicker.
-                    initialVisibility: environment.defaultComposeVisibility
+                    initialVisibility: environment.defaultComposeVisibility,
+                    // G35 / issue #43: the account's "Show advanced post
+                    // options" preference decides whether the gear opens
+                    // revealed. Read synchronously off the preferences store,
+                    // so there is no fetch and no flicker.
+                    initialShowsAdvancedOptions: environment.showsAdvancedPostOptionsByDefault
                 )
             }
             if assistant == nil, let environment {
@@ -155,15 +160,22 @@ struct ComposerWindowView: View {
 
                 visibilityPicker(viewModel: viewModel)
 
-                // M6 — subscriber-gated controls, new messages only.
+                // M6 — subscriber-gated controls, new messages only. The gear
+                // reveals/hides them and persists the choice to the account
+                // (G35 / issue #43), matching the web's own affordance: "Show
+                // the gear icon next to the message input so you can attach
+                // images, video, and cross-post when composing".
                 if viewModel.showsSubscriberControls {
                     Divider()
-                    if !viewModel.canUseSubscriberFeatures {
-                        upsellHint
+                    advancedOptionsToggle(viewModel: viewModel)
+                    if viewModel.showsAdvancedOptions {
+                        if !viewModel.canUseSubscriberFeatures {
+                            upsellHint
+                        }
+                        mediaSection(viewModel: viewModel)
+                        scheduleSection(viewModel: viewModel)
+                        crossPostSection(viewModel: viewModel)
                     }
-                    mediaSection(viewModel: viewModel)
-                    scheduleSection(viewModel: viewModel)
-                    crossPostSection(viewModel: viewModel)
                 }
 
                 if let error = viewModel.error {
@@ -192,6 +204,39 @@ struct ComposerWindowView: View {
         .dropDestination(for: URL.self) { urls, _ in
             viewModel.addAttachments(urls: urls)
             return true
+        }
+    }
+
+    // MARK: - Advanced options gear
+
+    /// The gear that reveals the media / schedule / cross-post sections. Always
+    /// present for a new message so the controls are never simply missing; its
+    /// initial state comes from the account's "Show advanced post options"
+    /// preference and flipping it writes that preference back.
+    @ViewBuilder
+    private func advancedOptionsToggle(viewModel: ComposerViewModel) -> some View {
+        HStack(spacing: 6) {
+            Button {
+                Task { await viewModel.toggleAdvancedOptions() }
+            } label: {
+                Label(
+                    viewModel.showsAdvancedOptions ? "Hide posting options" : "Posting options",
+                    systemImage: "gearshape"
+                )
+                .font(.ilMono(11))
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.isSavingAdvancedOptionsPreference)
+            .help("Media, scheduling, and cross-posting. Your choice is saved to your account.")
+            .accessibilityLabel("Posting options")
+            .accessibilityValue(viewModel.showsAdvancedOptions ? "Shown" : "Hidden")
+
+            if viewModel.isSavingAdvancedOptionsPreference {
+                ProgressView()
+                    .controlSize(.small)
+                    .accessibilityHidden(true)
+            }
+            Spacer()
         }
     }
 
@@ -325,6 +370,30 @@ struct ComposerWindowView: View {
                 )
                 .datePickerStyle(.compact)
                 .disabled(!viewModel.canUseSubscriberFeatures)
+
+                // GitHub #55 — the web's schedule dialog names the networks a
+                // queued post will reach, next to the date. The per-network
+                // toggles stay in `crossPostSection` (they serve the send-now
+                // path too); this mirrors the information so the schedule
+                // decision is made with its destinations in view.
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.triangle.branch")
+                    Text("Goes to \(viewModel.scheduledDestinationSummary)")
+                }
+                .font(.ilMono(10))
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Scheduled post destinations: \(viewModel.scheduledDestinationSummary)")
+
+                // The web lets you click the scheduled date to drop the
+                // schedule and post immediately; this is the same escape hatch.
+                Button("Post now instead") {
+                    viewModel.isScheduled = false
+                }
+                .buttonStyle(.link)
+                .font(.ilMono(10))
+                .disabled(!viewModel.canUseSubscriberFeatures)
+                .help("Cancel scheduling and publish this message right away.")
             }
         }
     }
@@ -385,11 +454,20 @@ struct ComposerWindowView: View {
             )) { Text("LinkedIn") }
                 .disabled(!viewModel.canUseSubscriberFeatures)
 
-            if viewModel.crossPostToLinkedIn, let target = viewModel.linkedInPersonalTarget {
-                Text("Posting as \(target.label)")
+            // G25: name the destination the server will actually publish to.
+            // For a member with an org page assignment that is the company
+            // page, not their own profile — so the company-page case says so
+            // in as many words rather than showing a bare name the user would
+            // reasonably read as their own.
+            if viewModel.crossPostToLinkedIn, let target = viewModel.linkedInEffectiveTarget {
+                Text(viewModel.linkedInPostsToCompanyPage
+                     ? "Posting to the \(target.label) company page"
+                     : "Posting as \(target.label)")
                     .font(.ilMono(10))
                     .foregroundStyle(.secondary)
-                    .accessibilityLabel("Posting to LinkedIn as \(target.label)")
+                    .accessibilityLabel(viewModel.linkedInPostsToCompanyPage
+                                        ? "Posting to LinkedIn as the \(target.label) company page"
+                                        : "Posting to LinkedIn as \(target.label)")
             }
 
             if viewModel.crossPostToLinkedIn, viewModel.linkedInOrgScopeMissing {

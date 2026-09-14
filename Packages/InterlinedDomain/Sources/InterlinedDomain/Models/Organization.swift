@@ -73,13 +73,33 @@ public struct Organization: Sendable, Equatable, Hashable, Identifiable {
     public let createdAt: Date?
     public let updatedAt: Date?
 
+    /// URL-safe short name (`"bikey-life"`), when the server sends one.
+    public let slug: String?
+
+    /// Whether this is the **system** organization — "The Public", which every
+    /// account auto-joins and **nobody can leave** (`/help/organizations`).
+    ///
+    /// Defaults to `false` when the server omits the flag, which is the safe
+    /// direction: a missing flag must never make an ordinary org un-leavable.
+    /// The leave precondition treats this as authoritative, so it has to
+    /// survive both the wire and the on-disk cache.
+    public let isSystem: Bool
+
+    /// Total members, when the route denormalizes the count onto the row.
+    /// `nil` when the server omits it — rendered as "—" rather than "0", since
+    /// an org always has at least its owner.
+    public let memberCount: Int?
+
     public init(
         id: String,
         name: String,
         description: String? = nil,
         isPublic: Bool = false,
         createdAt: Date? = nil,
-        updatedAt: Date? = nil
+        updatedAt: Date? = nil,
+        slug: String? = nil,
+        isSystem: Bool = false,
+        memberCount: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -87,6 +107,9 @@ public struct Organization: Sendable, Equatable, Hashable, Identifiable {
         self.isPublic = isPublic
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.slug = slug
+        self.isSystem = isSystem
+        self.memberCount = memberCount
     }
 }
 
@@ -114,25 +137,69 @@ public struct OrgMember: Sendable, Equatable, Hashable, Identifiable {
     public let role: OrgRole
 
     /// Whether the membership is active. `nil` when the server omits the flag.
+    ///
+    /// `false` is a **suspended** member: still in the org, access revoked
+    /// (`/help/organizations` — "suspend their access"). Suspension is
+    /// expressed on the wire as `active` on the member-update body, not as a
+    /// separate route.
     public let active: Bool?
 
     /// When the membership was created, when the server includes the timestamp.
+    /// The live listing spells this `joinedAt`; the membership envelope spells
+    /// it `createdAt`. Both land here.
     public let createdAt: Date?
 
+    /// The member's handle, denormalized onto the live members listing.
+    public let username: String?
+
+    /// The member's display name, denormalized onto the live members listing.
+    public let displayName: String?
+
+    /// The member's avatar, denormalized onto the live members listing.
+    public let avatarURL: URL?
+
+    /// Whether the member has verified their email, when the server says.
+    public let emailVerified: Bool?
+
     public var id: String { userId }
+
+    /// Whether the member is currently suspended. A `nil` `active` flag means
+    /// the server did not say, which is treated as **not** suspended — the
+    /// roster must not show a member as suspended on missing data.
+    public var isSuspended: Bool { active == false }
+
+    /// The best available label for the member: display name, then handle,
+    /// then the raw id, so a row is never blank.
+    public var displayLabel: String {
+        if let displayName, !displayName.trimmingCharacters(in: .whitespaces).isEmpty {
+            return displayName
+        }
+        if let username, !username.trimmingCharacters(in: .whitespaces).isEmpty {
+            return username
+        }
+        return userId
+    }
 
     public init(
         userId: String,
         membershipId: String? = nil,
         role: OrgRole,
         active: Bool? = nil,
-        createdAt: Date? = nil
+        createdAt: Date? = nil,
+        username: String? = nil,
+        displayName: String? = nil,
+        avatarURL: URL? = nil,
+        emailVerified: Bool? = nil
     ) {
         self.userId = userId
         self.membershipId = membershipId
         self.role = role
         self.active = active
         self.createdAt = createdAt
+        self.username = username
+        self.displayName = displayName
+        self.avatarURL = avatarURL
+        self.emailVerified = emailVerified
     }
 }
 

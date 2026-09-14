@@ -62,6 +62,9 @@ struct InterlinedListApp: App {
     /// than writing the badge directly, so neither clobbers the other.
     @State private var badgeAggregator: UnreadBadgeAggregator?
 
+    /// Drives the capability-gate refresh below.
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
             AppRootView(store: environment.currentUserStore)
@@ -137,6 +140,15 @@ struct InterlinedListApp: App {
                         dmCoordinator.start()
                     }
                 }
+                .onChange(of: scenePhase) { _, phase in
+                    // #41/#42 — the capability gate is only as fresh as the
+                    // session it is built from, and `SessionService.restore()`
+                    // is the ONLY re-fetch path. Without this, verifying an
+                    // email or fixing an account status in a browser leaves the
+                    // Mac app gated until the next launch.
+                    guard phase == .active else { return }
+                    Task { _ = try? await environment.currentUserStore.restore() }
+                }
         }
         .windowToolbarStyle(.unified)
         .commands {
@@ -211,6 +223,13 @@ private struct AppRootView: View {
             // Handled first so it does not disturb the OAuth fallback below;
             // `handle` returns `false` for any non-share URL.
             if ShareLinkDeepLink.handle(url) { return }
+
+            // Document invites (work-consolidation.md G24) — a
+            // `…/documents/invite/{token}` URL routes to the invite landing.
+            // Ordered after the share handler because the two are disjoint
+            // (`/shared/` vs `/invite/`), so neither can swallow the other's
+            // links; `handle` returns `false` for anything else.
+            if DocumentInviteDeepLink.handle(url) { return }
 
             // `interlinedlist://oauth/callback` is the native OAuth redirect URI
             // registered in Info.plist (NW-5). ASWebAuthenticationSession intercepts

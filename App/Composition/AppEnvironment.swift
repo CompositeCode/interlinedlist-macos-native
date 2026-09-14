@@ -84,6 +84,23 @@ final class AppEnvironment: ObservableObject {
         currentUserStore.currentUser?.defaultVisibility ?? .public
     }
 
+    // MARK: - View preferences (G35 / issue #43)
+    //
+    // One additive block reading the account's server-synced View Preferences
+    // off `userPreferences`, so features get them without importing the store
+    // directly. All three fall back to `UserSettings.default` before the first
+    // load resolves, so nothing waits on a preferences round-trip.
+
+    /// The scope a newly-opened timeline window starts on, from the account's
+    /// stored `viewingPreference`.
+    var defaultTimelineScope: TimelineScope { userPreferences.defaultTimelineScope }
+
+    /// How many rows the notification bell tray renders (10...40, default 20).
+    var notificationTrayLimit: Int { userPreferences.notificationTrayLimit }
+
+    /// Whether the composer opens with its advanced post options revealed.
+    var showsAdvancedPostOptionsByDefault: Bool { userPreferences.showAdvancedPostSettings }
+
     /// Re-resolves the signed-in account's `customerStatus` (PLAN.md §8 — a
     /// gated call returning 403 means the subscription lapsed mid-session, so
     /// the UI must re-gate). The composer calls this when a gated `createPost`
@@ -499,8 +516,11 @@ final class AppEnvironment: ObservableObject {
             store: documentStore,
             // Live image ceilings for `uploadImage` prep (G14 tail).
             contentLimits: contentLimits,
-            // Subscriber gate for document *creation* only (GitHub #40).
-            entitlements: { liveEntitlements.current() }
+            // Gate for document *creation* only (#40 matrix) — moving,
+            // editing and deleting stay free on every tier. Same live box the
+            // messages gate reads, so a mid-session subscribe or lapse re-gates
+            // without a relaunch.
+            entitlementsProvider: { liveEntitlements.current() }
         )
         // Server document templates (work-consolidation.md G12). Reuses the same
         // kit-layer `APIClient` like the other services do — the
@@ -567,7 +587,9 @@ final class AppEnvironment: ObservableObject {
         // endpoints are already routed by the shared `authTransport`. The
         // event bus is a singleton so the DM list, an open thread, and the
         // dock-badge coordinator all see the same stream.
-        let directMessages = DirectMessagesService(api: api)
+        // G22: DM photo upload runs through the same `ImagePrep` pipeline as
+        // the post composer, driven by the live `GET /api/limits` ceilings.
+        let directMessages = DirectMessagesService(api: api, contentLimits: contentLimits)
         let directMessagesEventBus = DirectMessagesEventBus()
         // Settings cluster (work-consolidation.md G17-G20). All reuse the shared
         // kit-layer `APIClient`.

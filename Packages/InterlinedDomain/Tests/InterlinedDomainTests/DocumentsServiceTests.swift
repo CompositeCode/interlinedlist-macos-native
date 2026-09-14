@@ -14,7 +14,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.paginatedDocuments(ids: ["d1", "d2"]))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let docs = try await service.documents(in: nil, limit: 20, offset: 0)
@@ -30,7 +30,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.paginatedDocuments(ids: ["d1"]))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         _ = try await service.documents(in: "folder-42", limit: 20, offset: 0)
@@ -44,7 +44,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given — boundary: zero documents.
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.paginatedDocuments(ids: []))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let docs = try await service.documents(in: nil, limit: 20, offset: 0)
@@ -57,7 +57,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(failure: .unauthorized(serverMessage: "sign in"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -74,7 +74,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.documentEnvelope(id: "d-42", title: "Notes", content: "# H"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let doc = try await service.document(id: "d-42")
@@ -89,7 +89,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(failure: .notFound(serverMessage: nil))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -104,7 +104,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given — invalid input → 400 from the server.
         let api = StubAPIClient()
         await api.enqueue(failure: .badRequest(serverMessage: "bad id"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -119,7 +119,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given — boundary: server returns null content.
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.documentEnvelope(id: "d", content: nil))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let doc = try await service.document(id: "d")
@@ -134,7 +134,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.documentEnvelope(id: "d-new", title: "New", content: "Body"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let doc = try await service.create(title: "New", body: "Body", folderId: nil, isPublic: false)
@@ -150,7 +150,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given — invalid input → 400.
         let api = StubAPIClient()
         await api.enqueue(failure: .badRequest(serverMessage: "title required"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -165,7 +165,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given — boundary: API permits empty body.
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.documentEnvelope(id: "d-e", content: ""))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let doc = try await service.create(title: "T", body: "", folderId: nil, isPublic: false)
@@ -180,7 +180,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.documentEnvelope(id: "d", title: "Renamed"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let doc = try await service.update(id: "d", title: "Renamed", body: nil, folderId: nil, isPublic: nil)
@@ -196,7 +196,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(failure: .notFound(serverMessage: nil))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -211,7 +211,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given — invalid input case: user doesn't own this document.
         let api = StubAPIClient()
         await api.enqueue(failure: .forbidden(serverMessage: "not yours"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -226,7 +226,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given — boundary: every field nil. Server may reject; service does not.
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.documentEnvelope(id: "d"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then — no throw.
         _ = try await service.update(id: "d", title: nil, body: nil, folderId: nil, isPublic: nil)
@@ -238,7 +238,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: "{}")
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         try await service.delete(id: "d-1")
@@ -253,7 +253,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(failure: .notFound(serverMessage: nil))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -268,7 +268,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(failure: .forbidden(serverMessage: "not yours"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -283,7 +283,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given — boundary. Server validates; service forwards.
         let api = StubAPIClient()
         await api.enqueue(failure: .badRequest(serverMessage: "missing id"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -303,7 +303,7 @@ final class DocumentsServiceTests: XCTestCase {
         await api.enqueue(json: Fixtures.documentImageUploadResponse(
             url: "https://cdn.interlinedlist.com/uploads/x.png"
         ))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let url = try await service.uploadImage(in: "doc-1", image: image, suggestedName: "x.png")
@@ -318,7 +318,7 @@ final class DocumentsServiceTests: XCTestCase {
     func test_givenUndecodableBytes_whenUploadingImage_thenThrowsImagePrepError() async {
         // Given — invalid input: non-image bytes.
         let api = StubAPIClient()
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -336,7 +336,7 @@ final class DocumentsServiceTests: XCTestCase {
         let image = makeSmoothPNG(width: 64, height: 64)
         let api = StubAPIClient()
         await api.enqueue(failure: .forbidden(serverMessage: "subscriber feature"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -352,7 +352,7 @@ final class DocumentsServiceTests: XCTestCase {
         let image = makeSmoothPNG(width: 64, height: 64)
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.documentImageUploadResponse(url: ""))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -373,7 +373,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.paginatedFolders(ids: ["f1", "f2"]))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let folders = try await service.folders(limit: 20, offset: 0)
@@ -386,7 +386,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given — boundary.
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.paginatedFolders(ids: []))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let folders = try await service.folders(limit: 20, offset: 0)
@@ -399,7 +399,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(failure: .transport(message: "offline"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -414,7 +414,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.folderEnvelope(id: "f1", name: "Inbox"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let folder = try await service.folder(id: "f1")
@@ -428,7 +428,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(failure: .notFound(serverMessage: nil))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -443,7 +443,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.folderEnvelope(id: "f-new", name: "New"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let folder = try await service.createFolder(name: "New", parentId: nil)
@@ -459,7 +459,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(failure: .badRequest(serverMessage: "name required"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -474,7 +474,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: Fixtures.folderEnvelope(id: "f1", name: "Renamed"))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         let folder = try await service.renameFolder(id: "f1", to: "Renamed")
@@ -491,7 +491,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(json: "{}")
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When
         try await service.deleteFolder(id: "f1")
@@ -506,7 +506,7 @@ final class DocumentsServiceTests: XCTestCase {
         // Given
         let api = StubAPIClient()
         await api.enqueue(failure: .notFound(serverMessage: nil))
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -522,7 +522,7 @@ final class DocumentsServiceTests: XCTestCase {
     func test_givenNoCoordinator_whenSyncing_thenThrowsSyncFailed() async {
         // Given — boundary: no coordinator injected.
         let api = StubAPIClient()
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         do {
@@ -542,7 +542,7 @@ final class DocumentsServiceTests: XCTestCase {
     func test_givenNoCoordinator_whenReadingSyncEvents_thenReturnsNil() async {
         // Given
         let api = StubAPIClient()
-        let service = DocumentsService(api: api)
+        let service = DocumentsService(api: api, entitlementsProvider: { EntitlementsService(customerStatus: .subscriber) })
 
         // When / Then
         XCTAssertNil(service.syncEvents)

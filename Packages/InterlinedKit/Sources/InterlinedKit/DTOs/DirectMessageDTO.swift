@@ -132,3 +132,154 @@ public struct DMActionResponse: Decodable, Sendable, Equatable {
     public let ok: Bool?
     public init(ok: Bool? = nil) { self.ok = ok }
 }
+
+// MARK: - G22: conversations inbox, single-message fetch, image upload
+//
+// Routes probed live 2026-09-09 (read-only — GET/OPTIONS only, no writes):
+//
+//   GET     /api/dm/conversations        -> 200 {"items":[],"nextCursor":null}
+//   OPTIONS /api/dm/conversations        -> 204  allow: GET, HEAD, OPTIONS
+//   GET     /api/dm/{id}                 -> 404 {"error":"Message not found.",
+//                                                "code":"not_found"} for an
+//                                           unknown id, so the route exists
+//   OPTIONS /api/dm/{id}                 -> 204  allow: GET, HEAD, OPTIONS
+//   OPTIONS /api/dm/images/upload        -> 204  allow: OPTIONS, POST
+//   GET     /api/dm/images/upload        -> 405 (POST-only, as advertised)
+//
+// ⚠️ The conversations listing was **empty** on the shared test account and we
+// are not permitted to send a DM to populate it, so the *populated* `items[]`
+// shape is unverified. Both decoders below are therefore deliberately
+// permissive rather than guessing one spelling and shipping a silent all-nil
+// decode (the G21 link-metadata defect). Once a populated payload is captured,
+// tighten `DMConversationDTO` to the real keys and delete the alternates.
+
+/// One row of `GET /api/dm/conversations` — a conversation, server-grouped by
+/// `pairKey`, newest first.
+///
+/// **Tolerant by design.** Two plausible server shapes are accepted:
+///
+/// 1. *Nested* — the row is a conversation envelope that carries its newest
+///    message under `lastMessage` / `latestMessage` / `message`.
+/// 2. *Flattened* — the row **is** the newest message per pair (the natural
+///    output of a `GROUP BY pairKey`), i.e. a `DirectMessageDTO` with the
+///    conversation extras alongside it.
+///
+/// Every field is optional, so an unexpected spelling degrades to `nil`
+/// instead of failing the whole page decode.
+public struct DMConversationDTO: Decodable, Sendable, Equatable {
+
+    /// `senderId:recipientId` conversation key — the server's grouping key.
+    public let pairKey: String?
+    /// The other participant, when the server names them on the row.
+    public let otherUser: UserSummaryDTO?
+    /// Unread inbound messages in this conversation, when reported.
+    public let unreadCount: Int?
+    /// The newest message in the conversation, from either shape above.
+    public let lastMessage: DirectMessageDTO?
+
+    public init(
+        pairKey: String? = nil,
+        otherUser: UserSummaryDTO? = nil,
+        unreadCount: Int? = nil,
+        lastMessage: DirectMessageDTO? = nil
+    ) {
+        self.pairKey = pairKey
+        self.otherUser = otherUser
+        self.unreadCount = unreadCount
+        self.lastMessage = lastMessage
+    }
+
+    /// Alternate key spellings, tried in order. The first that decodes wins.
+    private enum CodingKeys: String, CodingKey {
+        // pairKey
+        case pairKey, conversationKey, key
+        // otherUser
+        case otherUser, user, participant, withUser, other
+        // unreadCount
+        case unreadCount, unread, unreadMessages
+        // lastMessage
+        case lastMessage, latestMessage, message, newestMessage
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.pairKey = Self.first(String.self, in: container, keys: [.pairKey, .conversationKey, .key])
+        self.otherUser = Self.first(
+            UserSummaryDTO.self,
+            in: container,
+            keys: [.otherUser, .user, .participant, .withUser, .other]
+        )
+        self.unreadCount = Self.first(Int.self, in: container, keys: [.unreadCount, .unread, .unreadMessages])
+        // Shape 1: a nested newest message. Shape 2: the row *is* the message,
+        // so re-decode the same container as a `DirectMessageDTO`.
+        if let nested = Self.first(
+            DirectMessageDTO.self,
+            in: container,
+            keys: [.lastMessage, .latestMessage, .message, .newestMessage]
+        ) {
+            self.lastMessage = nested
+        } else {
+            self.lastMessage = try? DirectMessageDTO(from: decoder)
+        }
+    }
+
+    /// Decodes the first of `keys` that is present and well-typed, else `nil`.
+    /// A key that is present but the wrong type is skipped rather than fatal —
+    /// the point of this decoder is that no single guess can break the page.
+    private static func first<T: Decodable>(
+        _ type: T.Type,
+        in container: KeyedDecodingContainer<CodingKeys>,
+        keys: [CodingKeys]
+    ) -> T? {
+        for key in keys {
+            if let value = (try? container.decodeIfPresent(T.self, forKey: key)) ?? nil {
+                return value
+            }
+        }
+        return nil
+    }
+}
+
+/// `GET /api/dm/conversations` response — the same `{items, nextCursor}`
+/// envelope as the folder listing, verified live 2026-09-09 (empty page).
+public struct DMConversationsPage: Decodable, Sendable, Equatable {
+    public let items: [DMConversationDTO]
+    public let nextCursor: String?
+
+    public init(items: [DMConversationDTO], nextCursor: String? = nil) {
+        self.items = items
+        self.nextCursor = nextCursor
+    }
+}
+
+/// `GET /api/dm/{id}` response — a single message (the deep-link target).
+///
+/// **Tolerant by design.** This API has documented envelope drift (`POST
+/// /api/messages` wraps under `data`; `POST /api/dm` wraps under `message`),
+/// and the success body could not be captured — the test account has no
+/// messages and we may not create one. So three shapes are accepted: wrapped
+/// under `message`, wrapped under `data`, or the bare message object.
+public struct DMMessageResponse: Decodable, Sendable, Equatable {
+    public let message: DirectMessageDTO
+
+    public init(message: DirectMessageDTO) { self.message = message }
+
+    private enum CodingKeys: String, CodingKey {
+        case message, data, dm
+    }
+
+    public init(from decoder: Decoder) throws {
+        if let container = try? decoder.container(keyedBy: CodingKeys.self) {
+            for key in [CodingKeys.message, .data, .dm] {
+                if let nested = (try? container.decodeIfPresent(DirectMessageDTO.self, forKey: key)) ?? nil {
+                    self.message = nested
+                    return
+                }
+            }
+        }
+        // Bare object — decode the payload itself as the message. This is the
+        // one path that is allowed to throw, so a genuinely unreadable body
+        // still surfaces as `APIError.decoding` rather than a silent nil.
+        self.message = try DirectMessageDTO(from: decoder)
+    }
+}

@@ -44,7 +44,6 @@ public enum GatedAction: Sendable, Equatable, Hashable, CaseIterable {
     // MARK: Creation
 
     case listCreation
-    case listFolderCreation
     case documentCreation
     case documentTemplateCreation
     case organizationCreation
@@ -71,7 +70,6 @@ public enum GatedAction: Sendable, Equatable, Hashable, CaseIterable {
         case .crossPosting: return .crossPosting
         case .scheduledPosts: return .scheduledPosts
         case .listCreation: return .listCreation
-        case .listFolderCreation: return .listFolderCreation
         case .documentCreation: return .documentCreation
         case .documentTemplateCreation: return .documentTemplateCreation
         case .organizationCreation: return .organizationCreation
@@ -94,7 +92,7 @@ public enum GatedAction: Sendable, Equatable, Hashable, CaseIterable {
         case .postMessage, .replyToMessage, .reactToMessage, .followUser,
              .directMessages, .directMessageImages,
              .mediaAttachments, .crossPosting, .scheduledPosts,
-             .listCreation, .listFolderCreation,
+             .listCreation,
              .documentCreation, .documentTemplateCreation,
              .organizationCreation:
             return true
@@ -117,7 +115,7 @@ public enum GatedAction: Sendable, Equatable, Hashable, CaseIterable {
         switch self {
         case .directMessages, .directMessageImages,
              .mediaAttachments, .crossPosting, .scheduledPosts,
-             .listCreation, .listFolderCreation,
+             .listCreation,
              .documentCreation, .documentTemplateCreation,
              .organizationCreation:
             return true
@@ -138,7 +136,7 @@ public enum GatedAction: Sendable, Equatable, Hashable, CaseIterable {
             return true
         case .reactToMessage, .followUser, .directMessages,
              .crossPosting, .scheduledPosts,
-             .listCreation, .listFolderCreation,
+             .listCreation,
              .documentCreation, .documentTemplateCreation,
              .organizationCreation,
              .sharingWithPeople, .emailInvites, .shareLinkCreation, .aiFeatures:

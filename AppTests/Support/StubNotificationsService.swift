@@ -10,7 +10,9 @@ import InterlinedDomain
 
 struct RecordedNotificationsCall: Sendable, Equatable {
     enum Kind: Sendable, Equatable {
-        case tray
+        /// Carries the `limit` the view model asked for, so a test can assert
+        /// the account's tray preference actually reached the service.
+        case tray(limit: Int?)
         case markRead(id: String)
         case markAllRead
     }
@@ -34,8 +36,8 @@ actor StubNotificationsService: NotificationsServicing {
     func enqueueMarkAllReadSuccess() { markAllReadOutcomes.append(.success(())) }
     func enqueueMarkAllRead(failure error: Error) { markAllReadOutcomes.append(.failure(error)) }
 
-    func tray() async throws -> NotificationTray {
-        recorded.append(.init(kind: .tray))
+    func tray(limit: Int?) async throws -> NotificationTray {
+        recorded.append(.init(kind: .tray(limit: limit)))
         return try take(&trayOutcomes, label: "tray")
     }
 

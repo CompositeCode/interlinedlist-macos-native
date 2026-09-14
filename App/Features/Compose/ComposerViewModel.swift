@@ -156,11 +156,29 @@ final class ComposerViewModel {
     /// a connect hint — mirrors the Bluesky/Mastodon NW-4 pattern.
     private(set) var linkedInNotConfigured: Bool = false
 
-    /// The primary LinkedIn destination the post will publish to (the personal
-    /// profile, falling back to the first available target). `nil` until targets
-    /// are loaded.
-    var linkedInPersonalTarget: LinkedInTarget? {
-        linkedInTargets.first { $0.kind == .personal } ?? linkedInTargets.first
+    /// The LinkedIn destination this post will actually publish to
+    /// (work-consolidation.md G25).
+    ///
+    /// **This is not always the personal profile.** Per `/help/organizations`,
+    /// a member who has been assigned an organization company page gets that
+    /// page as their *default* destination: enabling the LinkedIn toggle
+    /// without picking a target publishes to the company page, not to them.
+    ///
+    /// The previous implementation looked up the personal target first, so an
+    /// assigned member was told "Posting as <their own name>" while the server
+    /// published to a company page. The precedence now matches the server's.
+    var linkedInEffectiveTarget: LinkedInTarget? {
+        LinkedInPostingTargets(
+            targets: linkedInTargets,
+            orgScopeMissing: linkedInOrgScopeMissing
+        ).defaultDestination
+    }
+
+    /// Whether the resolved destination is a company page rather than the
+    /// user's own profile. The view uses this to say so explicitly instead of
+    /// leaving the distinction to a bare name.
+    var linkedInPostsToCompanyPage: Bool {
+        linkedInEffectiveTarget?.isCompanyPage ?? false
     }
 
     // MARK: - Derived gating
@@ -204,6 +222,19 @@ final class ComposerViewModel {
         return false
     }
 
+    /// Whether the advanced post options (media / schedule / cross-post) are
+    /// currently revealed, behind the gear affordance.
+    ///
+    /// Seeded from the account's `showAdvancedPostSettings` preference and
+    /// flipped by `toggleAdvancedOptions()`. This is what makes Settings ▸
+    /// Preferences ▸ "Show advanced post options" real: before G35 / issue #43
+    /// the toggle was persisted and read back by the Preferences pane and by
+    /// nothing else, so turning it off changed nothing in the composer.
+    private(set) var showsAdvancedOptions: Bool
+
+    /// True while the gear's write-back to the account is in flight.
+    private(set) var isSavingAdvancedOptionsPreference: Bool = false
+
     /// The primary-action label. Reflects the schedule-vs-send-now affordance
     /// (PLAN.md §6 M6) for a new message; falls back to the mode's label for an
     /// edit.
@@ -230,6 +261,41 @@ final class ComposerViewModel {
     /// True when the body exceeds `messageCharacterLimit`. Blocks publishing so
     /// the user gets an immediate signal instead of a server-side rejection.
     var isOverMessageLimit: Bool { messageCharacterCount > messageCharacterLimit }
+
+    // MARK: - Scheduled destinations (GitHub #55)
+
+    /// The cross-post destinations the draft will fan out to, as the schedule
+    /// dialog names them.
+    ///
+    /// The web's schedule dialog lists the connected networks alongside the
+    /// date so you can see where a queued post is going at the moment you queue
+    /// it. macOS keeps its per-network toggles where they are (they are shared
+    /// with the send-now path) and mirrors the *information* here instead —
+    /// deliberately additive, so the composer's structure is untouched.
+    ///
+    /// Derived from the same toggles `submitNewPost` sends, so the summary
+    /// cannot drift from what is actually posted. Mastodon counts only when a
+    /// provider id was actually entered: the toggle alone sends an empty
+    /// `mastodonProviderIds`, which fans out nowhere.
+    var scheduledDestinationNames: [String] {
+        var names: [String] = []
+        if crossPostToMastodon, !Self.normalise(providerIds: mastodonProviderIdsInput).isEmpty {
+            names.append("Mastodon")
+        }
+        if crossPostToBluesky { names.append("Bluesky") }
+        if crossPostToLinkedIn { names.append("LinkedIn") }
+        if crossPostToTwitter { names.append("X") }
+        return names
+    }
+
+    /// One line naming where the scheduled post will land. Falls back to the
+    /// InterlinedList-only wording so the dialog always states a destination
+    /// rather than showing a blank where the list would be.
+    var scheduledDestinationSummary: String {
+        let names = scheduledDestinationNames
+        guard !names.isEmpty else { return "InterlinedList only" }
+        return names.joined(separator: " \u{00B7} ")
+    }
 
     // MARK: - Validation
 
@@ -269,7 +335,8 @@ final class ComposerViewModel {
         userService: UserServicing? = nil,
         contentLimits: ContentLimitsProviding? = nil,
         linkedIn: LinkedInServicing? = nil,
-        initialVisibility: Visibility = .public
+        initialVisibility: Visibility = .public,
+        initialShowsAdvancedOptions: Bool = true
     ) {
         self.messages = messages
         self.eventBus = eventBus
@@ -286,6 +353,10 @@ final class ComposerViewModel {
         self.contentLimits = contentLimits
         self.linkedIn = linkedIn
         self.scheduledAt = Date().addingTimeInterval(3600)
+        // Defaults to `true` so previews and existing tests that don't pass a
+        // preference keep the pre-G35 behaviour (options always revealed).
+        // Production passes the account's real preference.
+        self.showsAdvancedOptions = initialShowsAdvancedOptions
         switch mode {
         case .newPost:
             self.body = ""
@@ -313,6 +384,34 @@ final class ComposerViewModel {
 
     func setVisibility(_ visibility: Visibility) {
         self.visibility = visibility
+    }
+
+    /// Reveals or hides the advanced post options and persists the new state to
+    /// the account, mirroring the web gear exactly: its click handler flips the
+    /// panel *and* PATCHes `{ showAdvancedPostSettings }` (verified against the
+    /// live bundle 2026-09-09), so the choice sticks across sessions and
+    /// clients.
+    ///
+    /// The local flip is optimistic and is rolled back if the write fails, so
+    /// the panel never shows a state the account does not hold. A `nil`
+    /// `userService` (previews / tests) still toggles locally — the affordance
+    /// must work without a network seam wired.
+    func toggleAdvancedOptions() async {
+        guard !isSavingAdvancedOptionsPreference else { return }
+        let snapshot = showsAdvancedOptions
+        let desired = !snapshot
+        showsAdvancedOptions = desired
+        guard let userService else { return }
+        isSavingAdvancedOptionsPreference = true
+        defer { isSavingAdvancedOptionsPreference = false }
+        do {
+            let updated = try await userService.setShowAdvancedPostSettings(desired)
+            // Trust the server's answer over the optimistic guess.
+            showsAdvancedOptions = updated.showAdvancedPostSettings
+        } catch {
+            showsAdvancedOptions = snapshot
+            self.error = error
+        }
     }
 
     /// Adds picked / dropped file URLs as attachments. Unsupported file types

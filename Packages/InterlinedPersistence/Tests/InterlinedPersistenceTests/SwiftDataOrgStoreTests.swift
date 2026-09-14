@@ -517,4 +517,107 @@ final class SwiftDataOrgStoreTests: XCTestCase {
             updatedAt: updatedAt
         )
     }
+
+    // MARK: - G25 membership context survives the cache
+
+    func test_givenSystemOrgMembership_whenCached_thenSystemFlagSurvives() async throws {
+        // The no-leave rule for "The Public" has to hold on a cache-first
+        // paint, before any network read confirms it — so the flag must
+        // round-trip, not be re-derived.
+        let store = try SwiftDataOrgStore.inMemory()
+        let membership = UserOrganization(
+            organization: Organization(
+                id: "00000000-0000-0000-0000-000000000001",
+                name: "The Public",
+                isPublic: true,
+                slug: "the-public",
+                isSystem: true,
+                memberCount: 22
+            ),
+            role: .member,
+            joinedAt: Date(timeIntervalSince1970: 1_000_000)
+        )
+
+        await store.cacheMemberships([membership])
+
+        let cached = await store.cachedMemberships()
+        XCTAssertEqual(cached, [membership])
+        XCTAssertTrue(cached.first?.organization.isSystem ?? false)
+        XCTAssertFalse(cached.first?.isLeavable ?? true)
+        XCTAssertEqual(cached.first?.organization.memberCount, 22)
+        XCTAssertEqual(cached.first?.organization.slug, "the-public")
+    }
+
+    func test_givenOrdinaryMembership_whenCached_thenStaysLeavable() async throws {
+        // Boundary in the other direction: an ordinary org must not come back
+        // from the cache flagged as a system org.
+        let store = try SwiftDataOrgStore.inMemory()
+        let membership = UserOrganization(
+            organization: Organization(id: "o-1", name: "Acme", isPublic: true),
+            role: .owner
+        )
+
+        await store.cacheMemberships([membership])
+
+        let cached = await store.cachedMemberships()
+        XCTAssertFalse(cached.first?.organization.isSystem ?? true)
+        XCTAssertTrue(cached.first?.isLeavable ?? false)
+        XCTAssertNil(cached.first?.organization.memberCount)
+    }
+
+    func test_givenOrganizationWithContext_whenCached_thenRoundTripsSystemAndCount() async throws {
+        // Same fields on the org-management cache, not just the membership one.
+        let store = try SwiftDataOrgStore.inMemory()
+        let org = Organization(
+            id: "org-sys",
+            name: "The Public",
+            isPublic: true,
+            slug: "the-public",
+            isSystem: true,
+            memberCount: 22
+        )
+
+        await store.cacheOrganization(org)
+
+        let cached = await store.cachedOrganization(id: "org-sys")
+        XCTAssertEqual(cached, org)
+    }
+
+    func test_givenSuspendedMemberWithIdentity_whenCached_thenRoundTripsBoth() async throws {
+        // The roster renders names, avatars and the suspended state offline.
+        let store = try SwiftDataOrgStore.inMemory()
+        let member = OrgMember(
+            userId: "u-1",
+            membershipId: "m-1",
+            role: .admin,
+            active: false,
+            createdAt: Date(timeIntervalSince1970: 1_000_000),
+            username: "adron",
+            displayName: "Adron Hall",
+            avatarURL: URL(string: "https://cdn/a.jpg"),
+            emailVerified: true
+        )
+
+        await store.cacheMembers([member], of: "org-1")
+
+        let cached = await store.cachedMembers(of: "org-1")
+        XCTAssertEqual(cached, [member])
+        XCTAssertTrue(cached.first?.isSuspended ?? false)
+        XCTAssertEqual(cached.first?.displayLabel, "Adron Hall")
+    }
+
+    func test_givenMemberWithNoIdentity_whenCached_thenNilFieldsStayNil() async throws {
+        // Boundary: absent identity must not round-trip as empty strings.
+        let store = try SwiftDataOrgStore.inMemory()
+        let member = OrgMember(userId: "u-2", role: .member)
+
+        await store.cacheMembers([member], of: "org-1")
+
+        let cached = await store.cachedMembers(of: "org-1")
+        XCTAssertEqual(cached, [member])
+        XCTAssertNil(cached.first?.username)
+        XCTAssertNil(cached.first?.avatarURL)
+        XCTAssertFalse(cached.first?.isSuspended ?? true)
+    }
 }
+
