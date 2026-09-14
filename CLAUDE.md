@@ -8,7 +8,18 @@ Native macOS **SwiftUI** client for InterlinedList: Xcode project `InterlinedLis
 - `Packages/InterlinedPersistence` — SwiftData stores + on-disk cache
 - `SyncAgent/` — background menu-bar doc-sync utility
 
-Master planning doc: `work-consolidation.md`. Detailed checklists live in `.claude/skills/*/assets/` (the single source of truth).
+**Master planning doc: `work-consolidation.md` — THE single source of truth.** It owns the plan:
+ordering, architecture, probe evidence, API shapes, the re-measure log, the release path, and a work
+index (§1f) mapping every item to its GitHub issue. **GitHub issues own execution** — live status,
+and what PRs link to. Epic #66 is a pointer to the doc, not a second backlog. When the doc and an
+issue disagree, the issue wins and the doc gets corrected.
+
+⚠️ **Same-PR doc-sync rule.** A PR that ships a `G`-item, closes a parity issue, or moves the test
+baseline **must update `work-consolidation.md` in the same PR**. Seven PRs (#67–#73) once shipped
+without it moving; it drifted ~330 tests and two API re-measures behind the code.
+
+Detailed checklists live in `.claude/skills/*/assets/`. `docs/progress.md` is **archived** (M0–M7 build
+journal, last updated 2026-06-25) — do not cite it as current.
 
 ## Non-negotiable rules
 
@@ -24,7 +35,7 @@ No change is "done" until the gate in `.claude/skills/swift-engineer/assets/e2e-
 - `xcodebuild -scheme InterlinedList -destination 'platform=macOS' build` → `** BUILD SUCCEEDED **`
 - `xcodebuild -scheme InterlinedList -destination 'platform=macOS' test` (App target)
 - `swift test --package-path Packages/{InterlinedKit,InterlinedDomain,InterlinedPersistence}`
-- `grep -rn "import InterlinedKit" App/Features App/Navigation App/MenuCommands` → zero hits
+- `grep -rnE "^[[:space:]]*(@[A-Za-z]+ )?import InterlinedKit" App/Features App/Navigation App/MenuCommands` → zero hits *(anchored: the unanchored form matches prose comments and reports four false positives)*
 
 Ship the BDD unit-test quartet (happy / invalid / upstream-failure / boundary) with every behavior change. Docs work has its own gate: `.claude/skills/doc-engineer/assets/docs-quality-checklist.md`.
 
