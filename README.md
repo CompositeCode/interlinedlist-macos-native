@@ -31,7 +31,7 @@
 
 InterlinedList for macOS mirrors every capability of the [InterlinedList web app](https://interlinedlist.com), organized as native macOS features: a timeline, a composer window, structured lists with a schema DSL, an offline-capable Markdown document store, social and organization features, notifications, and Settings &mdash; all backed by the documented [InterlinedList API](https://interlinedlist.com/help/api).
 
-The project is greenfield. Scope, architecture, milestones, and branding are pinned in [PLAN.md](PLAN.md); orchestration rules live in [ORCHESTRATION.md](ORCHESTRATION.md). Progress is recorded in [docs/progress.md](docs/progress.md) and endpoint coverage in [docs/api-coverage.md](docs/api-coverage.md).
+Scope, architecture, milestones, remaining work and shipped status are consolidated in [work-consolidation.md](work-consolidation.md) &mdash; **the single source of truth** &mdash; with per-endpoint coverage in [docs/api-coverage.md](docs/api-coverage.md) and architectural rationale in [docs/decisions/](docs/decisions/). The historical M0&ndash;M7 build log is archived at [docs/archive/progress.md](docs/archive/progress.md). *(`PLAN.md` and `ORCHESTRATION.md` were removed in `f040954`; links to them are retired.)*
 
 ## Status
 
@@ -66,7 +66,7 @@ AppTests/                         # App-target XCTest (BDD-named)
 docs/                             # progress, api-coverage, decisions, spikes, user guides
 ```
 
-See [PLAN.md §3](PLAN.md) for the rules at each boundary &mdash; in particular the kit-import policy from [Decision 0003](docs/decisions/0003-kit-import-policy.md): the App target imports `InterlinedKit` only from the composition root.
+The rules at each boundary are recorded in [docs/decisions/](docs/decisions/) &mdash; in particular the kit-import policy from [Decision 0003](docs/decisions/0003-kit-import-policy.md): the App target imports `InterlinedKit` only from the composition root.
 
 ## Building
 
@@ -106,9 +106,9 @@ The CI workflow does **not** run contract tests. Credentials must never be commi
 
 ## Documentation
 
-- [PLAN.md](PLAN.md) &mdash; product scope, architecture, milestones, branding (authoritative).
-- [ORCHESTRATION.md](ORCHESTRATION.md) &mdash; how work is sequenced and how agents own paths.
-- [docs/progress.md](docs/progress.md) &mdash; running log of waves, gates, deviations.
+- [docs/decisions/](docs/decisions/) &mdash; architectural decision records (authoritative on boundaries and exceptions).
+- [work-consolidation.md](work-consolidation.md) &mdash; **the single source of truth**: what ships, what remains, in execution order.
+- [docs/archive/progress.md](docs/archive/progress.md) &mdash; archived M0&ndash;M7 wave log (historical; last updated 2026-06-25).
 - [docs/api-coverage.md](docs/api-coverage.md) &mdash; endpoint matrix.
 - [docs/decisions/](docs/decisions/) &mdash; recorded architecture decisions.
 - [docs/spikes/](docs/spikes/) &mdash; investigations and probes against the live API.
@@ -116,4 +116,4 @@ The CI workflow does **not** run contract tests. Credentials must never be commi
 
 ## Branding
 
-All visual identity follows the [official InterlinedList branding standards](https://interlinedlist.com/help/branding). The product name is **InterlinedList** &mdash; capital I, capital L, no spaces or hyphens. See [PLAN.md §9](PLAN.md) for the palette, typography, and asset rules used throughout the app.
+All visual identity follows the [official InterlinedList branding standards](https://interlinedlist.com/help/branding). The product name is **InterlinedList** &mdash; capital I, capital L, no spaces or hyphens. The palette, typography and asset rules are applied in `App/Resources` and the theme tokens under `App/Theme`.
