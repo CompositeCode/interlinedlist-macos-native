@@ -13,12 +13,20 @@ extension OwnedList {
     /// the API omits the flag — the authenticated routes return private
     /// lists by default, so the safe-default is `.private`.
     public init(from dto: ListDTO) {
+        // `dto.properties` is the field that actually carries the columns;
+        // `dto.schema` is a DSL string the server has never sent (GitHub #85).
+        // Absent properties leave `schema` nil — "this route does not return
+        // columns" — rather than collapsing to an empty schema.
+        let columns = dto.schemaFields.map { fields in
+            ListSchema(fields: fields.map(SchemaField.init(dto:)))
+        }
         self.init(
             id: dto.id,
             title: dto.title,
             description: dto.description,
             visibility: Visibility(publiclyVisible: dto.isPublic ?? false),
-            schemaDescription: dto.schema,
+            schemaDescription: nil,
+            schema: columns,
             parentID: dto.parentId,
             // The kit's `ListDTO` does not yet carry GitHub-source fields
             // (prompts file item 2.3); leave the field `nil` and let the
