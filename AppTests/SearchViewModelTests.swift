@@ -156,11 +156,11 @@ final class SearchViewModelTests: XCTestCase {
         await service.enqueueAll(messages: [message("m1")], lists: [], documents: [])
 
         vm.query = "swift"
-        // Let the debounced task (zero window) run to completion.
-        await Task.yield()
-        for _ in 0..<10 where !vm.hasSearched {
-            try? await Task.sleep(nanoseconds: 5_000_000)
-        }
+        // Let the debounced task (zero window) run to completion. The old
+        // version capped the wait at ten 5 ms ticks and then fell through
+        // silently, so a loaded machine failed on the assertion below instead of
+        // on the wait that actually timed out (GitHub #82).
+        await settle(until: { vm.hasSearched }, "The debounced search never resolved")
 
         XCTAssertEqual(vm.results.messages.map(\.id), ["m1"])
         XCTAssertTrue(vm.hasSearched)

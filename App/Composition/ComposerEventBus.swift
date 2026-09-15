@@ -50,48 +50,27 @@ enum ComposerEvent: Sendable, Equatable {
 /// terminate the stream by cancelling the consuming task.
 final class ComposerEventBus: Sendable {
 
-    private let storage = Storage()
+    /// Subscriber registry. Shared with the other three feature buses; see
+    /// `EventBusStorage` for why registration is synchronous (GitHub #82).
+    private let storage = EventBusStorage<ComposerEvent>()
 
     init() {}
 
     /// Returns an `AsyncStream` that yields every event posted after
-    /// subscription. The stream finishes when the consumer cancels.
+    /// subscription. The subscriber is registered before this returns, so an
+    /// immediately-following `post` is delivered. The stream finishes when the
+    /// consuming task is cancelled.
     func events() -> AsyncStream<ComposerEvent> {
-        let id = UUID()
-        return AsyncStream { continuation in
-            Task { await self.storage.register(id: id, continuation: continuation) }
-            continuation.onTermination = { _ in
-                Task { await self.storage.unregister(id: id) }
-            }
-        }
+        storage.stream()
     }
 
-    /// Publish an event to every active subscriber. Late subscribers
-    /// do not receive past events.
+    /// Publish an event to every active subscriber. Late subscribers do not
+    /// receive past events. Delivery is synchronous with the call.
     func post(_ event: ComposerEvent) {
-        Task { await storage.broadcast(event) }
+        storage.broadcast(event)
     }
 
-    // MARK: - Storage
-
-    /// Holds the live continuations keyed by registration UUID. An
-    /// actor because subscribers / publishers are not serialized to
-    /// any thread.
-    private actor Storage {
-        private var continuations: [UUID: AsyncStream<ComposerEvent>.Continuation] = [:]
-
-        func register(id: UUID, continuation: AsyncStream<ComposerEvent>.Continuation) {
-            continuations[id] = continuation
-        }
-
-        func unregister(id: UUID) {
-            continuations[id] = nil
-        }
-
-        func broadcast(_ event: ComposerEvent) {
-            for continuation in continuations.values {
-                continuation.yield(event)
-            }
-        }
-    }
+    /// Live subscriber count, for tests that need to assert a subscription
+    /// exists rather than wait for one.
+    var subscriberCount: Int { storage.subscriberCount }
 }
