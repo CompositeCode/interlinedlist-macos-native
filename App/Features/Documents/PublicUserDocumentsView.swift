@@ -22,6 +22,12 @@ struct PublicUserDocumentsView: View {
     /// The handle to show documents for. A change re-triggers the load.
     let username: String
 
+    /// Reports the loaded document count to the host, so the profile's
+    /// Documents stat tile can show a number without a second request for data
+    /// this column already has (GitHub #44). Defaulted, so the column stays a
+    /// one-line drop-in for hosts that do not care.
+    var onCountChange: (Int) -> Void = { _ in }
+
     @Environment(\.appEnvironment) private var environment
     @State private var viewModel: PublicUserDocumentsViewModel?
 
@@ -43,6 +49,11 @@ struct PublicUserDocumentsView: View {
             )
             viewModel = model
             await model.load(username: username)
+            // Reported after the load rather than observed, so a failed load
+            // leaves the tile absent instead of claiming zero.
+            if model.error == nil {
+                onCountChange(model.documentsLoaded.count)
+            }
         }
     }
 

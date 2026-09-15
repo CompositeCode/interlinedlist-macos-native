@@ -189,6 +189,19 @@ public protocol ListsServicing: Sendable {
         notify: Bool
     ) async throws
 
+    /// Subscribes the **caller** to a public list — the Watch button on
+    /// someone else's profile (GitHub #44 / G32).
+    ///
+    /// This is the same route as `addWatcher`, taking its *self-subscribe*
+    /// branch by omitting `userId`. That branch is deliberately **free**: the
+    /// subscription gates granting someone else access, not following a list
+    /// that is already public to you. Modelled as its own method rather than an
+    /// optional parameter on `addWatcher`, because "add this person" and
+    /// "subscribe me" are different intents that happen to share a URL — and an
+    /// `addWatcher` call whose id went empty by accident must stay an error
+    /// rather than quietly becoming this.
+    func watch(listId: String) async throws
+
     // MARK: - M3 watchers
 
     /// Loads every watcher on a list. Owner-only server-side.
@@ -536,6 +549,13 @@ public final class ListsService: ListsServicing {
             // the sharing UI already renders as an upsell.
             throw ListsError.subscriberRequired
         }
+    }
+
+    public func watch(listId: String) async throws {
+        // No `userId` — the self-subscribe branch. No entitlement check either:
+        // watching a public list is free, and gating it would make the Watch
+        // button on a public profile an upsell for something the web gives away.
+        _ = try await api.send(Lists.addWatcher(listId: listId, AddListWatcherRequest()))
     }
 
     // MARK: - M3 watchers
