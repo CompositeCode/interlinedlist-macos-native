@@ -33,6 +33,9 @@ struct RecordedUserCall: Sendable, Equatable {
         case linkIdentityNative(provider: String, code: String, state: String)
         case settings
         case updateSettings
+        case unlinkIdentity(provider: String)
+        case verifyIdentity(provider: String)
+        case githubConnectionStatus
         /// The composer gear's single-field write, with the value it sent.
         case setShowAdvancedPostSettings(enabled: Bool)
     }
@@ -56,6 +59,9 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     private var blueskyConfiguredOutcomes: [Result<Bool, Error>] = []
     private var mastodonConfiguredOutcomes: [Result<Bool, Error>] = []
     private var linkIdentityNativeOutcomes: [Result<LinkedIdentity, Error>] = []
+    private var unlinkIdentityOutcomes: [Result<Void, Error>] = []
+    private var verifyIdentityOutcomes: [Result<Bool, Error>] = []
+    private var githubConnectionStatusOutcomes: [Result<GitHubConnection, Error>] = []
     private var settingsOutcomes: [Result<UserSettings, Error>] = []
     private var updateSettingsOutcomes: [Result<UserSettings, Error>] = []
     private var setShowAdvancedPostSettingsOutcomes: [Result<UserSettings, Error>] = []
@@ -177,6 +183,31 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func enqueueLinkIdentityNative(failure error: Error) {
         lock.lock(); defer { lock.unlock() }
         linkIdentityNativeOutcomes.append(.failure(error))
+    }
+
+    func enqueueUnlinkIdentity(success: Void = ()) {
+        lock.lock(); defer { lock.unlock() }
+        unlinkIdentityOutcomes.append(.success(()))
+    }
+    func enqueueUnlinkIdentity(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        unlinkIdentityOutcomes.append(.failure(error))
+    }
+    func enqueueVerifyIdentity(success verified: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        verifyIdentityOutcomes.append(.success(verified))
+    }
+    func enqueueVerifyIdentity(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        verifyIdentityOutcomes.append(.failure(error))
+    }
+    func enqueueGitHubConnectionStatus(success status: GitHubConnection) {
+        lock.lock(); defer { lock.unlock() }
+        githubConnectionStatusOutcomes.append(.success(status))
+    }
+    func enqueueGitHubConnectionStatus(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        githubConnectionStatusOutcomes.append(.failure(error))
     }
 
     func enqueueSettings(success settings: UserSettings) {
@@ -347,6 +378,32 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func linkIdentityNative(provider: IdentityProvider, code: String, state: String) async throws -> LinkedIdentity {
         try perform(label: "linkIdentityNative", record: .linkIdentityNative(provider: provider.wireToken, code: code, state: state)) { $0.linkIdentityNativeOutcomes }
             set: { $0.linkIdentityNativeOutcomes = $1 }
+    }
+
+    func unlinkIdentity(_ identity: LinkedIdentity) async throws {
+        // Records the *wire token*, not the provider case: the whole point is
+        // that Mastodon must address its own instance.
+        let _: Void = try perform(
+            label: "unlinkIdentity",
+            record: .unlinkIdentity(provider: identity.providerWireToken)
+        ) { $0.unlinkIdentityOutcomes }
+            set: { $0.unlinkIdentityOutcomes = $1 }
+    }
+
+    func verifyIdentity(_ identity: LinkedIdentity) async throws -> Bool {
+        try perform(
+            label: "verifyIdentity",
+            record: .verifyIdentity(provider: identity.providerWireToken)
+        ) { $0.verifyIdentityOutcomes }
+            set: { $0.verifyIdentityOutcomes = $1 }
+    }
+
+    func githubConnectionStatus() async throws -> GitHubConnection {
+        try perform(label: "githubConnectionStatus", record: .githubConnectionStatus) {
+            $0.githubConnectionStatusOutcomes
+        } set: {
+            $0.githubConnectionStatusOutcomes = $1
+        }
     }
 
     func settings() async throws -> UserSettings {
