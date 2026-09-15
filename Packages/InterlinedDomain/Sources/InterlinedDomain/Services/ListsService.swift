@@ -28,6 +28,15 @@ public enum ListsError: Error, Sendable, Equatable {
     /// the route treats a missing `userId` as "subscribe *me* to this list",
     /// which is a different action entirely (work-consolidation.md G23).
     case invalidWatcher
+
+    /// A schema rebuild would drop a column that still holds row data, and the
+    /// server refused it pending confirmation. Re-submit with `force: true` to
+    /// accept the data loss.
+    ///
+    /// Carries the server's own sentence rather than a client-written one: the
+    /// server names the situation accurately and the column list it also sends
+    /// is not reachable from here (see `updateSchema(of:schema:force:)`).
+    case schemaChangeWouldLoseData(serverMessage: String?)
 }
 
 extension ListsError: LocalizedError, CustomStringConvertible {
@@ -41,6 +50,9 @@ extension ListsError: LocalizedError, CustomStringConvertible {
             return "Schema \"\(raw)\" could not be parsed: \(reason.description)"
         case .invalidWatcher:
             return "Choose a person to share this list with."
+        case .schemaChangeWouldLoseData(let serverMessage):
+            return serverMessage
+                ?? "This change would delete columns that still hold data. Confirm to continue."
         }
     }
 }
@@ -108,7 +120,7 @@ public protocol ListsServicing: Sendable {
     func create(
         title: String,
         description: String?,
-        schema: String?,
+        schema: ListSchema?,
         parentId: String?,
         isPublic: Bool
     ) async throws -> OwnedList
@@ -135,7 +147,12 @@ public protocol ListsServicing: Sendable {
 
     /// Writes a typed schema to a list. Serializes the schema to the DSL
     /// form before posting.
-    func updateSchema(of listId: String, schema: ListSchema) async throws -> ListSchema
+    /// Rebuilds a list's columns.
+    ///
+    /// - Parameter force: confirms a destructive change. Without it the server
+    ///   refuses to drop a column that still holds row data, and the call throws
+    ///   `ListsError.schemaChangeWouldLoseData`.
+    func updateSchema(of listId: String, schema: ListSchema, force: Bool) async throws -> ListSchema
 
     // MARK: - M3 refresh (GitHub-backed)
 
@@ -298,8 +315,8 @@ public final class ListsService: ListsServicing {
         username: String,
         slug: String
     ) async throws -> ListDetail {
-        let dto = try await api.send(Lists.publicList(username: username, id: slug))
-        return ListDetail(from: dto)
+        let response = try await api.send(Lists.publicList(username: username, id: slug))
+        return ListDetail(from: response.list)
     }
 
     public func publicRows(
@@ -365,14 +382,24 @@ public final class ListsService: ListsServicing {
     }
 
     public func detail(listId: String) async throws -> OwnedList {
-        let dto = try await api.send(Lists.get(id: listId))
-        return OwnedList(from: dto)
+        let response = try await api.send(Lists.get(id: listId))
+        return OwnedList(from: response.data)
     }
 
+    /// Creates a list, optionally with its columns.
+    ///
+    /// `schema` used to be the client's DSL **string**, which the server rejects
+    /// outright (`400 "Invalid schema: DSL must be an object"`) — so a list with
+    /// columns could never be created from macOS (GitHub #85). It is now the
+    /// parsed `ListSchema`, serialised to the object the server wants.
+    ///
+    /// Callers that hold a DSL string parse it first: `SchemaDSL.parse` is still
+    /// how the New List sheet turns what the user typed into columns. The DSL
+    /// remains an authoring convenience; it is no longer a wire format.
     public func create(
         title: String,
         description: String?,
-        schema: String?,
+        schema: ListSchema?,
         parentId: String?,
         isPublic: Bool
     ) async throws -> OwnedList {
@@ -380,12 +407,17 @@ public final class ListsService: ListsServicing {
         let request = CreateListRequest(
             title: title,
             description: description,
-            schema: schema,
+            // An empty schema is not a schema: sending `{fields: []}` would ask
+            // the server to create a column-less list explicitly, where omitting
+            // the key lets it apply its own default.
+            schema: (schema?.fields.isEmpty == false)
+                ? schema?.asDTO(name: title, description: description)
+                : nil,
             parentId: parentId,
             isPublic: isPublic
         )
-        let dto = try await api.send(Lists.create(request))
-        return OwnedList(from: dto)
+        let response = try await api.send(Lists.create(request))
+        return OwnedList(from: response.data)
     }
 
     public func update(
@@ -401,8 +433,8 @@ public final class ListsService: ListsServicing {
             isPublic: isPublic,
             parentId: parentId
         )
-        let dto = try await api.send(Lists.update(id: listId, request))
-        return OwnedList(from: dto)
+        let response = try await api.send(Lists.update(id: listId, request))
+        return OwnedList(from: response.data)
     }
 
     public func delete(listId: String) async throws {
@@ -411,23 +443,62 @@ public final class ListsService: ListsServicing {
 
     // MARK: - M3 schema
 
+    /// Reads a list's columns.
+    ///
+    /// The response is the schema **object**; there is no DSL string to parse
+    /// and therefore no `malformedSchema` failure mode on this path any more —
+    /// an unrecognised column type degrades to `.text` rather than failing the
+    /// whole schema (see `SchemaField.init(dto:)`).
     public func schema(of listId: String) async throws -> ListSchema {
-        let dto = try await api.send(Lists.schema(id: listId))
-        return try parseSchema(dto.schema)
+        let response = try await api.send(Lists.schema(id: listId))
+        return ListSchema(dto: response.data)
     }
 
-    public func updateSchema(of listId: String, schema: ListSchema) async throws -> ListSchema {
-        let dsl = SchemaDSL.serialize(schema)
-        let request = UpdateListSchemaRequest(schema: dsl)
-        let dto = try await api.send(Lists.updateSchema(id: listId, request))
-        return try parseSchema(dto.schema)
+    /// Rebuilds a list's columns.
+    ///
+    /// - Parameter force: confirms a destructive change. The server refuses to
+    ///   drop a column that still holds row data unless this is set, answering
+    ///   `400` with the affected column keys — surfaced as
+    ///   `ListsError.schemaChangeWouldLoseData` so the UI can name them and ask,
+    ///   rather than showing a bare "Bad Request" for what is really a question.
+    public func updateSchema(
+        of listId: String,
+        schema: ListSchema,
+        force: Bool = false
+    ) async throws -> ListSchema {
+        let request = UpdateListSchemaRequest(schema: schema.asDTO(name: nil))
+        do {
+            let response = try await api.send(Lists.updateSchema(id: listId, request, force: force))
+            // The write answers the list plus its stored columns, so the result
+            // is read back from `properties` rather than re-fetching.
+            if let fields = response.data.schemaFields {
+                return ListSchema(fields: fields.map(SchemaField.init(dto:)))
+            }
+            return schema
+        } catch let error as APIError {
+            // The server refuses a destructive rebuild with `400` plus a
+            // `propertiesWithData` array naming the columns that still hold
+            // data. Re-badge it so the UI can offer the confirmation instead of
+            // showing a bare "Bad Request" for what is really a question.
+            //
+            // The column list is **not** available here: `APIError.badRequest`
+            // carries only the decoded `{error}` string, so the rest of the body
+            // is discarded before this point. `ListSchemaConflictDTO` models the
+            // full shape and this becomes a one-line change once the kit keeps
+            // the body — filed as its own issue rather than worked around with a
+            // second request that could race the first.
+            if case .badRequest(let message) = error, !force {
+                throw ListsError.schemaChangeWouldLoseData(serverMessage: message)
+            }
+            throw error
+        }
     }
 
     // MARK: - M3 refresh
 
     public func refresh(listId: String) async throws -> OwnedList {
-        let dto = try await api.send(Lists.refresh(id: listId))
-        return OwnedList(from: dto)
+        let response = try await api.send(Lists.refresh(id: listId))
+        return OwnedList(from: response.data)
     }
 
     // MARK: - M3 row CRUD
@@ -662,25 +733,7 @@ public final class ListsService: ListsServicing {
     }
 }
 
-// MARK: - Wire projection helper
-
-/// Recursive projection from the domain's loose `ListCellValue` back to the
-/// kit's `ListJSONValue` — used when writing rows. The two enums are
-/// structurally identical (M1 chose to project the wire union into a domain
-/// equivalent so view code never sees `ListJSONValue`); this is the inverse
-/// of the `init(from value:)` already in `ListMappers.swift`.
-extension ListJSONValue {
-    fileprivate init(from value: ListCellValue) {
-        switch value {
-        case .null: self = .null
-        case .bool(let v): self = .bool(v)
-        case .int(let v): self = .int(v)
-        case .double(let v): self = .double(v)
-        case .string(let v): self = .string(v)
-        case .array(let items):
-            self = .array(items.map(ListJSONValue.init(from:)))
-        case .object(let dict):
-            self = .object(dict.mapValues(ListJSONValue.init(from:)))
-        }
-    }
-}
+// The `ListCellValue` → `ListJSONValue` projection this file uses when writing
+// rows moved to `ListMappers.swift`, next to its inverse. It was `fileprivate`
+// here, which stopped the schema mappers reusing it for a column's
+// `defaultValue` (GitHub #85).

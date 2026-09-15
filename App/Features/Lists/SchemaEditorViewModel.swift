@@ -66,6 +66,10 @@ final class SchemaEditorViewModel {
     /// Surfaced error from the most recent failed save.
     private(set) var error: Error?
 
+    /// The schema the server refused as destructive, held so the user can
+    /// confirm it. Non-nil is what the view binds a confirmation dialog to.
+    private(set) var pendingDestructiveSave: ListSchema?
+
     /// Set to `true` after a successful save; the view dismisses.
     private(set) var didFinish: Bool = false
 
@@ -222,7 +226,41 @@ final class SchemaEditorViewModel {
             )
         })
         do {
-            let saved = try await lists.updateSchema(of: listId, schema: schema)
+            let saved = try await lists.updateSchema(
+                of: listId,
+                schema: schema,
+                // Never force on the first attempt. Dropping a column that still
+                // holds data is a question for the user, not a default — the
+                // server asks it, and `confirmDestructiveSave()` is how the
+                // answer gets back.
+                force: false
+            )
+            eventBus.post(.schemaChanged(listId: listId, schema: saved))
+            didFinish = true
+        } catch let listsError as ListsError {
+            if case .schemaChangeWouldLoseData = listsError {
+                pendingDestructiveSave = schema
+            }
+            self.error = listsError
+        } catch {
+            self.error = error
+        }
+    }
+
+    /// Re-submits the schema the server refused, confirming the data loss.
+    ///
+    /// Only reachable after `save()` has surfaced
+    /// `ListsError.schemaChangeWouldLoseData`, so there is no path that forces a
+    /// destructive change without the server having asked first.
+    func confirmDestructiveSave() async {
+        guard let schema = pendingDestructiveSave, !isSaving else { return }
+        isSaving = true
+        error = nil
+        pendingDestructiveSave = nil
+        defer { isSaving = false }
+
+        do {
+            let saved = try await lists.updateSchema(of: listId, schema: schema, force: true)
             eventBus.post(.schemaChanged(listId: listId, schema: saved))
             didFinish = true
         } catch {

@@ -18,11 +18,14 @@ struct RecordedListsCall: Sendable, Equatable {
         case publicRows(username: String, slug: String, limit: Int, offset: Int)
         case myLists(limit: Int, offset: Int)
         case detail(listId: String)
-        case create(title: String, description: String?, schema: String?, parentId: String?, isPublic: Bool)
+        // `schema` is the parsed columns, not a DSL string — the string form
+        // is rejected by the server (GitHub #85), and recording it lets a test
+        // assert the DSL was parsed before the call rather than after.
+        case create(title: String, description: String?, schema: ListSchema?, parentId: String?, isPublic: Bool)
         case update(listId: String, title: String?, description: String?, isPublic: Bool?, parentId: String?)
         case delete(listId: String)
         case schema(listId: String)
-        case updateSchema(listId: String, fieldsCount: Int)
+        case updateSchema(listId: String, fieldsCount: Int, force: Bool)
         case refresh(listId: String)
         case rows(listId: String, limit: Int, offset: Int)
         case row(listId: String, rowId: String)
@@ -187,7 +190,7 @@ actor StubListsService: ListsServicing {
         return try take(&detailOutcomes, label: "detail")
     }
 
-    func create(title: String, description: String?, schema: String?, parentId: String?, isPublic: Bool) async throws -> OwnedList {
+    func create(title: String, description: String?, schema: ListSchema?, parentId: String?, isPublic: Bool) async throws -> OwnedList {
         recorded.append(.init(kind: .create(title: title, description: description, schema: schema, parentId: parentId, isPublic: isPublic)))
         return try take(&createOutcomes, label: "create")
     }
@@ -209,8 +212,8 @@ actor StubListsService: ListsServicing {
         return try take(&schemaOutcomes, label: "schema")
     }
 
-    func updateSchema(of listId: String, schema: ListSchema) async throws -> ListSchema {
-        recorded.append(.init(kind: .updateSchema(listId: listId, fieldsCount: schema.fields.count)))
+    func updateSchema(of listId: String, schema: ListSchema, force: Bool) async throws -> ListSchema {
+        recorded.append(.init(kind: .updateSchema(listId: listId, fieldsCount: schema.fields.count, force: force)))
         lastUpdatedSchema = schema
         return try take(&updateSchemaOutcomes, label: "updateSchema")
     }

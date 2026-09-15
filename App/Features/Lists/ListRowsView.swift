@@ -156,9 +156,10 @@ struct ListRowsView: View {
         let columns = effectiveColumns(viewModel)
         VStack(spacing: 0) {
             Table(viewModel.rows, selection: $selection) {
-                TableColumnForEach(columns, id: \.self) { column in
-                    TableColumn(column) { (row: ListRow) in
-                        Text(row.fields[column]?.displayText ?? "")
+                TableColumnForEach(columns) { column in
+                    // Header from `label`, cell lookup by `key` — see `ListColumn`.
+                    TableColumn(column.label) { (row: ListRow) in
+                        Text(row.fields[column.key]?.displayText ?? "")
                             .lineLimit(2)
                     }
                 }
@@ -192,14 +193,15 @@ struct ListRowsView: View {
     /// Ordered column set for the table: the schema-derived columns when
     /// present, else the sorted union of keys across loaded rows so a
     /// schemaless list still renders a sensible grid.
-    private func effectiveColumns(_ viewModel: ListRowsViewModel) -> [String] {
+    private func effectiveColumns(_ viewModel: ListRowsViewModel) -> [ListColumn] {
         if !viewModel.columns.isEmpty { return viewModel.columns }
         var seen = Set<String>()
-        var ordered: [String] = []
+        var ordered: [ListColumn] = []
         for row in viewModel.rows {
             for key in row.fields.keys.sorted() where !seen.contains(key) {
                 seen.insert(key)
-                ordered.append(key)
+                // No schema means no separate label; the key is the header.
+                ordered.append(ListColumn(key: key, label: key))
             }
         }
         return ordered
@@ -332,15 +334,17 @@ struct ListRowsView: View {
     }
 
     @ViewBuilder
-    private func rowCard(row: ListRow, columns: [String]) -> some View {
-        let keys = columns.isEmpty ? row.fields.keys.sorted() : columns
+    private func rowCard(row: ListRow, columns: [ListColumn]) -> some View {
+        let keys = columns.isEmpty
+            ? row.fields.keys.sorted().map { ListColumn(key: $0, label: $0) }
+            : columns
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(keys, id: \.self) { key in
+            ForEach(keys) { column in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(key)
+                    Text(column.label)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    Text(row.fields[key]?.displayText ?? "")
+                    Text(row.fields[column.key]?.displayText ?? "")
                         .font(.ilBody())
                         .lineLimit(2)
                     Spacer()
@@ -351,11 +355,13 @@ struct ListRowsView: View {
         .background(ILColor.surface2, in: RoundedRectangle(cornerRadius: ILMetric.radiusMd))
     }
 
-    private func rowAccessibilityLabel(row: ListRow, columns: [String]) -> String {
-        let keys = columns.isEmpty ? row.fields.keys.sorted() : columns
-        let pairs = keys.compactMap { key -> String? in
-            guard let value = row.fields[key]?.displayText, !value.isEmpty else { return nil }
-            return "\(key): \(value)"
+    private func rowAccessibilityLabel(row: ListRow, columns: [ListColumn]) -> String {
+        let keys = columns.isEmpty
+            ? row.fields.keys.sorted().map { ListColumn(key: $0, label: $0) }
+            : columns
+        let pairs = keys.compactMap { column -> String? in
+            guard let value = row.fields[column.key]?.displayText, !value.isEmpty else { return nil }
+            return "\(column.label): \(value)"
         }
         return pairs.isEmpty ? "Row" : pairs.joined(separator: ", ")
     }

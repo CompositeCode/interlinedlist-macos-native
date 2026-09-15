@@ -28,9 +28,22 @@ public struct OwnedList: Sendable, Equatable, Hashable, Identifiable {
     /// Visibility. The owned routes return `isPublic` on every row.
     public let visibility: Visibility
 
-    /// The raw schema DSL string from the API (e.g. `"Title:text, Year:number"`).
-    /// `nil` for lists with no schema yet (the API may omit the field).
+    /// A one-line rendering of the columns, in the client's DSL spelling, for
+    /// surfaces that show a list's shape without opening the editor.
+    ///
+    /// This used to be read straight off `ListDTO.schema` — a wire field the
+    /// server has **never** sent, so it was always `nil` and every surface that
+    /// displayed it showed nothing (GitHub #85). It is now derived from
+    /// ``schema`` when the route returned the list's columns.
     public let schemaDescription: String?
+
+    /// The list's columns, when the route returned them.
+    ///
+    /// `nil` means *"this route does not carry columns"* — the lightweight
+    /// collection rows do not — which is **not** the same as a list with no
+    /// columns (`ListSchema.empty`). Collapsing the two would make every list in
+    /// a collection page look column-less.
+    public let schema: ListSchema?
 
     /// Parent list id for nested lists (PLAN.md §1 "Nested lists").
     public let parentID: String?
@@ -49,6 +62,7 @@ public struct OwnedList: Sendable, Equatable, Hashable, Identifiable {
         description: String? = nil,
         visibility: Visibility = .private,
         schemaDescription: String? = nil,
+        schema: ListSchema? = nil,
         parentID: String? = nil,
         gitHubSource: GitHubListSource? = nil,
         createdAt: Date? = nil,
@@ -58,7 +72,10 @@ public struct OwnedList: Sendable, Equatable, Hashable, Identifiable {
         self.title = title
         self.description = description
         self.visibility = visibility
-        self.schemaDescription = schemaDescription
+        // Derive the display string from the columns when the caller supplied
+        // them and no explicit string — so the two can never disagree.
+        self.schemaDescription = schemaDescription ?? schema?.dslDescription
+        self.schema = schema
         self.parentID = parentID
         self.gitHubSource = gitHubSource
         self.createdAt = createdAt
