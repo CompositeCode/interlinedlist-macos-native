@@ -13,21 +13,31 @@ import Foundation
 /// `GET /api/notifications` does **not** use the standard
 /// `{ data, pagination }` envelope; it returns
 /// `{ unreadCount, items: [...] }`, so it decodes into `NotificationTrayDTO`
-/// rather than `Paginated<T>`. The `scope=tray` query parameter is required by
-/// the API and defaulted here.
+/// rather than `Paginated<T>`.
 public enum Notifications {
 
-    /// `GET /api/notifications` (with `scope=tray`).
+    /// `GET /api/notifications` — the tray, read **and** unread.
     ///
-    /// `limit` is optional and omitted by default. VERIFIED live 2026-09-09
-    /// (G35 / issue #43): the route honours `limit` in its *unscoped* form
-    /// (`?limit=5` → 5 rows, `?limit=40` → 36 rows on the test account) and
-    /// falls back to the account's `notificationTrayLimit` when absent
-    /// (no params → exactly 20 rows, matching the stored preference). Under
-    /// `scope=tray` the server currently ignores `limit` and returns unread
-    /// rows only, so the preference is *also* enforced client-side by
-    /// `NotificationsService.tray(limit:)` — see the note there.
-    public static func tray(scope: String = "tray", limit: Int? = nil) -> Request<NotificationTrayDTO> {
+    /// The scope defaults to **`all`**, not `tray`. VERIFIED live 2026-09-15
+    /// (GitHub #80) on the test account:
+    ///
+    /// ```
+    /// ?scope=tray            → 1 item   (the single unread one), `limit` ignored
+    /// ?scope=tray&limit=5    → 1 item   (still just the unread one)
+    /// ?scope=all&limit=3     → 3 items  (read and unread, newest first)
+    /// ?scope=all&limit=10    → 10 items
+    /// ?scope=all             → 20 items (the account's `notificationTrayLimit`)
+    /// ```
+    ///
+    /// `scope=tray` is **unread-only** and ignores `limit`, so on macOS the tray
+    /// emptied as you read it while the web bell retained recent history. Same
+    /// feature, different behaviour — and the macOS one was the surprising one.
+    ///
+    /// `scope=all` is what the web bell uses: the last N regardless of read
+    /// state, honouring `limit`, and falling back to the account preference when
+    /// it is absent. `unreadCount` is returned under both scopes, so the badge
+    /// still comes from the same call.
+    public static func tray(scope: String = "all", limit: Int? = nil) -> Request<NotificationTrayDTO> {
         Request(
             method: .get,
             path: "/api/notifications",
