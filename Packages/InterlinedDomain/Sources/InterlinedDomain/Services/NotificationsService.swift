@@ -10,14 +10,28 @@ import InterlinedKit
 /// encodes it for us). The user-side `notificationTrayLimit` (10–40, default
 /// 20) controls the page size.
 ///
-/// **Tray limit — corrected 2026-09-09 (G35 / issue #43).** The previous note
-/// here claimed the server ignores a client `limit` outright. A live probe
-/// disproves that: unscoped, `?limit=5` returns 5 rows and `?limit=40` returns
-/// 36, and omitting it returns exactly the account's stored limit. Only the
-/// `scope=tray` form ignores it. So `tray(limit:)` both sends the value *and*
-/// caps the decoded rows client-side — the send is what will start working the
-/// moment the tray route honours it, and the cap is what makes the preference
-/// observable today.
+/// **Scope — corrected 2026-09-15 (GitHub #80).** The tray reads `scope=all`,
+/// not `scope=tray`.
+///
+/// `scope=tray` returns **unread rows only** and ignores `limit`, so the macOS
+/// tray emptied as the user read it while the web bell retained recent history.
+/// A glanced-at notification simply vanished, with no way back to it. `scope=all`
+/// is what the web bell uses — the last N regardless of read state — and it
+/// honours `limit`, falling back to the account's stored `notificationTrayLimit`
+/// when the parameter is absent. Probed live:
+///
+/// ```
+/// ?scope=tray&limit=5  → 1 item   (the single unread one)
+/// ?scope=all&limit=3   → 3 items
+/// ?scope=all&limit=10  → 10 items
+/// ?scope=all           → 20 items (the stored preference)
+/// ```
+///
+/// `unreadCount` is returned under both scopes, so the badge is unaffected.
+///
+/// The client-side `prefix` that used to cap the rows is gone with it: it existed
+/// only because `scope=tray` ignored the parameter, and it made the preference
+/// *appear* to work while the rows being trimmed were the wrong rows.
 ///
 /// Follows the same DI shape as the other domain services — takes its
 /// `APIClientProtocol` as a parameter so unit tests run against a stub.
@@ -28,10 +42,10 @@ public protocol NotificationsServicing: Sendable {
     /// `unreadCount` + the items page).
     ///
     /// - Parameter limit: the account's `notificationTrayLimit`. `nil` (the
-    ///   default, via the `tray()` convenience) leaves the page size entirely
-    ///   to the server. `unreadCount` is never capped — it is the server's own
-    ///   total and stays authoritative for the badge even when the rendered
-    ///   rows are trimmed.
+    ///   default, via the `tray()` convenience) lets the server apply the stored
+    ///   preference itself. `unreadCount` is always the server's own total and
+    ///   stays authoritative for the badge regardless of how many rows come
+    ///   back — a limit that shrinks the list must not shrink the badge.
     func tray(limit: Int?) async throws -> NotificationTray
 
     /// Marks a single notification read by id. The service does not return
@@ -69,17 +83,17 @@ public final class NotificationsService: NotificationsServicing {
     }
 
     public func tray(limit: Int?) async throws -> NotificationTray {
+        // `scope=all` honours `limit` server-side, so the client-side `prefix`
+        // that used to sit here is gone (GitHub #80). That trim existed because
+        // `scope=tray` ignored the parameter — it made `notificationTrayLimit`
+        // *appear* to work while the rows being trimmed were unread-only, so the
+        // preference could only ever shrink an already-wrong list.
+        //
+        // Deliberately not re-added as a belt-and-braces cap: a client-side trim
+        // over a correctly-limited response is invisible when it agrees with the
+        // server and wrong when it does not.
         let dto = try await api.send(Notifications.tray(limit: limit))
-        let tray = NotificationTray(from: dto)
-        // Client-side cap: `scope=tray` ignores the query parameter today, so
-        // without this the user's limit would have no visible effect. The
-        // server-authoritative `unreadCount` is preserved as-is — trimming the
-        // rendered rows must not understate the badge.
-        guard let limit, limit > 0, tray.items.count > limit else { return tray }
-        return NotificationTray(
-            unreadCount: tray.unreadCount,
-            items: Array(tray.items.prefix(limit))
-        )
+        return NotificationTray(from: dto)
     }
 
     public func markRead(id: String) async throws {
