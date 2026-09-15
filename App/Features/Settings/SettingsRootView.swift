@@ -26,6 +26,14 @@ struct SettingsRootView: View {
                     Label("Account", systemImage: "person.crop.circle")
                 }
 
+            // Identity: display name, bio, avatar, theme and the per-message
+            // character cap (GitHub #46 / G34). Until this pane existed the
+            // display name and bio were uneditable from macOS entirely.
+            ProfileSettingsView()
+                .tabItem {
+                    Label("Profile", systemImage: "person.text.rectangle")
+                }
+
             // Server-synced account preferences (work-consolidation.md — settings
             // storage) via `POST /api/user/update`.
             PreferencesView()
