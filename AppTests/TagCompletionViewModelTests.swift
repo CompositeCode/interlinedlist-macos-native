@@ -15,26 +15,13 @@ final class TagCompletionViewModelTests: XCTestCase {
         TagCompletionViewModel(service: stub, debounce: .zero)
     }
 
-    /// Lets the debounced lookup task run to completion.
-    ///
-    /// The lookup suspends on `Task.sleep(for: debounce)`, which goes through
-    /// the clock even at `.zero` — so a fixed number of `Task.yield()`s is not
-    /// a barrier, and the original ten-yield version lost the race
-    /// intermittently when the whole suite ran under load. Poll on a real
-    /// (short) sleep and stop as soon as the model settles.
-    private func settle(
-        until condition: (@MainActor () -> Bool)? = nil
-    ) async {
-        // A condition can exit early, so it can afford a generous ceiling. With
-        // no condition the assertion is that something did NOT happen, so the
-        // loop always runs to the end — keep that window short.
-        let iterations = condition == nil ? 25 : 400
-        for _ in 0..<iterations {
-            await Task.yield()
-            if let condition, condition() { return }
-            try? await Task.sleep(for: .milliseconds(1))
-        }
-    }
+    // Waiting is delegated to `Support/AsyncSettle.swift`. This file is where
+    // the lesson came from: the lookup suspends on `Task.sleep(for: debounce)`,
+    // which goes through the clock even at `.zero`, so a fixed number of
+    // `Task.yield()`s is not a barrier and the original ten-yield version lost
+    // the race under load. `settle(until:)` polls for the post-condition;
+    // `settleQuiet()` is the bounded wait used when the claim is an absence.
+    // Generalised across the suite in GitHub #82.
 
     // MARK: - Token parsing
 
@@ -65,7 +52,7 @@ final class TagCompletionViewModelTests: XCTestCase {
         let viewModel = makeViewModel(stub)
 
         viewModel.input(changed: "swi")
-        await settle()
+        await settleQuiet()
 
         XCTAssertEqual(viewModel.suggestions, ["swift", "swiftui"])
         XCTAssertTrue(viewModel.isShowing)
@@ -88,9 +75,9 @@ final class TagCompletionViewModelTests: XCTestCase {
         let viewModel = makeViewModel(stub)
 
         viewModel.input(changed: "s")
-        await settle()
+        await settleQuiet()
         viewModel.input(changed: "swift ")
-        await settle()
+        await settleQuiet()
 
         XCTAssertTrue(stub.requestedPrefixes.isEmpty,
                       "a 1-character prefix matches most of the corpus; a trailing separator means nothing is being typed")
@@ -104,7 +91,7 @@ final class TagCompletionViewModelTests: XCTestCase {
 
         // "swift" is already in the field, so re-suggesting it is noise.
         viewModel.input(changed: "Swift swi")
-        await settle()
+        await settleQuiet()
 
         XCTAssertEqual(viewModel.suggestions, ["swiftui"], "match is case-insensitive")
     }
@@ -113,7 +100,7 @@ final class TagCompletionViewModelTests: XCTestCase {
         let viewModel = makeViewModel(nil)
 
         viewModel.input(changed: "swi")
-        await settle()
+        await settleQuiet()
 
         XCTAssertFalse(viewModel.isShowing)
     }
@@ -126,7 +113,7 @@ final class TagCompletionViewModelTests: XCTestCase {
         let viewModel = makeViewModel(stub)
 
         viewModel.input(changed: "swi")
-        await settle()
+        await settleQuiet()
 
         // Completion is a nicety — a failed lookup must not surface an error
         // the user cannot act on mid-composition.
@@ -142,7 +129,7 @@ final class TagCompletionViewModelTests: XCTestCase {
         let viewModel = makeViewModel(stub)
 
         viewModel.input(changed: "zzz")
-        await settle()
+        await settleQuiet()
 
         XCTAssertFalse(viewModel.isShowing)
     }

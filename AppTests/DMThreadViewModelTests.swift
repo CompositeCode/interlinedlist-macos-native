@@ -192,16 +192,19 @@ final class DMThreadViewModelTests: XCTestCase {
         await service.enqueueMarkReadSuccess()
         await service.enqueueUnreadCount(success: 0)
 
-        // Capture the threadRead event.
+        // Capture the threadRead event. `events()` is called out here, not
+        // inside the Task: the bus registers the subscriber synchronously, so
+        // subscribing before the Task starts removes the race the old
+        // "give it a beat" sleep was covering (GitHub #82).
         let readEvent = expectation(description: "threadRead")
+        let stream = bus.events()
         let task = Task {
-            for await event in bus.events() {
+            for await event in stream {
                 if case .threadRead(let username) = event, username == "ada" {
                     readEvent.fulfill(); return
                 }
             }
         }
-        try? await Task.sleep(nanoseconds: 10_000_000)
 
         await vm.markInboundRead()
 
@@ -295,15 +298,24 @@ final class DMThreadViewModelTests: XCTestCase {
             await service.enqueueThreadUpdates(success: DMThread(messages: [], otherUser: ada, isMutual: true))
         }
 
-        await vm.startPolling()
-        // Let a few poll cycles run.
-        try? await Task.sleep(nanoseconds: 40_000_000)
-        vm.stopPolling()
-        let countAfterStop = await service.recorded.filter { if case .threadUpdates = $0.kind { return true } else { return false } }.count
-        // Wait well past several more intervals; the count must not grow.
-        try? await Task.sleep(nanoseconds: 60_000_000)
-        let countLater = await service.recorded.filter { if case .threadUpdates = $0.kind { return true } else { return false } }.count
+        let pollCount: @MainActor () async -> Int = {
+            await service.recorded.filter { if case .threadUpdates = $0.kind { return true } else { return false } }.count
+        }
 
+        await vm.startPolling()
+        // Wait for the loop to have actually polled at least once, so the test
+        // proves cancellation rather than proving the loop never started.
+        await settle(until: { await pollCount() > 0 }, "The poll loop never ran")
+        vm.stopPolling()
+
+        // Take the baseline only once the count has stopped moving: a poll that
+        // was already in flight when `stopPolling` landed will still record, and
+        // sampling before it does would fail a correctly-cancelled loop.
+        let countAfterStop = await settledValue(of: pollCount)
+        await settleQuiet(for: .milliseconds(60))
+        let countLater = await pollCount()
+
+        XCTAssertGreaterThan(countAfterStop, 0, "The poll loop must have run before cancellation is meaningful")
         XCTAssertEqual(countAfterStop, countLater, "No threadUpdates fire after stopPolling")
     }
 
