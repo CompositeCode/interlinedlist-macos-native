@@ -68,6 +68,23 @@ public struct CurrentUser: Sendable, Equatable, Identifiable {
     /// default with no extra round-trip: `CurrentUserStore` already refreshes
     /// this on sign-in, sign-out, and restore.
     public let defaultPubliclyVisible: Bool
+
+    /// The account's **own** per-message character cap, carried for the same
+    /// reason as `defaultPubliclyVisible`: it arrives on the `GET /api/user`
+    /// payload this model already maps, so the composer gets it session-cached
+    /// with no extra round-trip.
+    ///
+    /// This is **not** the platform ceiling. `GET /api/limits` reports
+    /// `message.maxContentLength: 5000`; this field's server-accepted range is
+    /// `1...10000`, so a user can set a cap *above* the ceiling. The composer
+    /// must honour the **lower** of the two — see
+    /// `ContentLimits.effectiveMessageLength(accountCap:)`, which is the single
+    /// place that decides (GitHub #46).
+    ///
+    /// `nil` when the payload omitted it, which is different from "the user
+    /// chose no cap" and must not be substituted with a guess.
+    public let maxMessageLength: Int?
+
     public let createdAt: Date
 
     public var id: String { summary.id }
@@ -88,6 +105,7 @@ public struct CurrentUser: Sendable, Equatable, Identifiable {
         isEmailVerified: Bool,
         isPrivateAccount: Bool,
         defaultPubliclyVisible: Bool = true,
+        maxMessageLength: Int? = nil,
         createdAt: Date
     ) {
         self.summary = summary
@@ -97,6 +115,7 @@ public struct CurrentUser: Sendable, Equatable, Identifiable {
         self.isEmailVerified = isEmailVerified
         self.isPrivateAccount = isPrivateAccount
         self.defaultPubliclyVisible = defaultPubliclyVisible
+        self.maxMessageLength = maxMessageLength
         self.createdAt = createdAt
     }
 }
