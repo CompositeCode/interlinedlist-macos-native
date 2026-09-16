@@ -36,7 +36,7 @@ struct DocumentTemplatePickerView: View {
 
     /// Called with the created document on success so the caller (the root
     /// view) can bind the editor to it. Not called on failure.
-    let onCreated: (Document) -> Void
+    let onCreated: (InterlinedDomain.Document) -> Void
 
     /// The built-in catalog to present. Defaults to the bundled built-ins;
     /// injectable so previews can substitute a list.

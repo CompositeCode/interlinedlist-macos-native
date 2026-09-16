@@ -433,7 +433,7 @@ struct DocumentsRootView: View {
     /// was started from the editor, so there is exactly one optimistic-rollback
     /// implementation rather than two that can disagree.
     private func handleMove(
-        documentID: Document.ID,
+        documentID: InterlinedDomain.Document.ID,
         to destination: FolderNode.ID?,
         folderTree: FolderTreeViewModel,
         documentsList: DocumentsListViewModel,
@@ -449,7 +449,7 @@ struct DocumentsRootView: View {
     }
 
     private func handleOpenLocalCopy(
-        _ id: Document.ID,
+        _ id: InterlinedDomain.Document.ID,
         documentsList: DocumentsListViewModel,
         editor: DocumentEditorViewModel
     ) {

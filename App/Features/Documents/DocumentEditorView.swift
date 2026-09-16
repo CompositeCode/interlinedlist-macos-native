@@ -21,7 +21,7 @@ import Textual
 struct DocumentEditorView: View {
 
     let viewModel: DocumentEditorViewModel
-    let onOpenLocalCopy: (Document.ID) -> Void
+    let onOpenLocalCopy: (InterlinedDomain.Document.ID) -> Void
 
     var body: some View {
         VStack(spacing: 0) {
