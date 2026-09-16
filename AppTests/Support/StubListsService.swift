@@ -29,7 +29,11 @@ struct RecordedListsCall: Sendable, Equatable {
         case refresh(listId: String)
         case rows(listId: String, limit: Int, offset: Int)
         case row(listId: String, rowId: String)
-        case createRow(listId: String, fieldsCount: Int)
+        /// Records the actual cell keys, not just how many. The Add Row form
+        /// has to be able to prove that a blank optional column was *omitted*
+        /// rather than sent as null — those are different requests to the
+        /// server (GitHub #50).
+        case createRow(listId: String, data: [String: ListCellValue])
         case updateRow(listId: String, rowId: String, fieldsCount: Int)
         case deleteRow(listId: String, rowId: String)
         case watchers(listId: String)
@@ -238,7 +242,7 @@ actor StubListsService: ListsServicing {
     }
 
     func createRow(listId: String, data: [String: ListCellValue]) async throws -> ListRow {
-        recorded.append(.init(kind: .createRow(listId: listId, fieldsCount: data.count)))
+        recorded.append(.init(kind: .createRow(listId: listId, data: data)))
         return try take(&createRowOutcomes, label: "createRow")
     }
 

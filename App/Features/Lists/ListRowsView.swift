@@ -20,6 +20,9 @@ struct ListRowsView: View {
 
     @Environment(\.appEnvironment) private var environment
     @State private var selection: Set<String> = []
+    /// Presents the Add Row form.
+    @State private var showsAddRow = false
+
     @State private var deletePending: Bool = false
     /// Presents the GitHub issue browser/composer for a GitHub-backed list —
     /// the row-creation route for lists whose rows sync from GitHub.
@@ -66,6 +69,13 @@ struct ListRowsView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .sheet(isPresented: $showsAddRow) {
+            AddRowSheetView(
+                listId: list.id,
+                schema: viewModel.schema,
+                onSaved: { Task { await viewModel.initialLoad() } }
+            )
+        }
         .sheet(isPresented: $showsIssues) {
             if let environment, let repo = viewModel.gitHubRepo {
                 GitHubIssuesView(repo: repo, environment: environment)
@@ -77,6 +87,44 @@ struct ListRowsView: View {
                     source: .rows(listId: list.id, rowIds: Array(selection)),
                     environment: environment
                 )
+            }
+        }
+    }
+
+    /// The repository a GitHub-backed list came from, linked, with a warning tag
+    /// when it is private (GitHub #50).
+    ///
+    /// `githubRepoPrivate` has been on the wire since the list routes shipped
+    /// and the client never read it. The tag is not decoration: a link to a
+    /// private repository sends a visitor to a GitHub sign-in or a "not found"
+    /// page, and the help page is explicit that the list should say so before
+    /// they follow it.
+    ///
+    /// Absent — rather than shown as "public" — when the server did not say.
+    @ViewBuilder
+    private var gitHubRepositoryBadge: some View {
+        if let source = list.gitHubSource, let repository = source.repository {
+            HStack(spacing: 4) {
+                if let url = source.repositoryURL {
+                    Link(destination: url) {
+                        Label("\(repository) issues", systemImage: "chevron.left.forwardslash.chevron.right")
+                            .font(.ilMono(10))
+                    }
+                    .help("Open \(repository) on GitHub")
+                } else {
+                    Label(repository, systemImage: "chevron.left.forwardslash.chevron.right")
+                        .font(.ilMono(10))
+                        .foregroundStyle(.secondary)
+                }
+                if source.isRepositoryPrivate == true {
+                    Text("Private repo")
+                        .font(.ilMono(9))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(ILColor.surface2, in: Capsule())
+                        .foregroundStyle(.secondary)
+                        .help("This repository is private — anyone without access will see a sign-in or a “not found” page")
+                }
             }
         }
     }
@@ -100,12 +148,23 @@ struct ListRowsView: View {
                     Label("New Issue", systemImage: "ladybug")
                 }
                 .help("This list syncs from GitHub — add a GitHub issue instead of a row")
+                gitHubRepositoryBadge
             } else {
                 Button {
-                    Task { await viewModel.addRow() }
+                    // The form, not a blank row (GitHub #50). `addRow()` created
+                    // an empty row and left the user to fill it in through the
+                    // inspector — which is why the columns' help text,
+                    // placeholders and validation rules had nowhere to appear.
+                    showsAddRow = true
                 } label: {
                     Label("Add Row", systemImage: "plus")
                 }
+                .disabled(viewModel.schema.fields.isEmpty)
+                .help(
+                    viewModel.schema.fields.isEmpty
+                        ? "Add columns in Edit Schema before adding rows"
+                        : "Add a row"
+                )
             }
 
             if !isReadOnly {
