@@ -29,9 +29,49 @@ struct ListRowsView: View {
     /// (work-consolidation.md G16).
     @State private var showsCreateFrom = false
 
+    /// Drives the saved-views menu (work-consolidation.md G40). Built here
+    /// rather than by the parent so the control ships with the rows pane it
+    /// arranges — and so a list opened from the "Shared with me" section gets
+    /// one too, which is the case the feature exists for.
+    @State private var savedViewsViewModel: SavedViewsViewModel?
+
     var body: some View {
         content(viewModel: viewModel)
             .navigationTitle(list.title)
+            .task(id: viewModel.listId) {
+                guard let environment else { return }
+                let model = SavedViewsViewModel(
+                    lists: environment.lists,
+                    eventBus: environment.listsEventBus,
+                    listId: viewModel.listId
+                )
+                savedViewsViewModel = model
+                // `load()` applies the caller's `isDefault` view, so the list
+                // opens in the arrangement that person chose — which on a
+                // shared list is not the same as the one the owner chose.
+                await model.load()
+                await subscribeSavedViews(model: model, bus: environment.listsEventBus)
+            }
+    }
+
+    /// Cross-window sync for saved-view writes. `[weak model]` per the project
+    /// rule: Swift 6 Observation does not guarantee `deinit`-time cancellation,
+    /// so the subscriber must not keep the view model alive by itself.
+    private func subscribeSavedViews(model: SavedViewsViewModel, bus: ListsEventBus) async {
+        Task { [weak model] in
+            for await event in bus.events() {
+                guard let model else { return }
+                model.apply(event: event)
+            }
+        }
+    }
+
+    /// How many lines a table / card cell renders. The one `config` value a
+    /// saved view stores that has a visible effect in this client: the server
+    /// normalises `mode` to `records` and drops every column/sort key, so
+    /// `density` is the whole of "applying a view" today (issue #81).
+    private var cellLineLimit: Int {
+        savedViewsViewModel?.appliedDensity == .compact ? 1 : 2
     }
 
     @ViewBuilder
@@ -128,6 +168,13 @@ struct ListRowsView: View {
             .disabled(selection.isEmpty)
             .help("Turn the selected rows into a new list or document")
 
+            // Saved views sit next to the view-mode picker because both
+            // change how these rows are arranged — one per session, one saved
+            // and shareable (work-consolidation.md G40).
+            if let savedViewsViewModel {
+                SavedViewsControl(viewModel: savedViewsViewModel, isReadOnly: isReadOnly)
+            }
+
             Spacer()
 
             Picker("View", selection: Binding(
@@ -159,7 +206,7 @@ struct ListRowsView: View {
                 TableColumnForEach(columns, id: \.self) { column in
                     TableColumn(column) { (row: ListRow) in
                         Text(row.fields[column]?.displayText ?? "")
-                            .lineLimit(2)
+                            .lineLimit(cellLineLimit)
                     }
                 }
             }
@@ -342,7 +389,7 @@ struct ListRowsView: View {
                         .foregroundStyle(.secondary)
                     Text(row.fields[key]?.displayText ?? "")
                         .font(.ilBody())
-                        .lineLimit(2)
+                        .lineLimit(cellLineLimit)
                     Spacer()
                 }
             }

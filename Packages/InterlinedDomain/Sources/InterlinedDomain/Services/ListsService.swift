@@ -28,6 +28,13 @@ public enum ListsError: Error, Sendable, Equatable {
     /// the route treats a missing `userId` as "subscribe *me* to this list",
     /// which is a different action entirely (work-consolidation.md G23).
     case invalidWatcher
+
+    /// A saved-view create, rename or fork supplied a blank name. Raised before
+    /// any HTTP call: the views routes do not reject an empty `name`, so the
+    /// round-trip would succeed and leave an unlabelled row in a picker the
+    /// user then cannot tell apart from the next one
+    /// (work-consolidation.md G40).
+    case invalidViewName
 }
 
 extension ListsError: LocalizedError, CustomStringConvertible {
@@ -41,6 +48,8 @@ extension ListsError: LocalizedError, CustomStringConvertible {
             return "Schema \"\(raw)\" could not be parsed: \(reason.description)"
         case .invalidWatcher:
             return "Choose a person to share this list with."
+        case .invalidViewName:
+            return "Give this view a name."
         }
     }
 }
@@ -236,6 +245,59 @@ public protocol ListsServicing: Sendable {
 
     /// Removes a connection by id.
     func removeConnection(connectionId: String) async throws
+
+    // MARK: - G40 saved views
+
+    /// Loads every saved view on a list: the list's **shared** views plus the
+    /// caller's **personal** ones, in the server's array order.
+    ///
+    /// Unpaged, and deliberately not sorted client-side — `position` repeats
+    /// across scope buckets, so re-sorting on it would shuffle the two sets
+    /// together (work-consolidation.md G40).
+    func savedViews(of listId: String) async throws -> [SavedListView]
+
+    /// Creates a saved view. Throws `ListsError.invalidViewName` on a blank
+    /// name before any HTTP call.
+    ///
+    /// Free on every tier — the views routes are `x-subscription-tier: free`.
+    func createSavedView(
+        listId: String,
+        name: String,
+        scope: SavedListViewScope,
+        config: SavedListViewConfig,
+        isDefault: Bool
+    ) async throws -> SavedListView
+
+    /// Updates a saved view's name, arrangement and/or default flag. `nil`
+    /// leaves that field untouched.
+    ///
+    /// - Important: a non-nil `config` **replaces** the stored arrangement
+    ///   whole, so pass the complete config you want to end up with. The
+    ///   parameter takes a `SavedListViewConfig`, which cannot be partial, so
+    ///   this is enforced by the type rather than by the caller remembering.
+    func updateSavedView(
+        listId: String,
+        viewId: String,
+        name: String?,
+        config: SavedListViewConfig?,
+        isDefault: Bool?
+    ) async throws -> SavedListView
+
+    /// Deletes a saved view.
+    func deleteSavedView(listId: String, viewId: String) async throws
+
+    /// Forks a view into a personal copy owned by the caller — the spec's
+    /// "escape hatch" from the list owner's arrangement.
+    ///
+    /// Works on a personal source view too, not only a shared one (verified
+    /// live 2026-09-15), so the UI may offer it as plain "duplicate". A `nil`
+    /// name lets the server pick one; a supplied-but-blank name throws
+    /// `ListsError.invalidViewName`.
+    func forkSavedView(
+        listId: String,
+        viewId: String,
+        name: String?
+    ) async throws -> SavedListView
 }
 
 // MARK: - ListsService
@@ -630,6 +692,79 @@ public final class ListsService: ListsServicing {
         try await api.sendVoid(Lists.deleteConnection(id: connectionId))
     }
 
+    // MARK: - G40 saved views
+
+    /// Free on every tier: the five views routes are declared
+    /// `x-subscription-tier: free` and were all reached live on a free account
+    /// with a Bearer token (2026-09-15). No `requireListManagement()` call
+    /// belongs on any of them — arranging a list you can already read is not
+    /// creating one (GitHub #40 matrix).
+    public func savedViews(of listId: String) async throws -> [SavedListView] {
+        let response = try await api.send(Lists.views(listId: listId))
+        // Server order, verbatim. See the protocol doc for why `position` is
+        // not a sort key.
+        return response.views.map(SavedListView.init(from:))
+    }
+
+    public func createSavedView(
+        listId: String,
+        name: String,
+        scope: SavedListViewScope,
+        config: SavedListViewConfig,
+        isDefault: Bool
+    ) async throws -> SavedListView {
+        let trimmed = try requireViewName(name)
+        let request = CreateListViewRequest(
+            name: trimmed,
+            // `scope` is the one field the server validates — an unknown token
+            // is a hard 400 — so it is sent from the closed domain enum rather
+            // than from any caller-supplied string.
+            scope: scope.rawValue,
+            config: config.wireValue,
+            isDefault: isDefault
+        )
+        let response = try await api.send(Lists.createView(listId: listId, request))
+        // Believe the server's row, not the optimistic local one: unknown
+        // `mode` / `density` values and every filter are silently normalised on
+        // write, so the request and the stored view routinely disagree.
+        return SavedListView(from: response.view)
+    }
+
+    public func updateSavedView(
+        listId: String,
+        viewId: String,
+        name: String?,
+        config: SavedListViewConfig?,
+        isDefault: Bool?
+    ) async throws -> SavedListView {
+        // A supplied name must be meaningful; an absent one means "don't
+        // touch the name", which is a different thing entirely.
+        let trimmedName = try name.map(requireViewName)
+        let request = UpdateListViewRequest(
+            name: trimmedName,
+            config: config?.wireValue,
+            isDefault: isDefault
+        )
+        let response = try await api.send(Lists.updateView(listId: listId, viewId: viewId, request))
+        return SavedListView(from: response.view)
+    }
+
+    public func deleteSavedView(listId: String, viewId: String) async throws {
+        try await api.sendVoid(Lists.deleteView(listId: listId, viewId: viewId))
+    }
+
+    public func forkSavedView(
+        listId: String,
+        viewId: String,
+        name: String?
+    ) async throws -> SavedListView {
+        let trimmedName = try name.map(requireViewName)
+        let response = try await api.send(
+            Lists.forkView(listId: listId, viewId: viewId, ForkListViewRequest(name: trimmedName))
+        )
+        return SavedListView(from: response.view)
+    }
+
     // MARK: - Internals
 
     /// The subscriber gate for list **creation**, and only creation.
@@ -650,6 +785,18 @@ public final class ListsService: ListsServicing {
         }
     }
 
+    /// Trims a saved-view name and rejects a blank one before any HTTP call.
+    ///
+    /// The route accepts `""` happily, so the server will not catch this: a
+    /// blank create lands an unlabelled row in the views picker that the user
+    /// cannot tell apart from the next blank one, and cannot rename without
+    /// first identifying. Cheaper to refuse here (work-consolidation.md G40).
+    private func requireViewName(_ name: String) throws -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ListsError.invalidViewName }
+        return trimmed
+    }
+
     /// Parses a DSL string into a `ListSchema`, projecting `SchemaDSLError`
     /// into the richer `ListsError.malformedSchema` so the editor can
     /// surface both the raw string and the precise reason.
@@ -658,29 +805,6 @@ public final class ListsService: ListsServicing {
             return try SchemaDSL.parse(raw)
         } catch let error as SchemaDSLError {
             throw ListsError.malformedSchema(raw: raw, reason: error)
-        }
-    }
-}
-
-// MARK: - Wire projection helper
-
-/// Recursive projection from the domain's loose `ListCellValue` back to the
-/// kit's `ListJSONValue` — used when writing rows. The two enums are
-/// structurally identical (M1 chose to project the wire union into a domain
-/// equivalent so view code never sees `ListJSONValue`); this is the inverse
-/// of the `init(from value:)` already in `ListMappers.swift`.
-extension ListJSONValue {
-    fileprivate init(from value: ListCellValue) {
-        switch value {
-        case .null: self = .null
-        case .bool(let v): self = .bool(v)
-        case .int(let v): self = .int(v)
-        case .double(let v): self = .double(v)
-        case .string(let v): self = .string(v)
-        case .array(let items):
-            self = .array(items.map(ListJSONValue.init(from:)))
-        case .object(let dict):
-            self = .object(dict.mapValues(ListJSONValue.init(from:)))
         }
     }
 }
