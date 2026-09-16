@@ -26,6 +26,20 @@ actor StubAPIClient: APIClientProtocol {
         let method: String
         let path: String
         let query: [String: String]
+        /// The encoded JSON body, when the request had one.
+        ///
+        /// Captured because a wrong *body* is as breaking as a wrong path and
+        /// far quieter: the app-settings surface shipped for weeks sending
+        /// `{"name":…}` where the server demanded `{"deviceName":…}`, and every
+        /// path-and-method assertion passed the whole time.
+        let body: Data?
+
+        /// The body decoded for assertions. Not `Equatable`, so it stays out of
+        /// the stored properties.
+        var bodyJSON: [String: Any]? {
+            guard let body else { return nil }
+            return (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+        }
     }
 
     private var outcomes: [Outcome] = []
@@ -87,8 +101,19 @@ actor StubAPIClient: APIClientProtocol {
         for item in request.query where item.value != nil {
             query[item.name] = item.value
         }
+        // Encoded with the production encoder, so what a test inspects is
+        // byte-for-byte what the client would have put on the wire.
+        var body: Data?
+        if case .json(let payload) = request.body {
+            body = try? JSONCoders.makeEncoder().encode(payload)
+        }
         recorded.append(
-            RecordedRequest(method: request.method.rawValue, path: request.path, query: query)
+            RecordedRequest(
+                method: request.method.rawValue,
+                path: request.path,
+                query: query,
+                body: body
+            )
         )
     }
 }

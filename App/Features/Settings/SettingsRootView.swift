@@ -52,11 +52,14 @@ struct SettingsRootView: View {
                     Label("Security", systemImage: "lock.shield")
                 }
 
-            // Synced-settings device registry (work-consolidation.md G17) — the
-            // machines registered under this app's key.
+            // Synced settings + device registry (work-consolidation.md G17,
+            // GitHub issue #56). Labelled "Applications" to match
+            // `/help/app-settings`, which is where users are told to look for
+            // it; the pane covers the settings documents as well as the
+            // machines, so "Devices" undersold it.
             DevicesView()
                 .tabItem {
-                    Label("Devices", systemImage: "desktopcomputer")
+                    Label("Applications", systemImage: "desktopcomputer")
                 }
 
             // Document sync agent (work-consolidation.md §3b) — enable the background helper
