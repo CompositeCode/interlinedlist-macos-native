@@ -111,7 +111,7 @@ struct PublicUserDocumentsView: View {
 
 private struct PublicDocumentRow: View {
 
-    let document: Document
+    let document: InterlinedDomain.Document
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {

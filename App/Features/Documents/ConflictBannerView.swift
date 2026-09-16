@@ -15,7 +15,7 @@ import InterlinedDomain
 struct ConflictBannerView: View {
 
     let pending: ConflictBannerViewModel.Pending
-    let onOpenLocalCopy: (Document.ID) -> Void
+    let onOpenLocalCopy: (InterlinedDomain.Document.ID) -> Void
     let onDismiss: () -> Void
 
     var body: some View {

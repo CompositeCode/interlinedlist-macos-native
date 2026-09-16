@@ -266,7 +266,7 @@ struct SearchRootView: View {
 /// a relative "updated" stamp. Kept local to the Search feature because
 /// the Documents feature's own row component is file-private.
 private struct DocumentSearchRow: View {
-    let document: Document
+    let document: InterlinedDomain.Document
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
