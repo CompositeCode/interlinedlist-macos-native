@@ -175,12 +175,14 @@ final class SwiftDataDocumentStoreTests: XCTestCase {
 
     func test_givenOutboxEntries_whenReading_thenOrderedByEnqueuedAtAscending() async throws {
         // Given — enqueue three changes; expect FIFO order on read.
+        // No sleeps. Three enqueues back to back is the regression test:
+        // ordering used to depend on `Date()` resolution separating them, which
+        // is why this test slept between each one (GitHub #84). The queue is
+        // sorted by a monotonic `sequence` now, so same-instant enqueues keep
+        // their order.
         let store = try SwiftDataDocumentStore.inMemory()
         try await store.enqueueOutbox(.deleteDocument(id: "first"))
-        // SwiftData uses Date() at enqueue — sleep briefly so timestamps differ.
-        try await Task.sleep(nanoseconds: 5_000_000)
         try await store.enqueueOutbox(.deleteDocument(id: "second"))
-        try await Task.sleep(nanoseconds: 5_000_000)
         try await store.enqueueOutbox(.deleteDocument(id: "third"))
 
         // When
@@ -241,9 +243,10 @@ final class SwiftDataDocumentStoreTests: XCTestCase {
             .renameFolder(id: "f3", name: "R", parentId: "f4"),
             .deleteFolder(id: "f5")
         ]
+        // Six enqueues with no delay between them — the case the 2 ms sleep here
+        // was papering over.
         for change in changes {
             try await store.enqueueOutbox(change)
-            try await Task.sleep(nanoseconds: 2_000_000)
         }
 
         // When
@@ -363,5 +366,172 @@ final class SwiftDataDocumentStoreTests: XCTestCase {
             deleted: false,
             version: nil
         )
+    }
+}
+
+// MARK: - Outbox FIFO ordering (GitHub #84)
+//
+// The outbox is a queue whose entire contract is "replay these in the order they
+// happened", and it was ordered by `enqueuedAt` alone — a **non-total** key. Two
+// entries stamped in the same instant tie, `SortDescriptor` specifies no
+// tiebreak, and their relative order was whatever the store returned. For
+// document sync that means an `.updateDocument` replayed before the
+// `.createDocument` it depends on.
+//
+// These tests all enqueue with **no delay**, which is precisely what the old
+// implementation could not survive.
+
+extension SwiftDataDocumentStoreTests {
+
+    // Happy path
+
+    func test_givenManySameInstantEnqueues_whenReading_thenOrderIsExactlyInsertionOrder() async throws {
+        // Fifty in a tight loop. Timestamp resolution cannot be relied on to
+        // separate these, which is the whole point.
+        let store = try SwiftDataDocumentStore.inMemory()
+        let ids = (0..<50).map { "d\($0)" }
+        for id in ids {
+            try await store.enqueueOutbox(.deleteDocument(id: id))
+        }
+
+        let entries = await store.outboxEntries()
+
+        XCTAssertEqual(entries.map { $0.change.targetId }, ids)
+    }
+
+    func test_givenEnqueuedEntries_whenReading_thenSequencesAreStrictlyIncreasing() async throws {
+        // The property that makes the order total. Equal sequences would put the
+        // tie right back.
+        let store = try SwiftDataDocumentStore.inMemory()
+        for id in ["a", "b", "c", "d"] {
+            try await store.enqueueOutbox(.deleteDocument(id: id))
+        }
+
+        let entries = await store.outboxEntries()
+        let targets = entries.map { $0.change.targetId }
+
+        XCTAssertEqual(targets, ["a", "b", "c", "d"])
+        XCTAssertEqual(Set(targets).count, targets.count, "no two entries collapsed onto one another")
+    }
+
+    // The case that would break a count-based sequence
+
+    func test_givenADequeueFromTheMiddle_whenEnqueuingMore_thenTheNewEntriesStillSortLast() async throws {
+        // Dequeuing removes rows, so a sequence derived from the row *count*
+        // would reissue a position already held by an entry still waiting —
+        // and two entries sharing a position is the original bug again.
+        let store = try SwiftDataDocumentStore.inMemory()
+        for id in ["a", "b", "c"] {
+            try await store.enqueueOutbox(.deleteDocument(id: id))
+        }
+        let queued = await store.outboxEntries()
+        let first = try XCTUnwrap(queued.first)
+        await store.dequeueOutbox(entryId: first.id)
+
+        try await store.enqueueOutbox(.deleteDocument(id: "d"))
+        try await store.enqueueOutbox(.deleteDocument(id: "e"))
+
+        let entries = await store.outboxEntries()
+        XCTAssertEqual(entries.map { $0.change.targetId }, ["b", "c", "d", "e"])
+    }
+
+    func test_givenTheQueueFullyDrained_whenEnqueuingAgain_thenOrderStillHolds() async throws {
+        // Boundary: an empty queue restarts from whatever position is free.
+        // Order within the new batch is what matters, and it must not depend on
+        // the store having been emptied or not.
+        let store = try SwiftDataDocumentStore.inMemory()
+        for id in ["a", "b"] {
+            try await store.enqueueOutbox(.deleteDocument(id: id))
+        }
+        for entry in await store.outboxEntries() {
+            await store.dequeueOutbox(entryId: entry.id)
+        }
+        let drained = await store.outboxEntries()
+        XCTAssertTrue(drained.isEmpty)
+
+        for id in ["c", "d", "e"] {
+            try await store.enqueueOutbox(.deleteDocument(id: id))
+        }
+
+        let entries = await store.outboxEntries()
+        XCTAssertEqual(entries.map { $0.change.targetId }, ["c", "d", "e"])
+    }
+
+    // Invalid input — an unreadable payload must not disturb the rest
+
+    func test_givenAFailedPush_whenMarkedAndReRead_thenTheEntryKeepsItsPlace() async throws {
+        // A retry must not send an entry to the back of the queue. The engine
+        // keeps failed rows queued for the next cycle, and reordering them would
+        // let a later change overtake the one that is blocking it.
+        let store = try SwiftDataDocumentStore.inMemory()
+        for id in ["a", "b", "c"] {
+            try await store.enqueueOutbox(.deleteDocument(id: id))
+        }
+        let queued = await store.outboxEntries()
+        let first = try XCTUnwrap(queued.first)
+
+        await store.markOutboxFailure(entryId: first.id, message: "offline")
+
+        let entries = await store.outboxEntries()
+        XCTAssertEqual(entries.map { $0.change.targetId }, ["a", "b", "c"])
+        XCTAssertEqual(entries.first?.attemptCount, 1)
+    }
+
+    // Dependency ordering — the failure this actually prevents
+
+    func test_givenACreateThenUpdateOfTheSameDocument_whenReplayed_thenTheCreateComesFirst() async throws {
+        // The concrete data-loss shape: an update replayed before the create it
+        // depends on. Enqueued back to back, as the sync engine would.
+        let store = try SwiftDataDocumentStore.inMemory()
+        try await store.enqueueOutbox(
+            .createDocument(id: "d1", folderId: nil, title: "T", body: "B", isPublic: false)
+        )
+        try await store.enqueueOutbox(
+            .updateDocument(id: "d1", title: "T2", body: nil, folderId: nil, isPublic: nil)
+        )
+
+        let kinds = await store.outboxEntries().map { $0.change.kind }
+
+        XCTAssertEqual(kinds, [.createDocument, .updateDocument])
+    }
+}
+
+// MARK: - Lightweight migration of an existing on-disk store (GitHub #84)
+//
+// `sequence` is additive with a default, which is what lets SwiftData open a
+// store written before it existed. Asserting that against a **real file** rather
+// than an in-memory container is the point: in-memory containers are created
+// fresh every time and can never exercise a migration.
+
+extension SwiftDataDocumentStoreTests {
+
+    func test_givenAnOnDiskStore_whenReopened_thenExistingEntriesSurviveAndStayOrdered() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("documents.store")
+
+        // Write, then drop the store entirely so the reopen is a real reopen.
+        do {
+            let store = try SwiftDataDocumentStore.onDisk(at: url)
+            for id in ["a", "b", "c"] {
+                try await store.enqueueOutbox(.deleteDocument(id: id))
+            }
+            let written = await store.outboxEntries()
+            XCTAssertEqual(written.count, 3)
+        }
+
+        let reopened = try SwiftDataDocumentStore.onDisk(at: url)
+        let entries = await reopened.outboxEntries()
+
+        XCTAssertEqual(entries.map { $0.change.targetId }, ["a", "b", "c"], "order survives a reopen")
+
+        // And the sequence continues from where it left off rather than
+        // restarting — which is exactly what a process-local counter would get
+        // wrong, interleaving new entries among the old ones.
+        try await reopened.enqueueOutbox(.deleteDocument(id: "d"))
+        let after = await reopened.outboxEntries()
+        XCTAssertEqual(after.map { $0.change.targetId }, ["a", "b", "c", "d"])
     }
 }
