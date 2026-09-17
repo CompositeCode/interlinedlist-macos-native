@@ -130,8 +130,12 @@ final class LinkedAccountsViewModel {
     /// but requires the instance prompt before a URL can be resolved (the
     /// view collects the instance host). `.other` is never offered — there is
     /// no authorize route the client can build for an unknown provider.
+    ///
+    /// X was absent (GitHub #47) even though the test account has a linked X
+    /// identity and cross-posting to X is a shipped feature — so the one
+    /// provider you could already post to was the one you could not connect.
     var linkableProviders: [IdentityProvider] {
-        [.github, .mastodon, .bluesky, .linkedin]
+        [.github, .mastodon, .bluesky, .linkedin, .twitter]
     }
 
     // MARK: - Legacy browser-handoff (kept for tests that rely on it)

@@ -21,6 +21,14 @@ struct SettingsRootView: View {
                     Label("Linked accounts", systemImage: "link")
                 }
 
+            // Manage every connected provider in one place — verify, disconnect,
+            // and GitHub org access (GitHub #47 / G33). Linking itself stays in
+            // the Linked accounts pane, which owns the OAuth session.
+            IntegrationsView()
+                .tabItem {
+                    Label("Integrations", systemImage: "app.connected.to.app.below.fill")
+                }
+
             AccountSettingsView()
                 .tabItem {
                     Label("Account", systemImage: "person.crop.circle")
