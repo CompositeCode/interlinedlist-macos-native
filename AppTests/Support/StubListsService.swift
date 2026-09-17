@@ -14,6 +14,7 @@ import InterlinedDomain
 struct RecordedListsCall: Sendable, Equatable {
     enum Kind: Sendable, Equatable {
         case publicLists(username: String, limit: Int, offset: Int)
+        case watch(listId: String)
         case publicList(username: String, slug: String)
         case publicRows(username: String, slug: String, limit: Int, offset: Int)
         case myLists(limit: Int, offset: Int)
@@ -56,6 +57,8 @@ actor StubListsService: ListsServicing {
     private var deleteOutcomes: [Result<Void, Error>] = []
     private var detailOutcomes: [Result<OwnedList, Error>] = []
     private var schemaOutcomes: [Result<ListSchema, Error>] = []
+    private var publicListsOutcomes: [Result<ListsPage, Error>] = []
+    private var watchOutcomes: [Result<Void, Error>] = []
     private var updateSchemaOutcomes: [Result<ListSchema, Error>] = []
     private var refreshOutcomes: [Result<OwnedList, Error>] = []
     private var rowsOutcomes: [Result<RowsPage, Error>] = []
@@ -110,6 +113,12 @@ actor StubListsService: ListsServicing {
     func enqueueSchema(success schema: ListSchema) { schemaOutcomes.append(.success(schema)) }
     func enqueueSchema(failure error: Error) { schemaOutcomes.append(.failure(error)) }
 
+    func enqueuePublicLists(success page: ListsPage) { publicListsOutcomes.append(.success(page)) }
+    func enqueuePublicLists(failure error: Error) { publicListsOutcomes.append(.failure(error)) }
+
+    func enqueueWatch(success: Void = ()) { watchOutcomes.append(.success(())) }
+    func enqueueWatch(failure error: Error) { watchOutcomes.append(.failure(error)) }
+
     func enqueueUpdateSchema(success schema: ListSchema) { updateSchemaOutcomes.append(.success(schema)) }
     func enqueueUpdateSchema(failure error: Error) { updateSchemaOutcomes.append(.failure(error)) }
 
@@ -163,7 +172,12 @@ actor StubListsService: ListsServicing {
 
     func publicLists(username: String, limit: Int, offset: Int) async throws -> ListsPage {
         recorded.append(.init(kind: .publicLists(username: username, limit: limit, offset: offset)))
-        throw StubError.notProgrammed("publicLists")
+        return try take(&publicListsOutcomes, label: "publicLists")
+    }
+
+    func watch(listId: String) async throws {
+        recorded.append(.init(kind: .watch(listId: listId)))
+        let _: Void = try take(&watchOutcomes, label: "watch")
     }
 
     func publicList(username: String, slug: String) async throws -> ListDetail {

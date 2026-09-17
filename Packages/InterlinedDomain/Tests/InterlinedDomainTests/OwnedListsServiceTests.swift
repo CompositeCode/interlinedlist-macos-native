@@ -1378,3 +1378,79 @@ private actor FakeListsStore: ListsStore {
     func cacheRows(_ rows: [ListRow], of listId: String) async {}
     func clear() async { lists.removeAll() }
 }
+
+// MARK: - Watching a public list (GitHub #44 / G32)
+//
+// The Watch button on someone else's profile. Same route as `addWatcher`, taking
+// its *self-subscribe* branch by omitting `userId` — and that branch is
+// deliberately free: the subscription gates granting someone *else* access, not
+// following a list that is already public to you.
+
+extension OwnedListsServiceTests {
+
+    // Happy path
+
+    func test_givenAPublicList_whenWatching_thenPostsWithoutAUserId() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(json: #"{"watching":true}"#)
+        let service = ListsService(api: api)
+
+        try await service.watch(listId: "L1")
+
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.method, "POST")
+        XCTAssertEqual(recorded.first?.path, "/api/lists/L1/watchers")
+        // The body must carry no `userId` — that is the whole difference between
+        // "subscribe me" and "grant that person access". `StubAPIClient` does not
+        // record request bodies on this branch, so the shape is asserted at the
+        // kit level instead; the empty-id guard below covers the confusion this
+        // could otherwise cause.
+    }
+
+    // Free on every tier
+
+    func test_givenAFreeAccount_whenWatching_thenItIsNotGated() async throws {
+        // Gating this would make the Watch button on a public profile an upsell
+        // for something the web gives away.
+        let api = StubAPIClient()
+        await api.enqueue(json: #"{"watching":true}"#)
+        let service = ListsService(api: api, entitlements: EntitlementsService(customerStatus: .free))
+
+        try await service.watch(listId: "L1")
+
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.count, 1, "the call is made, not refused")
+    }
+
+    // Upstream failure
+
+    func test_givenTheServerRefuses_whenWatching_thenTheErrorPropagates() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(failure: .httpStatus(code: 500, serverMessage: "boom"))
+        let service = ListsService(api: api)
+
+        do {
+            try await service.watch(listId: "L1")
+            XCTFail("Expected the failure to propagate")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .httpStatus(code: 500, serverMessage: "boom"))
+        }
+    }
+
+    // Boundary — addWatcher's empty-id guard still holds, so the two intents
+    // cannot be confused by accident
+
+    func test_givenAnEmptyUserId_whenAddingAWatcher_thenItIsRefusedRatherThanBecomingASelfSubscribe() async throws {
+        let api = StubAPIClient()
+        let service = ListsService(api: api)
+
+        do {
+            try await service.addWatcher(listId: "L1", userId: "   ", role: .viewer, notify: false)
+            XCTFail("Expected ListsError.invalidWatcher")
+        } catch let error as ListsError {
+            XCTAssertEqual(error, .invalidWatcher)
+        }
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty, "and no round-trip was spent finding out")
+    }
+}
