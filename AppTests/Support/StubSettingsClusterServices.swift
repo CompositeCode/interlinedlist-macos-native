@@ -92,15 +92,31 @@ final class StubNotificationPreferencesService: NotificationPreferencesServicing
 
 // MARK: - G17 app settings + device registry
 
+/// Stub for the Applications pane (work-consolidation.md G17, GitHub issue #56).
+///
+/// Every surface is queue-driven so a test can script a sequence — which the
+/// remove path needs, because it lists the registry twice: once to load the
+/// pane and again to reconcile after the deletion.
 final class StubAppSettingsService: AppSettingsServicing, @unchecked Sendable {
 
     private let lock = NSLock()
     private var deviceOutcomes: [Result<[AppDevice], Error>] = []
     private var mutationOutcomes: [Result<AppDevice, Error>] = []
-    private var deregisterOutcomes: [Result<Void, Error>] = []
+    private var removalOutcomes: [Result<DeviceRemovalOutcome, Error>] = []
+    private var sharedDocumentOutcomes: [Result<AppSettingsDocument?, Error>] = []
+    private var deviceDocumentOutcomes: [Result<AppSettingsDocument?, Error>] = []
+    private var copyOutcomes: [Result<AppSettingsDocument, Error>] = []
+    private var deleteSharedOutcomes: [Result<Bool, Error>] = []
+
     private(set) var deregisteredIDs: [String] = []
     private(set) var renamedTo: [String: String] = [:]
     private(set) var promotedIDs: [String] = []
+    private(set) var inspectedIDs: [String] = []
+    private(set) var registeredIDs: [String] = []
+    private(set) var copiedFromIDs: [String] = []
+    private(set) var deleteSharedCallCount = 0
+    /// How many times the registry was listed — the remove path must reconcile.
+    private(set) var devicesCallCount = 0
 
     func enqueueDevices(success: [AppDevice]) {
         lock.withLock { deviceOutcomes.append(.success(success)) }
@@ -118,31 +134,109 @@ final class StubAppSettingsService: AppSettingsServicing, @unchecked Sendable {
         lock.withLock { mutationOutcomes.append(.failure(failure)) }
     }
 
-    func enqueueDeregister(failure: Error? = nil) {
-        lock.withLock { deregisterOutcomes.append(failure.map { .failure($0) } ?? .success(())) }
+    func enqueueRemoval(_ outcome: DeviceRemovalOutcome) {
+        lock.withLock { removalOutcomes.append(.success(outcome)) }
     }
 
-    // MARK: Settings surface — unused by the Devices pane, minimally satisfied.
+    func enqueueRemoval(failure: Error) {
+        lock.withLock { removalOutcomes.append(.failure(failure)) }
+    }
 
-    func bootstrap(deviceID: String) async throws -> AppSettingsSnapshot { AppSettingsSnapshot() }
-    func sharedSettings() async throws -> AppSettingsBag { AppSettingsBag() }
-    func writeSharedSettings(_ bag: AppSettingsBag) async throws -> AppSettingsBag { bag }
-    func deviceSettings(deviceID: String) async throws -> AppSettingsBag { AppSettingsBag() }
-    func writeDeviceSettings(_ bag: AppSettingsBag, deviceID: String) async throws -> AppSettingsBag { bag }
+    func enqueueSharedDocument(_ document: AppSettingsDocument?) {
+        lock.withLock { sharedDocumentOutcomes.append(.success(document)) }
+    }
+
+    func enqueueSharedDocument(failure: Error) {
+        lock.withLock { sharedDocumentOutcomes.append(.failure(failure)) }
+    }
+
+    func enqueueDeviceDocument(_ document: AppSettingsDocument?) {
+        lock.withLock { deviceDocumentOutcomes.append(.success(document)) }
+    }
+
+    func enqueueDeviceDocument(failure: Error) {
+        lock.withLock { deviceDocumentOutcomes.append(.failure(failure)) }
+    }
+
+    func enqueueCopyToShared(success: AppSettingsDocument) {
+        lock.withLock { copyOutcomes.append(.success(success)) }
+    }
+
+    func enqueueCopyToShared(failure: Error) {
+        lock.withLock { copyOutcomes.append(.failure(failure)) }
+    }
+
+    func enqueueDeleteShared(_ deleted: Bool = true) {
+        lock.withLock { deleteSharedOutcomes.append(.success(deleted)) }
+    }
+
+    func enqueueDeleteShared(failure: Error) {
+        lock.withLock { deleteSharedOutcomes.append(.failure(failure)) }
+    }
+
+    // MARK: Settings documents
+
+    func bootstrap(deviceID: String) async throws -> AppSettingsSeed { AppSettingsSeed() }
+
+    func sharedDocument() async throws -> AppSettingsDocument? {
+        try lock.withLock {
+            guard !sharedDocumentOutcomes.isEmpty else { return nil }
+            return try sharedDocumentOutcomes.removeFirst().get()
+        }
+    }
+
+    func writeSharedSettings(_ bag: AppSettingsBag, baseVersion: Int) async throws -> AppSettingsDocument {
+        AppSettingsDocument(bag: bag, version: baseVersion + 1)
+    }
+
+    @discardableResult
+    func deleteSharedSettings() async throws -> Bool {
+        try lock.withLock {
+            deleteSharedCallCount += 1
+            guard !deleteSharedOutcomes.isEmpty else { return true }
+            return try deleteSharedOutcomes.removeFirst().get()
+        }
+    }
+
+    func deviceDocument(deviceID: String) async throws -> AppSettingsDocument? {
+        try lock.withLock {
+            inspectedIDs.append(deviceID)
+            guard !deviceDocumentOutcomes.isEmpty else { return nil }
+            return try deviceDocumentOutcomes.removeFirst().get()
+        }
+    }
+
+    func writeDeviceSettings(
+        _ bag: AppSettingsBag,
+        deviceID: String,
+        baseVersion: Int
+    ) async throws -> AppSettingsDocument {
+        AppSettingsDocument(bag: bag, version: baseVersion + 1, scope: .device(id: deviceID))
+    }
+
+    func copyDeviceSettingsToShared(deviceID: String) async throws -> AppSettingsDocument {
+        try lock.withLock {
+            copiedFromIDs.append(deviceID)
+            guard !copyOutcomes.isEmpty else { return AppSettingsDocument() }
+            return try copyOutcomes.removeFirst().get()
+        }
+    }
 
     // MARK: Device registry
 
     func devices() async throws -> [AppDevice] {
         try lock.withLock {
+            devicesCallCount += 1
             guard !deviceOutcomes.isEmpty else { return [] }
             return try deviceOutcomes.removeFirst().get()
         }
     }
 
-    func registerDevice(deviceID: String, name: String?) async throws -> AppDevice {
+    func registerDevice(deviceID: String, name: String, platform: String) async throws -> AppDevice {
         try lock.withLock {
+            registeredIDs.append(deviceID)
             guard !mutationOutcomes.isEmpty else {
-                return AppDevice(id: deviceID, name: name ?? deviceID)
+                return AppDevice(id: deviceID, name: name, platform: platform)
             }
             return try mutationOutcomes.removeFirst().get()
         }
@@ -166,11 +260,12 @@ final class StubAppSettingsService: AppSettingsServicing, @unchecked Sendable {
         }
     }
 
-    func deregisterDevice(deviceID: String) async throws {
+    @discardableResult
+    func deregisterDevice(deviceID: String) async throws -> DeviceRemovalOutcome {
         try lock.withLock {
             deregisteredIDs.append(deviceID)
-            guard !deregisterOutcomes.isEmpty else { return }
-            return try deregisterOutcomes.removeFirst().get()
+            guard !removalOutcomes.isEmpty else { return DeviceRemovalOutcome(deleted: true) }
+            return try removalOutcomes.removeFirst().get()
         }
     }
 }
