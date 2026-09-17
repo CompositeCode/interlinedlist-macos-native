@@ -33,14 +33,17 @@ struct RecordedUserCall: Sendable, Equatable {
         case linkIdentityNative(provider: String, code: String, state: String)
         case settings
         case updateSettings
-        /// The composer gear's single-field write, with the value it sent.
-        case setShowAdvancedPostSettings(enabled: Bool)
         case profileSettings
         /// A profile save, with the change-gated body it actually sent — so a
         /// test can assert that an untouched field was *not* written.
         case updateProfileSettings(displayName: String?, bio: String?, theme: String?, maxMessageLength: Int?)
         case setAvatarFromURL(url: String)
         case requestPasswordReset(email: String)
+        case unlinkIdentity(provider: String)
+        case verifyIdentity(provider: String)
+        case githubConnectionStatus
+        /// The composer gear's single-field write, with the value it sent.
+        case setShowAdvancedPostSettings(enabled: Bool)
     }
     let kind: Kind
 }
@@ -62,12 +65,15 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     private var blueskyConfiguredOutcomes: [Result<Bool, Error>] = []
     private var mastodonConfiguredOutcomes: [Result<Bool, Error>] = []
     private var linkIdentityNativeOutcomes: [Result<LinkedIdentity, Error>] = []
-    private var settingsOutcomes: [Result<UserSettings, Error>] = []
-    private var updateSettingsOutcomes: [Result<UserSettings, Error>] = []
     private var profileSettingsOutcomes: [Result<ProfileSettings, Error>] = []
     private var updateProfileSettingsOutcomes: [Result<ProfileSettings, Error>] = []
     private var setAvatarFromURLOutcomes: [Result<URL?, Error>] = []
     private var requestPasswordResetOutcomes: [Result<Void, Error>] = []
+    private var unlinkIdentityOutcomes: [Result<Void, Error>] = []
+    private var verifyIdentityOutcomes: [Result<Bool, Error>] = []
+    private var githubConnectionStatusOutcomes: [Result<GitHubConnection, Error>] = []
+    private var settingsOutcomes: [Result<UserSettings, Error>] = []
+    private var updateSettingsOutcomes: [Result<UserSettings, Error>] = []
     private var setShowAdvancedPostSettingsOutcomes: [Result<UserSettings, Error>] = []
 
     /// The settings snapshot passed to the most recent `updateSettings` call,
@@ -220,6 +226,31 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func enqueueRequestPasswordReset(failure error: Error) {
         lock.lock(); defer { lock.unlock() }
         requestPasswordResetOutcomes.append(.failure(error))
+    }
+
+    func enqueueUnlinkIdentity(success: Void = ()) {
+        lock.lock(); defer { lock.unlock() }
+        unlinkIdentityOutcomes.append(.success(()))
+    }
+    func enqueueUnlinkIdentity(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        unlinkIdentityOutcomes.append(.failure(error))
+    }
+    func enqueueVerifyIdentity(success verified: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        verifyIdentityOutcomes.append(.success(verified))
+    }
+    func enqueueVerifyIdentity(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        verifyIdentityOutcomes.append(.failure(error))
+    }
+    func enqueueGitHubConnectionStatus(success status: GitHubConnection) {
+        lock.lock(); defer { lock.unlock() }
+        githubConnectionStatusOutcomes.append(.success(status))
+    }
+    func enqueueGitHubConnectionStatus(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        githubConnectionStatusOutcomes.append(.failure(error))
     }
 
     func enqueueSettings(success settings: UserSettings) {
@@ -431,6 +462,32 @@ final class StubUserService: UserServicing, @unchecked Sendable {
             record: .requestPasswordReset(email: email)
         ) { $0.requestPasswordResetOutcomes }
             set: { $0.requestPasswordResetOutcomes = $1 }
+    }
+
+    func unlinkIdentity(_ identity: LinkedIdentity) async throws {
+        // Records the *wire token*, not the provider case: the whole point is
+        // that Mastodon must address its own instance.
+        let _: Void = try perform(
+            label: "unlinkIdentity",
+            record: .unlinkIdentity(provider: identity.providerWireToken)
+        ) { $0.unlinkIdentityOutcomes }
+            set: { $0.unlinkIdentityOutcomes = $1 }
+    }
+
+    func verifyIdentity(_ identity: LinkedIdentity) async throws -> Bool {
+        try perform(
+            label: "verifyIdentity",
+            record: .verifyIdentity(provider: identity.providerWireToken)
+        ) { $0.verifyIdentityOutcomes }
+            set: { $0.verifyIdentityOutcomes = $1 }
+    }
+
+    func githubConnectionStatus() async throws -> GitHubConnection {
+        try perform(label: "githubConnectionStatus", record: .githubConnectionStatus) {
+            $0.githubConnectionStatusOutcomes
+        } set: {
+            $0.githubConnectionStatusOutcomes = $1
+        }
     }
 
     func settings() async throws -> UserSettings {

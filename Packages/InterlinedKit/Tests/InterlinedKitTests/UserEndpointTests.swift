@@ -163,39 +163,97 @@ final class UserEndpointTests: XCTestCase {
         }
     }
 
-    // MARK: - identities (session-only)
+    // MARK: - identities (Bearer — corrected 2026-09-15, GitHub #47)
 
-    func test_givenIdentities_whenBuilt_thenUsesSessionAuth() {
+    func test_givenIdentities_whenBuilt_thenUsesBearerAuth() {
+        // CORRECTED: this route was on the decision-0001 session allowlist. A
+        // live probe with a valid Bearer sync-token returns 200 with the full
+        // identity list, so the annotation was wrong — the same class of error
+        // as the `send-verification-email` correction in PR #83, in the opposite
+        // direction. It was not a hard failure (the kit has a cookie-session
+        // transport that lazily logs in) but it cost an extra credentialed
+        // round-trip on every load of the Identities pane.
         let request = User.identities()
         XCTAssertEqual(request.method, .get)
         XCTAssertEqual(request.path, "/api/user/identities")
-        XCTAssertEqual(request.auth, .session) // decision-0001 allowlist
+        XCTAssertEqual(request.auth, .bearer)
     }
 
-    func test_givenIdentitiesEnvelope_whenSent_thenDecodesViaSessionTransport() async throws {
-        // Happy path: .session routes through the session transport.
-        let session = StubHTTPDataTransport()
-        await session.enqueue(.json(#"""
-        {"identities":[{"id":"i1","provider":"github","providerUsername":"ada",
-          "profileUrl":"https://github.com/ada","avatarUrl":null,
-          "connectedAt":"2026-01-01T00:00:00.000Z","lastVerifiedAt":null}]}
+    func test_givenIdentitiesEnvelope_whenSent_thenDecodesTheCapturedShape() async throws {
+        // The payload is the one captured live on 2026-09-15, including the
+        // instance-qualified Mastodon provider token that used to decode as an
+        // unknown provider.
+        let (client, transport, _) = makeClient()
+        await transport.enqueue(.json(#"""
+        {"identities":[
+          {"id":"i1","provider":"github","providerUsername":"ada",
+           "profileUrl":"https://github.com/ada","avatarUrl":null,
+           "connectedAt":"2026-01-01T00:00:00.000Z","lastVerifiedAt":null},
+          {"id":"i2","provider":"mastodon:techhub.social",
+           "providerUsername":"crew@techhub.social",
+           "profileUrl":"https://techhub.social/@crew","avatarUrl":null,
+           "connectedAt":"2026-04-07T16:35:32.476Z",
+           "lastVerifiedAt":"2026-08-22T06:00:41.130Z"}]}
         """#))
-        let (client, _, _) = makeClient(sessionTransport: session)
 
         let response = try await client.send(User.identities())
-        XCTAssertEqual(response.identities.count, 1)
+        XCTAssertEqual(response.identities.count, 2)
         XCTAssertEqual(response.identities.first?.provider, "github")
-        XCTAssertNil(response.identities.first?.lastVerifiedAt)
+        XCTAssertEqual(
+            response.identities.last?.provider,
+            "mastodon:techhub.social",
+            "the kit passes the qualified token through; the domain splits it"
+        )
     }
 
     func test_givenNoIdentities_whenSent_thenDecodesEmpty() async throws {
         // Boundary: account with no linked identities.
-        let session = StubHTTPDataTransport()
-        await session.enqueue(.json(#"{"identities":[]}"#))
-        let (client, _, _) = makeClient(sessionTransport: session)
+        let (client, transport, _) = makeClient()
+        await transport.enqueue(.json(#"{"identities":[]}"#))
 
         let response = try await client.send(User.identities())
         XCTAssertTrue(response.identities.isEmpty)
+    }
+
+    // MARK: - unlink / verify (GitHub #47)
+
+    func test_givenAnUnlink_whenBuilt_thenTheProviderTravelsAsAQueryParameter() {
+        let request = User.unlinkIdentity(provider: "mastodon:techhub.social")
+        XCTAssertEqual(request.method, .delete)
+        XCTAssertEqual(request.path, "/api/user/identities")
+        XCTAssertEqual(request.auth, .bearer)
+        // Instance-qualified: a bare "mastodon" on an account with two instances
+        // is ambiguous enough that the server could disconnect the wrong one.
+        XCTAssertEqual(
+            request.query.first(where: { $0.name == "provider" })?.value,
+            "mastodon:techhub.social"
+        )
+    }
+
+    func test_givenAVerify_whenBuilt_thenTheProviderIsInTheBody() throws {
+        let request = User.verifyIdentity(provider: "bluesky")
+        XCTAssertEqual(request.method, .post)
+        XCTAssertEqual(request.path, "/api/user/identities/verify")
+        XCTAssertEqual(try encodedBody(request)["provider"] as? String, "bluesky")
+    }
+
+    func test_givenAVerifyResponseWithNoVerifiedKey_whenDecoding_thenItCountsAsVerified() throws {
+        // The verify write was not exercised live — it mutates a shared recon
+        // account's connection state — so the decoder is permissive and a 2xx
+        // with an unexpected body is read as success. The route answering at all
+        // is the signal; claiming "not responding" on a shape we have not seen
+        // would be a lie about the provider.
+        let decoded = try JSONCoders.makeDecoder().decode(
+            VerifyIdentityResponse.self,
+            from: Data(#"{"message":"ok"}"#.utf8)
+        )
+        XCTAssertTrue(decoded.isVerified)
+
+        let explicit = try JSONCoders.makeDecoder().decode(
+            VerifyIdentityResponse.self,
+            from: Data(#"{"verified":false}"#.utf8)
+        )
+        XCTAssertFalse(explicit.isVerified, "an explicit false is still respected")
     }
 
     // MARK: - organizations (Bearer — corrected 2026-09-09, G25)

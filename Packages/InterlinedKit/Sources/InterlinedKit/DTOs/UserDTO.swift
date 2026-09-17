@@ -332,7 +332,48 @@ public struct IdentitiesResponse: Decodable, Sendable, Equatable {
     }
 }
 
-/// A single linked OAuth identity (GitHub, Mastodon, Bluesky, LinkedIn).
+/// Request body for `POST /api/user/identities/verify`.
+public struct VerifyIdentityRequest: Encodable, Sendable, Equatable {
+    public let provider: String
+
+    public init(provider: String) {
+        self.provider = provider
+    }
+}
+
+/// Response of `POST /api/user/identities/verify`.
+///
+/// Every field is optional and the shape is read permissively: the verify write
+/// was **not exercised live** — it mutates a shared recon account's connection
+/// state — so this follows the documented action rather than a capture. The
+/// fields are named for what `/help/settings` describes Verify as doing.
+/// Tighten once a real response is seen; until then a missing key degrades one
+/// field rather than failing the call, and `isVerified` falls back to "the call
+/// succeeded", which is the only thing the status code really tells us.
+public struct VerifyIdentityResponse: Decodable, Sendable, Equatable {
+    public let verified: Bool?
+    public let provider: String?
+    public let message: String?
+    public let lastVerifiedAt: Date?
+
+    public init(
+        verified: Bool? = nil,
+        provider: String? = nil,
+        message: String? = nil,
+        lastVerifiedAt: Date? = nil
+    ) {
+        self.verified = verified
+        self.provider = provider
+        self.message = message
+        self.lastVerifiedAt = lastVerifiedAt
+    }
+
+    /// Whether the connection is live. A body with no `verified` key but a 2xx
+    /// status counts as verified — the route answering at all is the signal.
+    public var isVerified: Bool { verified ?? true }
+}
+
+/// A single linked OAuth identity (GitHub, Mastodon, Bluesky, LinkedIn, X).
 public struct LinkedIdentityDTO: Decodable, Sendable, Equatable {
     public let id: String
     public let provider: String

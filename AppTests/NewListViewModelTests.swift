@@ -83,3 +83,70 @@ final class NewListViewModelTests: XCTestCase {
         }
     }
 }
+
+// MARK: - The schema goes on the wire as columns, not as a DSL string (GitHub #85)
+//
+// `POST /api/lists` rejects a string schema outright —
+// `400 {"error":"Invalid schema: DSL must be an object"}` — so a list created
+// from macOS with columns never worked. The DSL survives as an *authoring*
+// convenience: what the user types is parsed here, client-side, and the parsed
+// columns are what travel.
+
+extension NewListViewModelTests {
+
+    // Happy path
+
+    func test_givenTypedDSL_whenSubmitting_thenParsedColumnsAreSentNotTheString() async {
+        let stub = StubListsService()
+        await stub.enqueueCreate(success: ListsFixtures.ownedList(id: "L1", title: "Films"))
+        let viewModel = NewListViewModel(lists: stub, eventBus: ListsEventBus())
+        viewModel.title = "Films"
+        viewModel.schemaDSL = "Title:text, Year:number"
+
+        await viewModel.submit()
+
+        XCTAssertTrue(viewModel.didFinish)
+        let recorded = await stub.recorded
+        guard case .create(_, _, let schema, _, _)? = recorded.first?.kind else {
+            return XCTFail("expected create, got \(String(describing: recorded.first))")
+        }
+        XCTAssertEqual(schema?.fields.map(\.key), ["Title", "Year"])
+        XCTAssertEqual(schema?.fields.map(\.type), [.text, .number])
+    }
+
+    // Invalid input — rejected before the service is called
+
+    func test_givenMalformedDSL_whenSubmitting_thenNoCreateCallIsMade() async {
+        // The parse failure is now caught client-side and reported against the
+        // field the user typed into, instead of arriving as an opaque 400.
+        let stub = StubListsService()
+        let viewModel = NewListViewModel(lists: stub, eventBus: ListsEventBus())
+        viewModel.title = "Films"
+        viewModel.schemaDSL = "Bogus without a colon"
+
+        await viewModel.submit()
+
+        XCTAssertFalse(viewModel.didFinish)
+        XCTAssertNotNil(viewModel.error)
+        let recorded = await stub.recorded
+        XCTAssertTrue(recorded.isEmpty, "a malformed schema never reaches the network")
+    }
+
+    // Boundary — no schema typed at all
+
+    func test_givenNoDSL_whenSubmitting_thenSchemaIsNilRatherThanEmpty() async {
+        let stub = StubListsService()
+        await stub.enqueueCreate(success: ListsFixtures.ownedList(id: "L1", title: "Bare"))
+        let viewModel = NewListViewModel(lists: stub, eventBus: ListsEventBus())
+        viewModel.title = "Bare"
+        viewModel.schemaDSL = "   "
+
+        await viewModel.submit()
+
+        let recorded = await stub.recorded
+        guard case .create(_, _, let schema, _, _)? = recorded.first?.kind else {
+            return XCTFail("expected create")
+        }
+        XCTAssertNil(schema, "whitespace is not a schema")
+    }
+}

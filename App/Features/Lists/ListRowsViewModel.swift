@@ -68,7 +68,7 @@ final class ListRowsViewModel {
     var entityFields: [SchemaEntityField] {
         schema.fields.map { field in
             SchemaEntityField(
-                name: field.name,
+                name: field.label,
                 typeToken: field.type.dslToken,
                 options: field.type.carriesOptions ? (field.enumValues ?? []) : [],
                 nullable: field.nullable
@@ -101,8 +101,20 @@ final class ListRowsViewModel {
     /// non-empty; falls back to the union of observed row keys when
     /// the list has no schema yet (so the table still shows something
     /// useful for schema-less lists).
-    var columns: [String] {
-        if !schema.fields.isEmpty { return schema.fields.map(\.name) }
+    ///
+    /// Each column carries its **key** and its **label** separately. This used
+    /// to be a `[String]` of `field.name` used both as the header text and as
+    /// the `row.fields[…]` subscript — correct only while the two were the same
+    /// token, which they are in the client's DSL and are not on the server
+    /// (`propertyKey` vs `propertyName`). With the schema wire shape fixed
+    /// (GitHub #85), a column labelled "Publication Year" over a key of `year`
+    /// would have rendered every cell empty.
+    var columns: [ListColumn] {
+        if !schema.fields.isEmpty {
+            return schema.orderedFields
+                .filter { $0.isVisible != false }
+                .map { ListColumn(key: $0.key, label: $0.label) }
+        }
         var seen: Set<String> = []
         var ordered: [String] = []
         for row in rows {
@@ -110,7 +122,8 @@ final class ListRowsViewModel {
                 ordered.append(key)
             }
         }
-        return ordered.sorted()
+        // With no schema the key is all there is, so it doubles as the label.
+        return ordered.sorted().map { ListColumn(key: $0, label: $0) }
     }
 
     /// Currently selected row, if any.

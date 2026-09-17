@@ -24,7 +24,11 @@ extension LinkedIdentity {
             profileURL: dto.profileUrl.flatMap(URL.init(string:)),
             avatarURL: dto.avatarUrl.flatMap(URL.init(string:)),
             connectedAt: dto.connectedAt,
-            lastVerifiedAt: dto.lastVerifiedAt
+            lastVerifiedAt: dto.lastVerifiedAt,
+            // The Mastodon host, split out of the instance-qualified token
+            // (`"mastodon:techhub.social"`). Without this the instance was
+            // discarded and the provider itself fell to `.other` (GitHub #47).
+            instance: IdentityProvider.instanceHost(fromWireToken: dto.provider)
         )
     }
 }

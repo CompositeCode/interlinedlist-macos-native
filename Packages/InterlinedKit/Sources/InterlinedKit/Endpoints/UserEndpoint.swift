@@ -22,9 +22,48 @@ public enum User {
     }
 
     /// `GET /api/user/identities` — linked OAuth identities.
-    /// **Session-only** per decision 0001 (Bearer is rejected here).
+    ///
+    /// **Corrected 2026-09-15 (GitHub #47): this route accepts Bearer.** A live
+    /// probe with a valid sync-token returns `200` with the full identity list,
+    /// so the `.session` annotation was wrong. It was not a hard failure — the
+    /// kit has a cookie-session transport that lazily logs in — but it cost an
+    /// extra credentialed round-trip on every load of the Identities pane and
+    /// authenticated the same request a second way for no reason.
+    ///
+    /// This is the same class of error as the `send-verification-email`
+    /// correction in PR #83, in the opposite direction: an annotation inferred
+    /// from one observation rather than from a probe under the transport in
+    /// question.
     public static func identities() -> Request<IdentitiesResponse> {
-        Request(method: .get, path: "/api/user/identities", auth: .session)
+        Request(method: .get, path: "/api/user/identities", auth: .bearer)
+    }
+
+    /// `DELETE /api/user/identities` — unlink a provider.
+    ///
+    /// The provider token is instance-qualified for Mastodon
+    /// (`"mastodon:techhub.social"`), because an account can link several
+    /// instances and a bare `"mastodon"` would be ambiguous — the server could
+    /// disconnect the wrong one. Callers should pass
+    /// `LinkedIdentity.providerWireToken`, which is exactly that value.
+    public static func unlinkIdentity(provider: String) -> Request<MessageResponse> {
+        Request(
+            method: .delete,
+            path: "/api/user/identities",
+            query: [.string("provider", provider)],
+            auth: .bearer
+        )
+    }
+
+    /// `POST /api/user/identities/verify` — re-check a connection is still live.
+    ///
+    /// The web's Verify action. Same instance-qualified token as unlink.
+    public static func verifyIdentity(provider: String) -> Request<VerifyIdentityResponse> {
+        Request(
+            method: .post,
+            path: "/api/user/identities/verify",
+            body: .json(VerifyIdentityRequest(provider: provider)),
+            auth: .bearer
+        )
     }
 
     /// `GET /api/user/organizations` — organizations the user belongs to, with

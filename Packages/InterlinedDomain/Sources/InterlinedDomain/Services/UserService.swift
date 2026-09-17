@@ -22,6 +22,28 @@ public protocol UserServicing: Sendable {
     /// `{ identities: [...] }` envelope is internal.
     func identities() async throws -> [LinkedIdentity]
 
+    /// Disconnects a linked provider (GitHub #47 / G33).
+    ///
+    /// - Parameter identity: the identity to remove. Takes the whole value
+    ///   rather than a provider case so Mastodon addresses the **right
+    ///   instance**: the wire token is `"mastodon:techhub.social"`, and a bare
+    ///   `"mastodon"` on an account with two instances is ambiguous enough that
+    ///   the server could disconnect the wrong one.
+    ///
+    /// Destructive: disconnecting a cross-posting provider stops cross-posts to
+    /// it. The caller is expected to confirm first and say what stops working.
+    func unlinkIdentity(_ identity: LinkedIdentity) async throws
+
+    /// Re-checks that a linked provider still works.
+    ///
+    /// Returns `true` when the connection is live. Same instance-qualified
+    /// addressing as `unlinkIdentity`.
+    func verifyIdentity(_ identity: LinkedIdentity) async throws -> Bool
+
+    /// The GitHub connection status, including the github.com page that manages
+    /// this app's organization access.
+    func githubConnectionStatus() async throws -> GitHubConnection
+
     /// Loads the organizations the signed-in user belongs to, with their own
     /// membership role and joined-at. Powers the org switcher. The
     /// `{ organizations: [...] }` envelope is internal.
@@ -235,6 +257,23 @@ public final class UserService: UserServicing {
         self.baseURL = baseURL
     }
 
+    public func unlinkIdentity(_ identity: LinkedIdentity) async throws {
+        _ = try await api.send(User.unlinkIdentity(provider: identity.providerWireToken))
+    }
+
+    public func verifyIdentity(_ identity: LinkedIdentity) async throws -> Bool {
+        let response = try await api.send(User.verifyIdentity(provider: identity.providerWireToken))
+        return response.isVerified
+    }
+
+    public func githubConnectionStatus() async throws -> GitHubConnection {
+        let response = try await api.send(GitHub.connectionStatus())
+        return GitHubConnection(
+            isConfigured: response.configured ?? false,
+            manageOrgAccessURL: response.manageOrgAccessUrl.flatMap(URL.init(string:))
+        )
+    }
+
     public func identities() async throws -> [LinkedIdentity] {
         let response = try await api.send(User.identities())
         return response.identities.map(LinkedIdentity.init(from:))
@@ -282,6 +321,9 @@ public final class UserService: UserServicing {
         case .mastodon: oauthProvider = .mastodon
         case .bluesky:  oauthProvider = .bluesky
         case .linkedin: oauthProvider = .linkedin
+        // X has an OAuth route like the rest; it was absent from the domain
+        // provider enum, not from the kit's (GitHub #47).
+        case .twitter:  oauthProvider = .twitter
         case .other(let token):
             throw UserServiceError.unsupportedProvider(token)
         }
@@ -441,6 +483,9 @@ public final class UserService: UserServicing {
         case .mastodon: oauthProvider = .mastodon
         case .bluesky:  oauthProvider = .bluesky
         case .linkedin: oauthProvider = .linkedin
+        // X has an OAuth route like the rest; it was absent from the domain
+        // provider enum, not from the kit's (GitHub #47).
+        case .twitter:  oauthProvider = .twitter
         case .other(let token):
             throw UserServiceError.unsupportedProvider(token)
         }
@@ -494,6 +539,9 @@ public final class UserService: UserServicing {
         case .mastodon: oauthProvider = .mastodon
         case .bluesky:  oauthProvider = .bluesky
         case .linkedin: oauthProvider = .linkedin
+        // X has an OAuth route like the rest; it was absent from the domain
+        // provider enum, not from the kit's (GitHub #47).
+        case .twitter:  oauthProvider = .twitter
         case .other(let token):
             throw UserServiceError.unsupportedProvider(token)
         }

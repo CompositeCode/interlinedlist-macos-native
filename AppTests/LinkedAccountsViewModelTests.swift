@@ -114,7 +114,11 @@ final class LinkedAccountsViewModelTests: XCTestCase {
 
         let providers = vm.linkableProviders
 
-        XCTAssertEqual(providers, [.github, .mastodon, .bluesky, .linkedin])
+        // X is included since GitHub #47. It was absent even though the test
+        // account has a linked X identity and cross-posting to X is shipped —
+        // so the one provider you could already post to was the one you could
+        // not connect.
+        XCTAssertEqual(providers, [.github, .mastodon, .bluesky, .linkedin, .twitter])
     }
 
     // MARK: - linkNatively (NW-5)

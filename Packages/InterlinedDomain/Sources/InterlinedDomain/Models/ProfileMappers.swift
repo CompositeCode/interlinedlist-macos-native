@@ -69,7 +69,13 @@ extension UserProfile {
             followerCount: dto.followerCount,
             followingCount: dto.followingCount,
             isPrivate: dto.isPrivate ?? false,
-            joinedAt: dto.joinedAt
+            joinedAt: dto.joinedAt,
+            // Decoded by the kit since the endpoint shipped and dropped here,
+            // so the header could only ever show two of the web profile's five
+            // stat tiles (GitHub #44).
+            publicMessageCount: dto.publicMessageCount,
+            publicListCount: dto.publicListCount,
+            headerImageURL: dto.headerImage.flatMap(URL.init(string:))
         )
     }
 
@@ -87,7 +93,12 @@ extension UserProfile {
             followerCount: counts.followers,
             followingCount: counts.following,
             isPrivate: isPrivate,
-            joinedAt: joinedAt
+            joinedAt: joinedAt,
+            // Carried through: the follow-counts stitch is about followers and
+            // following, and must not blank the content counts on its way past.
+            publicMessageCount: publicMessageCount,
+            publicListCount: publicListCount,
+            headerImageURL: headerImageURL
         )
     }
 
