@@ -22,7 +22,7 @@ struct AIDocumentSheet: View {
     /// populated without the host having to hold lists it does not otherwise need.
     @State private var lists: [OwnedList] = []
     /// Documents the user owns, offered when deriving from an article.
-    var documents: [Document] = []
+    var documents: [InterlinedDomain.Document] = []
     /// Called after a drafted document is created, so the host can reload it.
     var onCreated: (() async -> Void)?
 

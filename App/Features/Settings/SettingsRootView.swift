@@ -20,7 +20,13 @@ import SwiftUI
 /// opens on it.
 enum SettingsTab: String, CaseIterable, Hashable {
     case linkedAccounts
+    // Integrations (#47/PR #93) and Profile (#46/PR #92) landed after this enum
+    // did — PR #94 wrote it against a `dev` that had neither. Their tabs existed
+    // without tags until this merge, which under `TabView(selection:)` means
+    // they could not be programmatically selected at all.
+    case integrations
     case account
+    case profile
     case preferences
     case blockedAndMuted
     case notifications
@@ -51,12 +57,22 @@ struct SettingsRootView: View {
                 .tabItem {
                     Label("Integrations", systemImage: "app.connected.to.app.below.fill")
                 }
+                .tag(SettingsTab.integrations)
 
             AccountSettingsView()
                 .tabItem {
                     Label("Account", systemImage: "person.crop.circle")
                 }
                 .tag(SettingsTab.account)
+
+            // Identity: display name, bio, avatar, theme and the per-message
+            // character cap (GitHub #46 / G34). Until this pane existed the
+            // display name and bio were uneditable from macOS entirely.
+            ProfileSettingsView()
+                .tabItem {
+                    Label("Profile", systemImage: "person.text.rectangle")
+                }
+                .tag(SettingsTab.profile)
 
             // Server-synced account preferences (work-consolidation.md — settings
             // storage) via `POST /api/user/update`.

@@ -54,9 +54,33 @@ final class SidebarProfileGroupTests: XCTestCase {
     func test_givenTheSettingsTabs_whenAddressed_thenTheirIdentitiesAreStable() {
         // The raw values are persisted in `@AppStorage`, so renaming a case
         // silently sends an existing user to a different pane on next launch.
-        XCTAssertEqual(SettingsTab.linkedAccounts.rawValue, "linkedAccounts")
-        XCTAssertEqual(SettingsTab.preferences.rawValue, "preferences")
-        XCTAssertEqual(SettingsTab.allCases.count, 9)
+        //
+        // Pinned as a full set rather than a count. The count alone was here
+        // before and did not catch the thing that actually went wrong: two panes
+        // (Integrations, Profile) shipped as `TabView` children with **no
+        // `.tag(...)`**, because the enum was written on a branch that predated
+        // both. The count was right; the tabs were unreachable. A set at least
+        // fails loudly when a pane arrives without an identity.
+        XCTAssertEqual(
+            Set(SettingsTab.allCases.map(\.rawValue)),
+            [
+                "linkedAccounts", "integrations", "account", "profile",
+                "preferences", "blockedAndMuted", "notifications", "security",
+                "devices", "documentSync", "crashReporting"
+            ]
+        )
+    }
+
+    func test_givenATabTheSidebarTargets_whenResolved_thenItExists() {
+        // The sidebar's Settings and Integrations rows store a target before
+        // `SettingsLink` opens the scene, because `SettingsLink` cannot address
+        // a tab itself. A target naming a case that does not exist would not
+        // compile — but one naming the *wrong* case compiles perfectly, which is
+        // exactly what happened: the Integrations row pointed at
+        // `.linkedAccounts` while no Integrations tab existed, and stayed
+        // pointing there after one arrived.
+        XCTAssertEqual(SettingsTab(rawValue: "integrations"), .integrations)
+        XCTAssertEqual(SettingsTab(rawValue: "preferences"), .preferences)
     }
 
     func test_givenASettingsTabValue_whenRoundTripped_thenItSurvivesStorage() {

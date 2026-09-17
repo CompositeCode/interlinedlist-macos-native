@@ -71,6 +71,12 @@ final class ComposerViewModel {
     /// built-in `ContentLimits.default` for the character counter.
     private let contentLimits: ContentLimitsProviding?
 
+    /// The account's own per-message character cap, injected by the composition
+    /// root from the session-cached `CurrentUser` (GitHub #46). `nil` when no
+    /// account has resolved, in which case the platform ceiling stands alone
+    /// rather than a guessed default standing in for it.
+    private let accountMessageCap: Int?
+
     /// LinkedIn posting-targets surface (work-consolidation.md G11a). Optional so
     /// preview / test hosts without it keep the plain boolean toggle behaviour.
     private let linkedIn: LinkedInServicing?
@@ -336,7 +342,8 @@ final class ComposerViewModel {
         contentLimits: ContentLimitsProviding? = nil,
         linkedIn: LinkedInServicing? = nil,
         initialVisibility: Visibility = .public,
-        initialShowsAdvancedOptions: Bool = true
+        initialShowsAdvancedOptions: Bool = true,
+        accountMessageCap: Int? = nil
     ) {
         self.messages = messages
         self.eventBus = eventBus
@@ -351,6 +358,7 @@ final class ComposerViewModel {
         self.onSubscriberLapse = onSubscriberLapse
         self.userService = userService
         self.contentLimits = contentLimits
+        self.accountMessageCap = accountMessageCap
         self.linkedIn = linkedIn
         self.scheduledAt = Date().addingTimeInterval(3600)
         // Defaults to `true` so previews and existing tests that don't pass a
@@ -377,9 +385,20 @@ final class ComposerViewModel {
     /// Refreshes `messageCharacterLimit` from the server (work-consolidation.md
     /// G14). No-op when no provider is wired; the provider itself never throws
     /// (it falls back to `ContentLimits.default`), so the limit is always sane.
+    ///
+    /// The budget is the **lower** of the platform ceiling and the account's own
+    /// `maxMessageLength` cap (GitHub #46). This used to read the platform
+    /// ceiling alone, which ignored a cap the user had deliberately set — and
+    /// the numbers make the other direction reachable too: the account field
+    /// accepts up to `10000` while the platform stops at `5000`, so trusting the
+    /// account value alone would let the composer accept a message the server
+    /// then rejects.
     func refreshLimits() async {
         guard let contentLimits else { return }
-        messageCharacterLimit = await contentLimits.limits().messageMaxContentLength
+        let limits = await contentLimits.limits()
+        messageCharacterLimit = limits.effectiveMessageLength(
+            accountCap: accountMessageCap
+        )
     }
 
     func setVisibility(_ visibility: Visibility) {

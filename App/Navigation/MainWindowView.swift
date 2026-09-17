@@ -183,13 +183,19 @@ struct MainWindowView: View {
 
                     // `SettingsLink` opens the window but cannot address a tab,
                     // so the target is stored first and the scene opens on it.
+                    //
+                    // This targeted `.linkedAccounts` until now — not a typo, but
+                    // the honest best available when PR #94 wrote it against a
+                    // `dev` where no Integrations tab existed yet. PR #93 has
+                    // since added one, so a row labelled Integrations that opens
+                    // Linked accounts is now simply wrong.
                     SettingsLink {
                         Label("Integrations", systemImage: "app.connected.to.app.below.fill")
                             .foregroundStyle(ILColor.onMasthead)
                     }
                     .buttonStyle(.plain)
                     .simultaneousGesture(TapGesture().onEnded {
-                        settingsTab = .linkedAccounts
+                        settingsTab = .integrations
                     })
                 } label: {
                     Label("Profile", systemImage: "person.crop.circle")
