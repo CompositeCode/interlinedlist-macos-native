@@ -17,7 +17,9 @@ Live response for a configured subscriber:
   "quota": { "usedToday": 0, "dailyLimit": 50, "remaining": 50 } }
 ```
 
-AI is subscriber-gated **and** requires the account to have supplied its own provider key on the web Integrations page, so `providers` can be empty for a paying user. Call this before showing the assistant so a refusal can be explained rather than thrown.
+AI is subscriber-gated. Call this before showing the assistant so a refusal can be explained rather than thrown.
+
+> **⚠️ CORRECTED 2026-09-06 — the provisioning model changed.** This section originally read *"requires the account to have supplied its own provider key on the web Integrations page"*. That is **no longer true**: per `/help/ai` and `/help/settings`, *"AI is powered by Claude and provided by InterlinedList. You do not supply an API key, and there is no separate AI bill."* The live `/integrations` page has no AI-key section. So an empty `providers[]` means **the site's AI provider is temporarily unconfigured** — a service-side state — not a user misconfiguration, and the documented client behaviour is to **hide the AI controls** rather than ask the user to fix it. Tracked as `work-consolidation.md` G30.
 
 ## AI — the `feature` enum (complete)
 
@@ -44,7 +46,7 @@ Request: `{ feature, input, context? }`. `suggest` **previews only**; nothing pe
   "quota": { "usedToday": 1, "dailyLimit": 50 } }
 ```
 
-`usage` and `quota` are worth surfacing — the user is spending their own provider key.
+`quota` is worth surfacing — it is the account's 50/day allowance, and both the preview and the confirmed action count against it. `usage` (tokens, model) is InterlinedList's own spend, not the user's, so treat it as diagnostic rather than as a bill.
 
 ### Artifacts, captured one live call per feature (2026-09-05)
 
@@ -142,7 +144,7 @@ Three separate attempts on two days, with different briefs (all comfortably over
 {"error":"The AI provider rejected the request.","code":"provider_error"}
 ```
 
-Every other feature succeeds on the same account, key, and model, so this is not entitlement, quota, or input length. The client models the feature and maps the failure to `AIError.providerRejected`, which presents as "the AI provider couldn't complete that request" rather than blaming the user — but the feature cannot work until the server side is fixed. Tracked as a backend ask in [`work-consolidation.md` §2](../../work-consolidation.md#2c-backend-confirmation--polish-asks).
+Every other feature succeeds on the same account and model, so this is not entitlement, quota, or input length. **Re-confirmed 2026-09-06 from a logged-in browser session — a fourth failure, and notably it took ~4 minutes to return the 502 rather than failing fast, which suggests a server-side timeout or provider retry loop.** The client models the feature and maps the failure to `AIError.providerRejected`, which presents as "the AI provider couldn't complete that request" rather than blaming the user — but the feature cannot work until the server side is fixed. Tracked as a backend ask in [`work-consolidation.md` §2](../../work-consolidation.md#2c-backend-confirmation--polish-asks).
 
 ## Reproducing
 
