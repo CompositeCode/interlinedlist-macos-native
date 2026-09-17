@@ -94,29 +94,211 @@ enum Fixtures {
 
     // MARK: - Lists fixtures
 
-    /// A single `ListDTO` object body (the inner JSON of one list).
+    /// A single list object, as the live API actually sends one.
+    ///
+    /// Captured 2026-09-15 from `GET /api/lists` and `POST /api/lists` on the
+    /// `.env` test account. The previous version of this fixture carried a
+    /// `"schema": "Title:text, Year:number"` key that **the server has never
+    /// sent** — a fabricated field that kept `OwnedList.schemaDescription`'s
+    /// tests green while the real thing was always `nil` (GitHub #85).
+    ///
+    /// - Parameter properties: the column projection, present on the
+    ///   single-list and write routes and absent from the collection rows.
+    ///   `nil` reproduces a collection row.
     static func listObject(
         id: String,
         title: String = "Books",
         description: String? = "Things I have read",
         isPublic: Bool? = true,
-        schema: String? = "Title:text, Year:number",
-        parentId: String? = nil
+        parentId: String? = nil,
+        properties: String? = nil
     ) -> String {
         let descJSON = description.map { "\"\($0)\"" } ?? "null"
-        let schemaJSON = schema.map { "\"\($0)\"" } ?? "null"
         let parentJSON = parentId.map { "\"\($0)\"" } ?? "null"
         let isPublicJSON = isPublic.map { $0 ? "true" : "false" } ?? "null"
+        let propertiesJSON = properties.map { ",\n          \"properties\": \($0)" } ?? ""
         return """
         {
           "id": "\(id)",
+          "userId": "usr_1",
+          "messageId": null,
+          "parentId": \(parentJSON),
+          "folderId": null,
           "title": "\(title)",
           "description": \(descJSON),
           "isPublic": \(isPublicJSON),
-          "schema": \(schemaJSON),
-          "parentId": \(parentJSON),
+          "metadata": null,
+          "source": "local",
+          "githubRepo": null,
+          "githubRepoPrivate": null,
           "createdAt": "\(createdAtISO)",
-          "updatedAt": "\(createdAtISO)"
+          "updatedAt": "\(createdAtISO)",
+          "deletedAt": null\(propertiesJSON)
+        }
+        """
+    }
+
+    /// The `properties` array exactly as `POST /api/lists` returned it for a
+    /// two-column schema. Captured, not written by hand.
+    ///
+    /// Note `propertyKey` differs from `propertyName` on the second column —
+    /// that is deliberate, and is what makes the key/label split testable.
+    static let listPropertiesJSON = """
+    [
+      {
+        "id": "prp_1",
+        "listId": "L1",
+        "propertyKey": "title",
+        "propertyName": "Title",
+        "propertyType": "text",
+        "displayOrder": 0,
+        "isRequired": true,
+        "defaultValue": null,
+        "validationRules": { "minLength": 2, "maxLength": 80 },
+        "helpText": "What is it called?",
+        "placeholder": "e.g. Dune",
+        "isVisible": true,
+        "visibilityCondition": null,
+        "createdAt": "\(createdAtISO)",
+        "updatedAt": "\(createdAtISO)"
+      },
+      {
+        "id": "prp_2",
+        "listId": "L1",
+        "propertyKey": "year",
+        "propertyName": "Publication Year",
+        "propertyType": "number",
+        "displayOrder": 1,
+        "isRequired": false,
+        "defaultValue": null,
+        "validationRules": { "min": 1000, "max": 2100 },
+        "helpText": null,
+        "placeholder": null,
+        "isVisible": true,
+        "visibilityCondition": null,
+        "createdAt": "\(createdAtISO)",
+        "updatedAt": "\(createdAtISO)"
+      }
+    ]
+    """
+
+    /// `GET /api/lists/[id]` → `{ "data": { … } }`, and with a `message` the
+    /// same envelope the create / update / schema writes answer.
+    static func listEnvelope(
+        id: String,
+        title: String = "Books",
+        description: String? = "Things I have read",
+        isPublic: Bool? = true,
+        parentId: String? = nil,
+        properties: String? = nil,
+        message: String? = nil
+    ) -> String {
+        let object = listObject(
+            id: id,
+            title: title,
+            description: description,
+            isPublic: isPublic,
+            parentId: parentId,
+            properties: properties
+        )
+        let messageJSON = message.map { "\"message\": \"\($0)\",\n          " } ?? ""
+        return """
+        { \(messageJSON)"data": \(object) }
+        """
+    }
+
+    /// `GET /api/lists/[id]/schema` → `{ "data": { name, description?, fields[] } }`.
+    ///
+    /// The field list is the captured payload from the 2026-09-15 probe, right
+    /// down to the `select` column carrying its options under **both**
+    /// `validation.options` and `options`.
+    static let listSchemaEnvelope = """
+    {
+      "data": {
+        "name": "probe",
+        "description": "recon probe",
+        "fields": [
+          {
+            "key": "title",
+            "type": "text",
+            "label": "Title",
+            "displayOrder": 0,
+            "required": true,
+            "helpText": "What is it called?",
+            "placeholder": "e.g. Dune",
+            "visible": true,
+            "validation": { "pattern": "^[A-Za-z].*$", "maxLength": 80, "minLength": 2 }
+          },
+          {
+            "key": "year",
+            "type": "number",
+            "label": "Publication Year",
+            "displayOrder": 1,
+            "required": false,
+            "visible": true,
+            "validation": { "max": 2100, "min": 1000 }
+          },
+          {
+            "key": "status",
+            "type": "select",
+            "label": "Status",
+            "displayOrder": 2,
+            "required": false,
+            "visible": true,
+            "defaultValue": "todo",
+            "validation": { "options": ["todo", "doing", "done"] },
+            "options": ["todo", "doing", "done"]
+          }
+        ]
+      }
+    }
+    """
+
+    /// A schema envelope built from `(key, type, label)` triples, for the cases
+    /// that care about mapping rather than about the full captured payload.
+    ///
+    /// Passing a `label` that differs from the `key` is the point: it is the
+    /// combination the client used to get wrong.
+    static func listSchemaEnvelope(fields: [(key: String, type: String, label: String)]) -> String {
+        let fieldObjects = fields.enumerated().map { index, field in
+            """
+            {
+              "key": "\(field.key)",
+              "type": "\(field.type)",
+              "label": "\(field.label)",
+              "displayOrder": \(index),
+              "required": false,
+              "visible": true
+            }
+            """
+        }.joined(separator: ",")
+        return """
+        { "data": { "name": "fixture", "fields": [\(fieldObjects)] } }
+        """
+    }
+
+    /// `GET /api/users/[username]/lists/[id]` → `{ "list": {…}, "ancestors": [] }`.
+    ///
+    /// A much lighter projection than the authenticated route: no `isPublic`,
+    /// no timestamps, and no columns. Captured 2026-09-15.
+    static func publicListEnvelope(
+        id: String,
+        title: String = "Books",
+        description: String? = "Things I have read",
+        parentId: String? = nil
+    ) -> String {
+        let descJSON = description.map { "\"\($0)\"" } ?? "null"
+        let parentJSON = parentId.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "list": {
+            "id": "\(id)",
+            "title": "\(title)",
+            "description": \(descJSON),
+            "parentId": \(parentJSON),
+            "children": []
+          },
+          "ancestors": []
         }
         """
     }

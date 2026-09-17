@@ -96,6 +96,11 @@ final class ListDetailViewModel {
     /// is not exposed by the API today (see
     /// `/API-backend-prompts-to-build.md` — no documented public-list
     /// clone endpoint), so this is a deliberate degradation.
+    ///
+    /// The schema is not copied, and now says so rather than passing a value
+    /// that was always `nil`: `GET /api/users/[username]/lists/[id]` returns a
+    /// light projection with no columns at all (GitHub #85), so there was never
+    /// a schema here to carry across.
     func saveToMyLists(suggestedName: String) async {
         guard let detail else { return }
         saveState = .saving
@@ -103,7 +108,7 @@ final class ListDetailViewModel {
             let created = try await lists.create(
                 title: suggestedName,
                 description: detail.description,
-                schema: detail.schemaDescription,
+                schema: nil,
                 parentId: nil,
                 isPublic: false
             )

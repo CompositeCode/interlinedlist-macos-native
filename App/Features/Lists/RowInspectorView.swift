@@ -41,6 +41,9 @@ struct RowInspectorView: View {
                     ForEach(row.fields.keys.sorted(), id: \.self) { key in
                         cellEditor(
                             key: key,
+                            label: key,
+                            helpText: nil,
+                            placeholder: nil,
                             type: .text,
                             options: [],
                             current: row.fields[key] ?? .null,
@@ -49,12 +52,19 @@ struct RowInspectorView: View {
                         )
                     }
                 } else {
-                    ForEach(viewModel.schema.fields) { field in
+                    // `key` reads and writes the cell; `label` is what the user
+                    // sees. They are the same token for a DSL-authored schema
+                    // and differ for one authored on the web (GitHub #85), so
+                    // both are passed rather than one standing in for the other.
+                    ForEach(viewModel.schema.orderedFields) { field in
                         cellEditor(
-                            key: field.name,
+                            key: field.key,
+                            label: field.label,
+                            helpText: field.helpText,
+                            placeholder: field.placeholder,
                             type: field.type,
                             options: field.enumValues ?? [],
-                            current: row.fields[field.name] ?? .null,
+                            current: row.fields[field.key] ?? .null,
                             row: row,
                             viewModel: viewModel
                         )
@@ -68,6 +78,9 @@ struct RowInspectorView: View {
     @ViewBuilder
     private func cellEditor(
         key: String,
+        label: String,
+        helpText: String?,
+        placeholder: String?,
         type: SchemaFieldType,
         options: [String],
         current: ListCellValue,
@@ -75,12 +88,14 @@ struct RowInspectorView: View {
         viewModel: ListRowsViewModel
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(key)
+            Text(label)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             switch type {
             case .text, .url, .email, .date, .number:
-                TextField(label(for: type), text: Binding(
+                // The column's own placeholder when it has one, else the
+                // type-derived hint the editor has always shown.
+                TextField(placeholder ?? self.label(for: type), text: Binding(
                     get: { editingValues[key] ?? current.displayText },
                     set: { editingValues[key] = $0 }
                 ))
@@ -102,7 +117,7 @@ struct RowInspectorView: View {
                         commitChange(row: row, key: key, type: type, viewModel: viewModel)
                     }
                 ))
-                .accessibilityLabel(key)
+                .accessibilityLabel(label)
             case .select:
                 selectEditor(
                     key: key,
@@ -118,6 +133,13 @@ struct RowInspectorView: View {
                     row: row,
                     viewModel: viewModel
                 )
+            }
+            // The server has always stored per-column help text; nothing ever
+            // read it (GitHub #85, and the blocked half of #50).
+            if let helpText, !helpText.isEmpty {
+                Text(helpText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

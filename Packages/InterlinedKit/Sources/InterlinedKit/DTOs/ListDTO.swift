@@ -71,9 +71,20 @@ public struct ListDTO: Codable, Sendable, Equatable, Identifiable {
     public let title: String
     public let description: String?
     public let isPublic: Bool?
-    /// The schema DSL string (e.g. `"Title:text, Year:number"`). Present on
-    /// detail and create responses.
+    /// Was documented as "the schema DSL string, present on detail and create
+    /// responses". It is present on **no** captured payload — the server has
+    /// never sent a `schema` key on a list object, so this decoded to `nil`
+    /// every time and `OwnedList.schemaDescription` was always empty (GitHub #85).
+    ///
+    /// Kept decodable rather than deleted so an older cached payload still
+    /// round-trips, but `properties` is the field that actually carries the
+    /// columns. Nothing should read this.
     public let schema: String?
+
+    /// The list's columns, as `GET /api/lists/[id]`, `POST /api/lists` and
+    /// `PUT /api/lists/[id]/schema` return them. Absent on the lightweight
+    /// collection rows, which is why it is optional.
+    public let properties: [ListPropertyDTO]?
     /// Parent list id for nested lists.
     public let parentId: String?
     public let createdAt: Date?
@@ -133,7 +144,8 @@ public struct ListDTO: Codable, Sendable, Equatable, Identifiable {
         githubRepoPrivate: Bool? = nil,
         role: String? = nil,
         user: ListUserDTO? = nil,
-        parent: ListParentDTO? = nil
+        parent: ListParentDTO? = nil,
+        properties: [ListPropertyDTO]? = nil
     ) {
         self.id = id
         self.title = title
@@ -151,6 +163,18 @@ public struct ListDTO: Codable, Sendable, Equatable, Identifiable {
         self.role = role
         self.user = user
         self.parent = parent
+        self.properties = properties
+    }
+
+    /// The list's columns expressed in the DSL spelling, ordered by
+    /// `displayOrder`. `nil` when the route did not return them — which is
+    /// different from "the list has no columns", and callers must not collapse
+    /// the two.
+    public var schemaFields: [ListSchemaFieldDTO]? {
+        guard let properties else { return nil }
+        return properties
+            .sorted { ($0.displayOrder ?? 0) < ($1.displayOrder ?? 0) }
+            .map(\.asSchemaField)
     }
 }
 
@@ -191,16 +215,10 @@ public struct ListParentDTO: Codable, Sendable, Equatable, Identifiable {
 }
 
 // MARK: - List schema
-
-/// Response of `GET /api/lists/[id]/schema` and `PUT /api/lists/[id]/schema`:
-/// `{ "schema": "<DSL>" }`.
-public struct ListSchemaDTO: Codable, Sendable, Equatable {
-    public let schema: String
-
-    public init(schema: String) {
-        self.schema = schema
-    }
-}
+//
+// The schema types moved to `ListSchemaDSLDTO.swift` when the wire shape was
+// corrected (GitHub #85). The old `ListSchemaDTO { schema: String }` modelled a
+// DSL string the API never accepted or returned on these routes.
 
 // MARK: - List rows
 
@@ -547,14 +565,20 @@ public struct ListRowWriteResponse: Codable, Sendable, Equatable {
 public struct CreateListRequest: Codable, Sendable, Equatable {
     public let title: String
     public let description: String?
-    public let schema: String?
+    /// The list's columns, as the **List Schema DSL object**.
+    ///
+    /// This was a `String` carrying the client's own `"Title:text"` DSL, which
+    /// the server rejects outright:
+    /// `400 {"error":"Invalid schema: DSL must be an object"}`. Creating a
+    /// schema-bearing list from macOS therefore never worked (GitHub #85).
+    public let schema: ListSchemaDSLDTO?
     public let parentId: String?
     public let isPublic: Bool?
 
     public init(
         title: String,
         description: String? = nil,
-        schema: String? = nil,
+        schema: ListSchemaDSLDTO? = nil,
         parentId: String? = nil,
         isPublic: Bool? = nil
     ) {
@@ -586,14 +610,8 @@ public struct UpdateListRequest: Codable, Sendable, Equatable {
     }
 }
 
-/// `PUT /api/lists/[id]/schema` body: `{ "schema": "<DSL>" }`.
-public struct UpdateListSchemaRequest: Codable, Sendable, Equatable {
-    public let schema: String
-
-    public init(schema: String) {
-        self.schema = schema
-    }
-}
+// `UpdateListSchemaRequest` now lives in `ListSchemaDSLDTO.swift` and carries an
+// object, not a string. See GitHub #85 for the captured payloads.
 
 /// `POST /api/lists/[id]/data` body: `{ "data": { ... } }`.
 ///
