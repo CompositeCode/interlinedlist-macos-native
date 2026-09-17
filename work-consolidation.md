@@ -15,10 +15,16 @@
 > (#67–#73) shipped without this file moving once; it drifted ~330 tests and two API re-measures
 > behind the code, and six issues it listed as open had already shipped. See
 > `.claude/skills/doc-engineer/assets/docs-quality-checklist.md`.
+>
+> It happened again immediately: PRs **#86–#107** (2026-09-15→17) shipped twenty-two changes, sixteen
+> §1f rows, and ~800 tests before this file moved. The rule postdates most of them, which is the
+> excuse and not a defence — this sync is the catch-up, and the rule now applies from here.
 
-- **Consolidated:** 2026-08-15 · **Last synced to code:** 2026-09-14 · **Last re-measured against the live API:** 2026-09-14 (`GET /api/openapi.json` under a Bearer token from the `.env` test account: **232 paths / 303 operations**, OpenAPI 3.1.0, `InterlinedList API 0.1.0`; the client builds **200** request builders covering **194** spec operations) · **Branch:** `dev` @ `01bc1a9` (⚠️ `main` is **28 commits behind** — catch it up before a release cut) · **Bundle:** `com.interlinedlist.macos` · **Team:** `BJA9558E4B`
+- **Consolidated:** 2026-08-15 · **Last synced to code:** 2026-09-17 · **Last re-measured against the live API:** 2026-09-14 (`GET /api/openapi.json` under a Bearer token from the `.env` test account: **232 paths / 303 operations**, OpenAPI 3.1.0, `InterlinedList API 0.1.0`; the client builds **200** request builders covering **194** spec operations) · **Branch:** `dev` @ `e39e9ab` (⚠️ `main` is far behind — catch it up before a release cut) · **Bundle:** `com.interlinedlist.macos` · **Team:** `BJA9558E4B`
 - **Structure:** [§1 Immediate work (do now)](#1-immediate-work--unblocked-do-now) — including [§1c verb defects](#1c-live-verb-defects--fix-first) and [§1d the 2026-09-05 parity batch](#1d-new-feature-areas-2026-09-05-re-measure) → [§2 Blocked work (backend / spike-first)](#2-blocked-work--backend-gated-or-spike-first) → [§3 Final work (release & App Store)](#3-final-work--release--app-store)
-- **Test baseline (all green, measured 2026-09-14 on `dev` @ `01bc1a9`):** InterlinedKit **478** · InterlinedDomain **946** · InterlinedPersistence **140** · App target **954** (`** BUILD SUCCEEDED **` + `** TEST SUCCEEDED **`, gate run three times). Packages run under plain `swift test`; the App target needs `CODE_SIGNING_ALLOWED=NO` on this machine. *(Growth since the 2026-09-07 figures — Kit 398 / Domain 701 / Persistence 135 / App 702 — is G22 DM, G23 lists sharing, G24 documents tree, G25 orgs lifecycle, G35 view preferences and the public-permalink fix, i.e. PRs #67–#73. Earlier baselines: 2026-09-05 Kit 314 / Domain 619 / App 622; 2026-08-16 Kit 286 / Domain 590 / App 566.)*
+- **Test baseline (all green, measured 2026-09-17 on `dev` @ `e39e9ab`):** InterlinedKit **521** · InterlinedDomain **1100** · InterlinedPersistence **147** · App target **1113** · SyncAgent **96** (`** BUILD SUCCEEDED **` + `** TEST SUCCEEDED **`). Packages run under plain `swift test`; the App target needs `CODE_SIGNING_ALLOWED=NO` on this machine; `SyncAgent/` is **not in the Xcode scheme** and is covered by `swift test --package-path SyncAgent`. ⚠️ The kit's live `ContractTests` and the agent's `LiveAPISmokeTests` were **skipped, not run** — the `.env` account was rate-limited by the 2026-09-15/17 recon; re-run them before a release cut. *(Growth since 2026-09-14 — Kit 478 / Domain 946 / Persistence 140 / App 954 — is the 2026-09-15→17 wave: PRs #86–#107. Earlier baselines: 2026-09-07 Kit 398 / Domain 701 / Persistence 135 / App 702; 2026-09-05 Kit 314 / Domain 619 / App 622; 2026-08-16 Kit 286 / Domain 590 / App 566.)*
+
+- ⚠️ **Toolchain divergence.** This machine is on **Xcode 27**; CI (`.github/workflows/ci.yml`) pins **26.3**. That gap is not cosmetic: the macOS 27 SDK added `SwiftUI.Document`, which collided with `InterlinedDomain.Document` and stopped `dev` compiling locally while **CI stayed green** ([#98](https://github.com/CompositeCode/interlinedlist-macos-native/issues/98) / PR #99). Any domain type sharing a name with a SwiftUI symbol is one SDK update from the same break, and CI cannot see it. Decide whether to bump the pin or pin the local toolchain.
 - **Distribution model:** notarized **`.pkg`** (+ `.dmg`) is the **current** ship path (closed-source private repo, no `LICENSE`). Mac App Store is a **later** path on a separate branch. Billing is handled by the web app — the native app has **no** in-app-purchase surface; it only *reads* `customerStatus` to gate subscriber features.
 
 ---
@@ -172,7 +178,7 @@ Live and available to the test account: `GET /api/ai/status` returns `{"subscrib
 
 <a id="g17-app-settings"></a>
 **G17 · Applications: synced settings + device registry — ✅ SHIPPED 2026-09-06 (PR #25 + #30). Size M.** *(Tail: the Applications pane still needs main-workstation / rename / remove / copy-to-shared — GitHub #56.)*
-`GET/PUT/DELETE /api/user/app-settings/{appKey}`, `GET /api/user/app-settings/{appKey}/bootstrap?deviceId=…`, `GET/POST /api/user/app-settings/{appKey}/devices`, `GET/PUT /api/user/app-settings/{appKey}/devices/{deviceId}/settings`, `PATCH/DELETE /api/user/app-settings/{appKey}/devices/{deviceId}`. Per `/help/app-settings` this is the platform's *own* mechanism for companion apps: **shared settings** follow the account to every machine, **per-machine settings** stay pinned to one computer, one machine is the "main workstation" whose config seeds a brand-new device on first sign-in, and devices can be renamed or deregistered. This is the sanctioned home for the macOS app's preferences **and** the Document Sync Agent's per-machine configuration, replacing purely local `UserDefaults` state. **✅ SHIPPED 2026-09-06** (PR #25 + #30). ⚠️ **The "register an `appKey`" instruction above was wrong — no registration mechanism exists.** A read-only live probe found the segment is a free-form namespace: `GET /api/user/app-settings/<invented-key>/devices` → `200 {"devices":[]}` for a key the server has never seen, and `OPTIONS` on the parent → `allow: DELETE, GET, HEAD, OPTIONS, PUT`. The client uses `interlinedlist-macos` (`AppEnvironment.appSettingsKey`); it must stay **stable**, since changing it orphans stored settings. **Also learned live:** 404 is the ordinary first-run state, not a failure — an app key with nothing stored 404s, and `bootstrap` returns `404 {"source":"none"}` for an unseen device; both now map to empty rather than throwing. **Still unverified:** the *populated* payload shapes, since nothing is stored yet — the DTOs stay tolerant.
+`GET/PUT/DELETE /api/user/app-settings/{appKey}`, `GET /api/user/app-settings/{appKey}/bootstrap?deviceId=…`, `GET/POST /api/user/app-settings/{appKey}/devices`, `GET/PUT /api/user/app-settings/{appKey}/devices/{deviceId}/settings`, `PATCH/DELETE /api/user/app-settings/{appKey}/devices/{deviceId}`. Per `/help/app-settings` this is the platform's *own* mechanism for companion apps: **shared settings** follow the account to every machine, **per-machine settings** stay pinned to one computer, one machine is the "main workstation" whose config seeds a brand-new device on first sign-in, and devices can be renamed or deregistered. This is the sanctioned home for the macOS app's preferences **and** the Document Sync Agent's per-machine configuration, replacing purely local `UserDefaults` state. **✅ SHIPPED 2026-09-06** (PR #25 + #30). ⚠️ **The "register an `appKey`" instruction above was wrong — no registration mechanism exists.** A read-only live probe found the segment is a free-form namespace: `GET /api/user/app-settings/<invented-key>/devices` → `200 {"devices":[]}` for a key the server has never seen, and `OPTIONS` on the parent → `allow: DELETE, GET, HEAD, OPTIONS, PUT`. The client uses `interlinedlist-macos` (`AppEnvironment.appSettingsKey`); it must stay **stable**, since changing it orphans stored settings. **Also learned live:** 404 is the ordinary first-run state, not a failure — an app key with nothing stored 404s, and `bootstrap` returns `404 {"source":"none"}` for an unseen device; both now map to empty rather than throwing. **Populated shapes verified 2026-09-16** (PR #102), and five modelled guesses were wrong: writes require `baseVersion` (the family is **compare-and-set**, answering `409` with the winning document); the device fields are `deviceName`/`isDefault`, **not** `name`/`isMainWorkstation`; `PATCH` requires at least one of those two; `POST`/`PATCH` wrap the device in `{"device":…}`; and `bootstrap` returns **one** document plus a `source` tag rather than the shared+device pair modelled. Two behaviours are better than assumed: a delete **names the promoted successor**, and `POST …/devices` is an **upsert keyed on `deviceId`** — so unconditional registration would reset a renamed machine on every pane visit. The agent's own configuration moved here in PR #107 ([#104](https://github.com/CompositeCode/interlinedlist-macos-native/issues/104)).
 
 <a id="g18-notification-preferences"></a>
 **G18 · Notification preferences — ✅ SHIPPED 2026-09-06 (PR #25). Size S.**
@@ -307,32 +313,48 @@ what caused the 2026-09 drift — follow the link.)*
 | G25 orgs + org LinkedIn | [#54](https://github.com/CompositeCode/interlinedlist-macos-native/issues/54) | ✅ shipped, PR #67 |
 | G35 view preferences | [#43](https://github.com/CompositeCode/interlinedlist-macos-native/issues/43) | ✅ shipped, PR #73 |
 | Public permalink + embed | [#38](https://github.com/CompositeCode/interlinedlist-macos-native/issues/38) | ✅ shipped, PR #72 |
-| G30 AI availability copy | [#39](https://github.com/CompositeCode/interlinedlist-macos-native/issues/39) | 🔴 live defect — `AI.swift:143` |
-| G37 entitlement matrix | [#40](https://github.com/CompositeCode/interlinedlist-macos-native/issues/40) | 🔨 built, unmerged |
-| G38 email-verification gate | [#41](https://github.com/CompositeCode/interlinedlist-macos-native/issues/41) | 🔨 built, unmerged |
-| `accountStatus` unmodelled | [#42](https://github.com/CompositeCode/interlinedlist-macos-native/issues/42) | 🔨 built, unmerged |
-| G32 My Profile | [#44](https://github.com/CompositeCode/interlinedlist-macos-native/issues/44) | ☐ unbuilt — do first |
-| G33 Integrations | [#47](https://github.com/CompositeCode/interlinedlist-macos-native/issues/47) | ☐ unbuilt |
-| G34 profile settings | [#46](https://github.com/CompositeCode/interlinedlist-macos-native/issues/46) | ☐ unbuilt |
-| G31 sidebar IA | [#45](https://github.com/CompositeCode/interlinedlist-macos-native/issues/45) | ☐ unbuilt — **last** in the cluster |
-| G36 profile location | [#57](https://github.com/CompositeCode/interlinedlist-macos-native/issues/57) | ☐ unbuilt |
-| Applications pane tail | [#56](https://github.com/CompositeCode/interlinedlist-macos-native/issues/56) | ☐ unbuilt |
-| Lists form polish | [#50](https://github.com/CompositeCode/interlinedlist-macos-native/issues/50) | ☐ unbuilt |
-| GitHub-backed list creation | [#51](https://github.com/CompositeCode/interlinedlist-macos-native/issues/51) | ☐ unbuilt |
-| **G40 saved list views** | [**#81**](https://github.com/CompositeCode/interlinedlist-macos-native/issues/81) | ☐ **newly found 2026-09-14** |
+| G37 entitlement matrix · G38 email-verification gate · `accountStatus` | [#40](https://github.com/CompositeCode/interlinedlist-macos-native/issues/40) · [#41](https://github.com/CompositeCode/interlinedlist-macos-native/issues/41) · [#42](https://github.com/CompositeCode/interlinedlist-macos-native/issues/42) | ✅ shipped, PR #83 |
+| G30 AI availability copy | [#39](https://github.com/CompositeCode/interlinedlist-macos-native/issues/39) | ✅ shipped, PRs #83 + #88 |
+| G32 My Profile | [#44](https://github.com/CompositeCode/interlinedlist-macos-native/issues/44) | ✅ shipped, PR #90 |
+| G33 Integrations | [#47](https://github.com/CompositeCode/interlinedlist-macos-native/issues/47) | ✅ shipped, PR #93 — *partial, see below* |
+| G34 profile settings | [#46](https://github.com/CompositeCode/interlinedlist-macos-native/issues/46) | ✅ shipped, PR #92 |
+| G31 sidebar IA | [#45](https://github.com/CompositeCode/interlinedlist-macos-native/issues/45) | ✅ shipped, PR #94 |
+| Applications pane tail | [#56](https://github.com/CompositeCode/interlinedlist-macos-native/issues/56) | ✅ shipped, PR #102 |
+| Lists form polish | [#50](https://github.com/CompositeCode/interlinedlist-macos-native/issues/50) | ✅ shipped, PR #101 — *3 of 4 items; From Template has no route* |
+| **G40 saved list views** | [#81](https://github.com/CompositeCode/interlinedlist-macos-native/issues/81) | ✅ shipped, PR #105 |
+| App-target test flake | [#82](https://github.com/CompositeCode/interlinedlist-macos-native/issues/82) | ✅ fixed, PR #86 |
+| `/api/lists/{id}` decode bug · list-schema wire contract | [#75](https://github.com/CompositeCode/interlinedlist-macos-native/issues/75) · [#85](https://github.com/CompositeCode/interlinedlist-macos-native/issues/85) | ✅ fixed, PR #87 |
+| Notification tray semantics | [#80](https://github.com/CompositeCode/interlinedlist-macos-native/issues/80) | ✅ fixed, PR #89 |
+| Notification type vocabulary | [#95](https://github.com/CompositeCode/interlinedlist-macos-native/issues/95) | ✅ fixed, PR #96 |
+| Sync-outbox FIFO ordering | [#84](https://github.com/CompositeCode/interlinedlist-macos-native/issues/84) | ✅ fixed, PR #100 |
+| Xcode 27 `Document` collision | [#98](https://github.com/CompositeCode/interlinedlist-macos-native/issues/98) | ✅ fixed, PR #99 |
+| `APIError` drops structured bodies | [#103](https://github.com/CompositeCode/interlinedlist-macos-native/issues/103) | ✅ shipped, PR #106 — *consumers not yet wired* |
+| Sync-agent config → per-machine settings | [#104](https://github.com/CompositeCode/interlinedlist-macos-native/issues/104) | ✅ shipped, PR #107 |
+| Docs consolidation | [#65](https://github.com/CompositeCode/interlinedlist-macos-native/issues/65) | ✅ shipped, PR #97 |
+| G36 profile location | [#57](https://github.com/CompositeCode/interlinedlist-macos-native/issues/57) | 🟡 **read-only half shipped** (PR #92); setter blocked on [#91](https://github.com/CompositeCode/interlinedlist-macos-native/issues/91) |
+| GitHub-backed list creation | [#51](https://github.com/CompositeCode/interlinedlist-macos-native/issues/51) | ⛔ needs a repository on the `.env` account |
+| LinkedIn destination picker | [#79](https://github.com/CompositeCode/interlinedlist-macos-native/issues/79) | ⛔ `posting-targets` is empty — needs a linked LinkedIn account |
+| DM decoder tightening | [#76](https://github.com/CompositeCode/interlinedlist-macos-native/issues/76) | ⛔ needs a populated `items[]` — **one DM to the recon account** |
+| DM deep-link producer | [#77](https://github.com/CompositeCode/interlinedlist-macos-native/issues/77) | ⛔ `.directMessage` kind shipped (PR #96); producer needs a real DM row |
+| Document presence | [#78](https://github.com/CompositeCode/interlinedlist-macos-native/issues/78) | ⛔ envelopes confirmed 2026-09-17; `users[]` row needs a second account |
+| Profile location cannot be cleared | [#91](https://github.com/CompositeCode/interlinedlist-macos-native/issues/91) | ⛔ **upstream** — no route unsets it; blocks #57 |
 | Scheduled post editing | [#55](https://github.com/CompositeCode/interlinedlist-macos-native/issues/55) → [#74](https://github.com/CompositeCode/interlinedlist-macos-native/issues/74) | ⛔ upstream route does not exist |
-| `/api/lists/{id}` decode bug | [#75](https://github.com/CompositeCode/interlinedlist-macos-native/issues/75) | 🔴 latent |
-| DM decoder tightening | [#76](https://github.com/CompositeCode/interlinedlist-macos-native/issues/76) | ☐ needs a captured payload |
-| DM deep-link producer | [#77](https://github.com/CompositeCode/interlinedlist-macos-native/issues/77) | ☐ dead seam |
-| Document presence | [#78](https://github.com/CompositeCode/interlinedlist-macos-native/issues/78) | ☐ deferred |
-| LinkedIn destination picker | [#79](https://github.com/CompositeCode/interlinedlist-macos-native/issues/79) | ☐ after #47 |
-| Notification tray semantics | [#80](https://github.com/CompositeCode/interlinedlist-macos-native/issues/80) | 🔴 parity bug |
-| G28 dashboard · G29 blog · G39 subscription | [#61](https://github.com/CompositeCode/interlinedlist-macos-native/issues/61) | ❓ **unblocked 2026-09-14** — product decision only |
-| List folders | [#49](https://github.com/CompositeCode/interlinedlist-macos-native/issues/49) | ✋ **decided: not returning to macOS** |
-| G9 push / APNs | [#59](https://github.com/CompositeCode/interlinedlist-macos-native/issues/59) | 🔬 spike |
+| G28 dashboard · G29 blog · G39 subscription | [#61](https://github.com/CompositeCode/interlinedlist-macos-native/issues/61) | ❓ product decision only — option 3 **unblocked** |
+| List folders | [#49](https://github.com/CompositeCode/interlinedlist-macos-native/issues/49) | ✋ decided: not returning — `docs/decisions/0007` |
+| G9 push / APNs | [#59](https://github.com/CompositeCode/interlinedlist-macos-native/issues/59) | 🔬 spike — also needs a device-token route (none in the spec) |
 | G10 multi-account | [#60](https://github.com/CompositeCode/interlinedlist-macos-native/issues/60) | ⛔ session-only, re-verified 401 |
-| Backend asks | [#58](https://github.com/CompositeCode/interlinedlist-macos-native/issues/58) | ⛔ blocked |
+| Backend asks | [#58](https://github.com/CompositeCode/interlinedlist-macos-native/issues/58) | ⛔ blocked — two new asks added 2026-09-16 |
 | Release: pkg/dmg · sync agent · App Store | [#62](https://github.com/CompositeCode/interlinedlist-macos-native/issues/62) · [#63](https://github.com/CompositeCode/interlinedlist-macos-native/issues/63) · [#64](https://github.com/CompositeCode/interlinedlist-macos-native/issues/64) | §3 |
+
+**Three issues share one blocker.** [#76](https://github.com/CompositeCode/interlinedlist-macos-native/issues/76), [#77](https://github.com/CompositeCode/interlinedlist-macos-native/issues/77) and [#78](https://github.com/CompositeCode/interlinedlist-macos-native/issues/78) each need a payload
+only a *second* account can produce — a DM's `items[]` row, its notification row, and a presence
+`users[]` row. One other account sending one message, and opening one shared document, resolves all
+three. It is the highest-leverage unblock on this list.
+
+**Four more silent-decode defects were found and fixed in this wave** — the list-schema contract
+([#85](https://github.com/CompositeCode/interlinedlist-macos-native/issues/85)), the notification type vocabulary ([#95](https://github.com/CompositeCode/interlinedlist-macos-native/issues/95)), the Mastodon provider token
+([#47](https://github.com/CompositeCode/interlinedlist-macos-native/issues/47)) and the app-settings device fields ([#56](https://github.com/CompositeCode/interlinedlist-macos-native/issues/56)). Every one had **green tests written
+against fabricated fixtures**. The standing count in §1's constraints should read **seven**, not three.
 
 <a id="g40-saved-views"></a>
 **G40 · Saved list views — NEWLY FOUND 2026-09-14 ([#81](https://github.com/CompositeCode/interlinedlist-macos-native/issues/81)). Size M.**
@@ -353,12 +375,33 @@ gates on nothing. The shape implies a real collaboration model — **shared** vi
 plus **personal** views owned by the caller, with a fork operation to escape someone else's shared
 view and an `isDefault` flag per user.
 
-`config` is a **string**, not an object, so its grammar is unspecified by the schema — **probe a real
-saved view from the web before modelling it**, exactly as the G21 link-metadata and G25 members
-defects should have been. Do not guess this one.
+✅ **SHIPPED 2026-09-17** (PR #105). The probe that preceded it disproved two things this section
+asserted, and both are worth keeping written down.
 
-**Next step:** sequence after the account cluster. It is additive — nothing currently
-shipped is wrong without it.
+**`config` is an object, not a string.** The request-body schema declares `{"type":"string"}` — that is
+a generator artefact. The `ListView` schema declares it untyped and required, and sending a JSON
+object returns `201`.
+
+**It does not encode column order, visibility or sort.** This section presumed it did. `config` is a
+server-normalized whitelist of exactly four keys — **`mode`, `density`, `filters`, `search`** — and ten
+column/sort keys sent alongside were **silently stripped** with no error.
+
+Two further traps the capture caught, both now pinned by tests:
+
+- `createdAt` / `updatedAt` are marked **required** in the `ListView` schema and are **absent from
+  every live response**. A strict decoder mirroring the spec fails on every row.
+- The spec's own response example shows `config.filters: [{"key":"read","op":"eq","value":false}]`.
+  That filter was sent live and **dropped to `[]`**. Do not build a fixture from it.
+
+The validation asymmetry is encoded in the types: `scope` is a **closed** `personal|shared` enum
+because the server hard-fails an unknown token, while `mode` and `density` carry `.unknown(String)`
+because the server **silently defaults** — so an unrecognised value is a real state that must not be
+overwritten on save.
+
+⚠️ **Still unconfirmed:** the `filters` *element* grammar. The recon account's only list has an empty
+schema, so every filter references an unknown column key and is dropped — grammar failure and
+column-not-found are indistinguishable. Preserved opaquely rather than guessed. Re-probe once a
+schema-bearing list exists.
 
 ## 2. Blocked work — backend-gated or spike-first
 
