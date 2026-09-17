@@ -245,8 +245,11 @@ final class DocumentSyncEngineTests: XCTestCase {
     func test_givenOutboxWithMultipleChanges_whenSyncing_thenAllPushedInOrder() async throws {
         // Given
         let store = try SwiftDataDocumentStore.inMemory()
+        // No sleeps between enqueues: the outbox is ordered by a monotonic
+        // sequence now, not by `Date()` resolution (GitHub #84). Pushing in
+        // order is exactly what this test asserts, so enqueuing back to back is
+        // the stronger version of it.
         try await store.enqueueOutbox(.updateDocument(id: "a", title: "1", body: nil, folderId: nil, isPublic: nil))
-        try await Task.sleep(nanoseconds: 5_000_000)
         try await store.enqueueOutbox(.updateDocument(id: "b", title: "2", body: nil, folderId: nil, isPublic: nil))
         let transport = StubSyncTransport()
         await transport.enqueuePull(DocumentSyncDelta())
@@ -267,9 +270,7 @@ final class DocumentSyncEngineTests: XCTestCase {
         // Given — three changes; the middle one fails.
         let store = try SwiftDataDocumentStore.inMemory()
         try await store.enqueueOutbox(.deleteDocument(id: "first"))
-        try await Task.sleep(nanoseconds: 5_000_000)
         try await store.enqueueOutbox(.deleteDocument(id: "second"))
-        try await Task.sleep(nanoseconds: 5_000_000)
         try await store.enqueueOutbox(.deleteDocument(id: "third"))
         let transport = StubSyncTransport()
         await transport.enqueuePull(DocumentSyncDelta())
@@ -397,7 +398,16 @@ final class DocumentSyncEngineTests: XCTestCase {
 
         // When
         _ = try await engine.syncNow()
-        try await Task.sleep(nanoseconds: 50_000_000)
+        // Poll for the post-condition rather than sleeping a fixed 50 ms: the
+        // collector's own count is the thing being waited for, and a fixed wait
+        // passes on an idle machine and fails under load (the same lesson as
+        // GitHub #82).
+        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
+        while ContinuousClock.now < deadline {
+            if await collector.all.count >= 3 { break }
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(1))
+        }
         task.cancel()
 
         // Then — exact order: conflictResolved, deltaApplied, pushed.
