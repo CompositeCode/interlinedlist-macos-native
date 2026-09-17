@@ -11,6 +11,23 @@ public enum APIError: Error, Sendable, Equatable {
     case transport(String)
     case decoding(String)
     case invalidResponse
+    /// A compare-and-set settings write lost the race: the stored document moved
+    /// on since it was read and **nothing was written**.
+    ///
+    /// `current` is the winning document, taken straight from the 409 body, so a
+    /// retry can re-base without spending another request. The main app cannot
+    /// do this — its `APIClient` reduces every non-2xx body to a message string —
+    /// but this client owns its error path end to end, and the agent writes from
+    /// the background where losing the race is likeliest.
+    case versionConflict(current: DeviceSettingsDocument?)
+    /// A per-device settings write was addressed to a machine that is not in the
+    /// registry. Retrying cannot fix it; registering the device can.
+    case deviceNotRegistered
+    /// The main app has not published a device id into the shared Keychain
+    /// group yet, so there is no per-machine document to address. Distinct from
+    /// ``deviceNotRegistered``: nothing is wrong, the app just has not launched
+    /// since this agent was installed.
+    case noDeviceIdentity
 }
 
 /// The document-sync operations the engine needs. A protocol so tests can
@@ -29,7 +46,7 @@ public protocol DocumentSyncAPI: Sendable {
 /// URLSession-backed client for the InterlinedList Documents API. Reads the
 /// bearer token fresh on every request via the injected ``TokenProviding`` so a
 /// mid-run sign-in / sign-out in the main app is picked up immediately.
-public actor SyncAPIClient: DocumentSyncAPI {
+public actor SyncAPIClient: DocumentSyncAPI, DeviceSettingsAPI {
 
     private let baseURL: URL
     private let session: URLSession
@@ -138,6 +155,82 @@ public actor SyncAPIClient: DocumentSyncAPI {
         } catch {
             throw APIError.decoding("\(error)")
         }
+    }
+
+    // MARK: - DeviceSettingsAPI (GitHub issue #104)
+
+    private var deviceSettingsPathPrefix: String {
+        "/api/user/app-settings/\(pathEncode(SyncConfiguration.appSettingsKey))/devices"
+    }
+
+    public func fetchDeviceSettings(deviceId: String) async throws -> DeviceSettingsDocument? {
+        let request = try makeRequest(
+            method: "GET",
+            path: "\(deviceSettingsPathPrefix)/\(pathEncode(deviceId))/settings"
+        )
+        do {
+            return try await perform(request, as: DeviceSettingsDocument.self)
+        } catch APIError.notFound {
+            // A machine that has never written settings answers 404. That is the
+            // ordinary first-run state — the distinction the caller needs is
+            // "nothing stored" (nil) versus "could not ask" (a thrown error),
+            // because only the first one may trigger a migration.
+            return nil
+        }
+    }
+
+    public func writeDeviceSettings(
+        deviceId: String,
+        settings: [String: SettingsValue],
+        baseVersion: Int
+    ) async throws -> DeviceSettingsDocument {
+        let body = WriteDeviceSettingsBody(
+            settings: settings,
+            baseVersion: baseVersion,
+            schemaVersion: SyncConfiguration.settingsSchemaVersion
+        )
+        let request = try makeRequest(
+            method: "PUT",
+            path: "\(deviceSettingsPathPrefix)/\(pathEncode(deviceId))/settings",
+            jsonBody: body
+        )
+        do {
+            return try await perform(request, as: DeviceSettingsDocument.self)
+        } catch APIError.notFound {
+            // 404 on the *write* route is not "no document yet" — `baseVersion:
+            // 0` creates one happily. It means the device is missing from the
+            // registry, which a retry will never fix.
+            throw APIError.deviceNotRegistered
+        } catch APIError.http(let status, let responseBody) where status == 409 {
+            throw APIError.versionConflict(current: Self.conflictDocument(from: responseBody))
+        }
+    }
+
+    public func registerDevice(deviceId: String, deviceName: String) async throws {
+        let request = try makeRequest(
+            method: "POST",
+            path: deviceSettingsPathPrefix,
+            jsonBody: RegisterDeviceBody(deviceId: deviceId, deviceName: deviceName)
+        )
+        // The response wraps the device (`{"device":{…}}`) but the agent has no
+        // use for it: it registers only so the settings write that just failed
+        // can be retried.
+        _ = try await sendExpectingSuccess(request)
+    }
+
+    /// Pulls the winning document out of a 409 body.
+    ///
+    /// ```
+    /// 409 {"error":"version_conflict","code":"version_conflict","current":{…SettingsDoc…}}
+    /// ```
+    ///
+    /// Best-effort by design: a conflict whose body cannot be parsed still has
+    /// to surface as a conflict, so the retry falls back to a fresh read rather
+    /// than the whole write failing on a decoding error.
+    static func conflictDocument(from body: String?) -> DeviceSettingsDocument? {
+        guard let data = body?.data(using: .utf8) else { return nil }
+        struct ConflictEnvelope: Decodable { let current: DeviceSettingsDocument? }
+        return try? JSONCoding.makeDecoder().decode(ConflictEnvelope.self, from: data).current
     }
 
     // MARK: - Request building

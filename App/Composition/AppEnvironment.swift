@@ -627,6 +627,29 @@ final class AppEnvironment: ObservableObject {
         // who opts in *after* a crash still has a report to send.
         let crashReportService = CrashReportService()
         Self.installCrashHandler(service: crashReportService)
+        // Publish this machine's device id to the shared Keychain group at
+        // launch (GitHub issue #104), not when Settings ▸ Applications is first
+        // opened. The document-sync agent needs the id to address its
+        // per-machine settings document, and most users never visit that pane —
+        // leaving the agent stranded on local `UserDefaults` forever.
+        //
+        // **Detached, and that is not a nicety.** `DeviceIdentity.current()`
+        // reads and writes the Keychain, which is synchronous IPC to `securityd`
+        // against a shared access group. Calling it inline here hung the process
+        // at launch outright — the App test host never finished starting, and
+        // `xcodebuild test` failed with "The test runner hung before
+        // establishing connection" on every run. An unsigned or
+        // wrongly-entitled build has no claim on that access group, and the
+        // failure mode is a stall rather than a clean `errSecMissingEntitlement`.
+        //
+        // Even signed and entitled, a locked or first-unlock Keychain can make
+        // this slow. Nothing on the launch path should wait on it: the agent
+        // reads the published id on its own schedule, so being a few hundred
+        // milliseconds late costs nothing, and the Applications pane calls
+        // `current()` directly when it genuinely needs the value synchronously.
+        Task.detached(priority: .utility) {
+            DeviceIdentity.current()
+        }
         return AppEnvironment(
             messages: messages,
             lists: lists,

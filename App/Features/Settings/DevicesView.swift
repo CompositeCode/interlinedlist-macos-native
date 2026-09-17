@@ -310,6 +310,34 @@ struct DeviceSettingsInspector: View {
                     Section("Settings saved for this machine") {
                         SettingsDocumentSummary(document: document)
                     }
+                    // What the machine is actually doing, not just that it has a
+                    // document (GitHub issue #104). Only the document-sync agent
+                    // currently writes anything a human can be told about, so
+                    // this is the one interpreted section on an otherwise
+                    // deliberately opaque sheet.
+                    if let sync = DocumentSyncStatus(
+                        bag: document.bag,
+                        deviceID: inspection.device.id
+                    ) {
+                        Section("Document Sync") {
+                            LabeledContent("Sync folder") {
+                                // The path itself is not shown — see the Keys
+                                // section below on why values stay hidden.
+                                Text(sync.isConfigured ? "Configured on this machine" : "Not configured here")
+                                    .foregroundStyle(sync.isConfigured ? .primary : .secondary)
+                            }
+                            LabeledContent("Syncing") {
+                                Text(sync.isEnabled ? "On" : "Paused")
+                            }
+                            LabeledContent("Last synced") {
+                                if let lastSyncAt = sync.lastSyncAt {
+                                    Text(lastSyncAt.formatted(.relative(presentation: .named)))
+                                } else {
+                                    Text("Never").foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
                     Section("Keys") {
                         if document.bag.isEmpty {
                             Text("None").foregroundStyle(.secondary)
