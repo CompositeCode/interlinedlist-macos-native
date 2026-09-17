@@ -154,7 +154,7 @@ final class WatchedListsViewModel {
                 )
             }
         case .listCreated, .rowCreated, .rowUpdated, .rowDeleted,
-             .schemaChanged,
+             .schemaChanged, .savedViewsChanged,
              .watcherChanged, .watcherRemoved,
              .connectionAdded, .connectionRemoved:
             break

@@ -1,4 +1,5 @@
 import Foundation
+import XCTest
 import InterlinedKit
 @testable import InterlinedDomain
 
@@ -48,6 +49,17 @@ actor StubAPIClient: APIClientProtocol {
 
     private var outcomes: [Outcome] = []
     private(set) var recorded: [RecordedRequest] = []
+
+    /// The encoded `.json` request bodies, in send order, encoded with the same
+    /// kit encoder production uses.
+    ///
+    /// Added for the G40 saved-views tests: `config` must go out as a JSON
+    /// *object* (the OpenAPI request body wrongly declares it a string), and
+    /// `PUT` replaces the config whole, so "what exactly did we send" is a
+    /// correctness question at the service seam and not only at the transport
+    /// seam. `RecordedRequest` is left untouched so its `Equatable` conformance
+    /// keeps working for the suites that compare whole requests.
+    private(set) var sentBodies: [Data] = []
 
     init() {}
 
@@ -122,6 +134,29 @@ actor StubAPIClient: APIClientProtocol {
                 query: query,
                 body: bodyData
             )
+        )
+        if case .json(let value) = request.body,
+           let encoded = try? JSONCoders.makeEncoder().encode(value) {
+            sentBodies.append(encoded)
+        }
+    }
+
+}
+
+// MARK: - Body assertions
+
+extension XCTestCase {
+    /// The most recent `.json` body the stub encoded, as a dictionary.
+    ///
+    /// Lives on `XCTestCase` rather than on the actor because `[String: Any]`
+    /// is not `Sendable` and so cannot cross an actor boundary under Swift 6 —
+    /// the bytes (`sentBodies`) cross instead, and the parse happens test-side.
+    func lastSentJSON(_ api: StubAPIClient) async throws -> [String: Any] {
+        let bodies = await api.sentBodies
+        let data = try XCTUnwrap(bodies.last, "No JSON request body was recorded")
+        return try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any],
+            "Recorded request body was not a JSON object"
         )
     }
 }

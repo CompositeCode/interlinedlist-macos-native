@@ -52,6 +52,15 @@ enum ListsEvent: Sendable, Equatable {
     /// A watcher was removed from `listId`.
     case watcherRemoved(listId: String, userId: String)
 
+    /// A list's saved views changed — one was created, renamed, forked,
+    /// deleted, or made the default (work-consolidation.md G40 / issue #81).
+    ///
+    /// Carries the whole post-write collection rather than a single row
+    /// because the writes are not independent: marking a view as the default
+    /// clears the previous default, so a per-row event would leave a second
+    /// window showing two defaults at once.
+    case savedViewsChanged(listId: String, views: [SavedListView])
+
     /// A connection was created. The graph view appends.
     case connectionAdded(ListConnection)
 

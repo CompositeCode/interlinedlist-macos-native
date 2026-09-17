@@ -48,6 +48,12 @@ struct RecordedListsCall: Sendable, Equatable {
         case connections(listId: String?)
         case addConnection(from: String, to: String, label: String?)
         case removeConnection(id: String)
+        // G40 saved views (issue #81)
+        case savedViews(listId: String)
+        case createSavedView(listId: String, name: String, scope: SavedListViewScope, isDefault: Bool)
+        case updateSavedView(listId: String, viewId: String, name: String?, hasConfig: Bool, isDefault: Bool?)
+        case deleteSavedView(listId: String, viewId: String)
+        case forkSavedView(listId: String, viewId: String, name: String?)
     }
     let kind: Kind
 }
@@ -83,6 +89,19 @@ actor StubListsService: ListsServicing {
     private var removeConnectionOutcomes: [Result<Void, Error>] = []
     private var publicListOutcomes: [Result<ListDetail, Error>] = []
     private var publicRowsOutcomes: [Result<RowsPage, Error>] = []
+    private var savedViewsOutcomes: [Result<[SavedListView], Error>] = []
+    private var createSavedViewOutcomes: [Result<SavedListView, Error>] = []
+    private var updateSavedViewOutcomes: [Result<SavedListView, Error>] = []
+    private var deleteSavedViewOutcomes: [Result<Void, Error>] = []
+    private var forkSavedViewOutcomes: [Result<SavedListView, Error>] = []
+
+    /// The full `SavedListViewConfig` passed to the most recent
+    /// `updateSavedView`. The recorded-call log only captures *whether* a
+    /// config was sent; tests asserting that a density change carried the
+    /// unconfirmed `filters` / `search` through untouched read this instead —
+    /// `PUT` replaces the config whole, so what exactly was sent is the
+    /// correctness question.
+    private(set) var lastUpdatedSavedViewConfig: SavedListViewConfig?
 
     /// Cache-first read surface (PLAN.md §5 SWR). Default `[]` so unprepared
     /// paths behave like a cold cache; set a value to prime a paint-first test
@@ -171,6 +190,17 @@ actor StubListsService: ListsServicing {
     func enqueuePublicList(failure error: Error) { publicListOutcomes.append(.failure(error)) }
     func enqueuePublicRows(success page: RowsPage) { publicRowsOutcomes.append(.success(page)) }
     func enqueuePublicRows(failure error: Error) { publicRowsOutcomes.append(.failure(error)) }
+
+    func enqueueSavedViews(success views: [SavedListView]) { savedViewsOutcomes.append(.success(views)) }
+    func enqueueSavedViews(failure error: Error) { savedViewsOutcomes.append(.failure(error)) }
+    func enqueueCreateSavedView(success view: SavedListView) { createSavedViewOutcomes.append(.success(view)) }
+    func enqueueCreateSavedView(failure error: Error) { createSavedViewOutcomes.append(.failure(error)) }
+    func enqueueUpdateSavedView(success view: SavedListView) { updateSavedViewOutcomes.append(.success(view)) }
+    func enqueueUpdateSavedView(failure error: Error) { updateSavedViewOutcomes.append(.failure(error)) }
+    func enqueueDeleteSavedViewSuccess() { deleteSavedViewOutcomes.append(.success(())) }
+    func enqueueDeleteSavedView(failure error: Error) { deleteSavedViewOutcomes.append(.failure(error)) }
+    func enqueueForkSavedView(success view: SavedListView) { forkSavedViewOutcomes.append(.success(view)) }
+    func enqueueForkSavedView(failure error: Error) { forkSavedViewOutcomes.append(.failure(error)) }
 
     // MARK: ListsServicing — public browse
 
@@ -331,6 +361,52 @@ actor StubListsService: ListsServicing {
         let _: Void = try take(&removeConnectionOutcomes, label: "removeConnection")
     }
 
+    // MARK: ListsServicing — saved views (G40)
+
+    func savedViews(of listId: String) async throws -> [SavedListView] {
+        recorded.append(.init(kind: .savedViews(listId: listId)))
+        return try take(&savedViewsOutcomes, label: "savedViews")
+    }
+
+    func createSavedView(
+        listId: String,
+        name: String,
+        scope: SavedListViewScope,
+        config: SavedListViewConfig,
+        isDefault: Bool
+    ) async throws -> SavedListView {
+        recorded.append(.init(kind: .createSavedView(listId: listId, name: name, scope: scope, isDefault: isDefault)))
+        return try take(&createSavedViewOutcomes, label: "createSavedView")
+    }
+
+    func updateSavedView(
+        listId: String,
+        viewId: String,
+        name: String?,
+        config: SavedListViewConfig?,
+        isDefault: Bool?
+    ) async throws -> SavedListView {
+        recorded.append(.init(kind: .updateSavedView(
+            listId: listId,
+            viewId: viewId,
+            name: name,
+            hasConfig: config != nil,
+            isDefault: isDefault
+        )))
+        lastUpdatedSavedViewConfig = config
+        return try take(&updateSavedViewOutcomes, label: "updateSavedView")
+    }
+
+    func deleteSavedView(listId: String, viewId: String) async throws {
+        recorded.append(.init(kind: .deleteSavedView(listId: listId, viewId: viewId)))
+        let _: Void = try take(&deleteSavedViewOutcomes, label: "deleteSavedView")
+    }
+
+    func forkSavedView(listId: String, viewId: String, name: String?) async throws -> SavedListView {
+        recorded.append(.init(kind: .forkSavedView(listId: listId, viewId: viewId, name: name)))
+        return try take(&forkSavedViewOutcomes, label: "forkSavedView")
+    }
+
     // MARK: - Internals
 
     private func take<T>(_ queue: inout [Result<T, Error>], label: String) throws -> T {
@@ -479,5 +555,39 @@ enum ListsFixtures {
         label: String? = nil
     ) -> ListConnection {
         ListConnection(id: id, fromListId: from, toListId: to, label: label)
+    }
+
+    // MARK: - G40 saved-view fixtures
+
+    /// A saved view in the live eight-field shape. Defaults mirror the server's
+    /// own create default (`records` / `comfortable` / no filters), so a test
+    /// that does not care about the arrangement gets a realistic one.
+    static func savedView(
+        id: String,
+        listID: String = "L1",
+        ownerID: String = "u-owner",
+        name: String = "View",
+        scope: SavedListViewScope = .personal,
+        density: SavedListViewDensity = .comfortable,
+        filters: [ListCellValue] = [],
+        search: String? = nil,
+        isDefault: Bool = false,
+        position: Int = 0
+    ) -> SavedListView {
+        SavedListView(
+            id: id,
+            listID: listID,
+            ownerID: ownerID,
+            name: name,
+            scope: scope,
+            config: SavedListViewConfig(
+                mode: .records,
+                density: density,
+                filters: filters,
+                search: search
+            ),
+            isDefault: isDefault,
+            position: position
+        )
     }
 }
