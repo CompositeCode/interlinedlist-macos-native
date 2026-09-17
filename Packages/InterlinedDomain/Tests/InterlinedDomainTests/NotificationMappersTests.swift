@@ -12,11 +12,21 @@ final class NotificationMappersTests: XCTestCase {
     // MARK: - NotificationKind raw-value round-trip
 
     func test_givenEveryTypedKind_whenRoundTripping_thenRawValueMatches() {
-        // Given the closed set we map today.
+        // The canonical token for each kind is the **server's** spelling.
+        //
+        // The message-shaped kinds were listed here as bare `"dig"` / `"reply"`
+        // / `"mention"`, which is not what the wire carries — the live payload
+        // sends `message_dig`, `message_reply`, `message_mention`. That is the
+        // defect this round-trip test was meant to catch and instead enshrined
+        // (GitHub #95).
         let typedPairs: [(NotificationKind, String)] = [
-            (.dig, "dig"),
-            (.reply, "reply"),
-            (.mention, "mention"),
+            (.dig, "message_dig"),
+            (.reply, "message_reply"),
+            (.mention, "message_mention"),
+            (.push(hasCommentary: false), "message_push_plain"),
+            (.push(hasCommentary: true), "message_push_commentary"),
+            (.integrationReconnect, "integration_reconnect"),
+            (.directMessage, "direct_message"),
             (.followRequest, "follow_request"),
             (.followAccepted, "follow_accepted"),
             (.listShared, "list_shared"),
@@ -29,6 +39,12 @@ final class NotificationMappersTests: XCTestCase {
             XCTAssertEqual(kind.rawValue, raw, "kind→raw broke for \(kind)")
             XCTAssertEqual(NotificationKind(rawValue: raw), kind, "raw→kind broke for \(raw)")
         }
+
+        // And the bare spellings still resolve, so a server that reverts — or a
+        // cached payload written before this change — is not suddenly unreadable.
+        XCTAssertEqual(NotificationKind(rawValue: "dig"), .dig)
+        XCTAssertEqual(NotificationKind(rawValue: "reply"), .reply)
+        XCTAssertEqual(NotificationKind(rawValue: "mention"), .mention)
     }
 
     func test_givenUnknownString_whenInitKind_thenFallsBackToOther() {

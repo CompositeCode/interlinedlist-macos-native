@@ -201,6 +201,21 @@ public struct UpdateUserRequest: Encodable, Sendable, Equatable {
     /// body on 2026-09-09.
     public let notificationTrayLimit: Int?
 
+    /// The account's own per-message character cap.
+    ///
+    /// On `UserDTO` since the field existed and **absent from this request**, so
+    /// the value was readable and unwritable (GitHub #46). Verified live
+    /// 2026-09-15: the server accepts `1...10000` and rejects anything outside
+    /// it with `400 "maxMessageLength must be a positive integer between 1 and
+    /// 10000"`. It accepts a numeric string too; a number is sent because that
+    /// is what the field is.
+    ///
+    /// - Important: this is the **user's own** cap, not the platform's.
+    ///   `GET /api/limits` reports `message.maxContentLength: 5000`, and the
+    ///   account range reaches 10000 — so a user can set a cap *above* the
+    ///   platform ceiling and the composer must honour the lower of the two.
+    public let maxMessageLength: Int?
+
     public init(
         displayName: String? = nil,
         bio: String? = nil,
@@ -211,7 +226,8 @@ public struct UpdateUserRequest: Encodable, Sendable, Equatable {
         showPreviews: Bool? = nil,
         showAdvancedPostSettings: Bool? = nil,
         isPrivateAccount: Bool? = nil,
-        notificationTrayLimit: Int? = nil
+        notificationTrayLimit: Int? = nil,
+        maxMessageLength: Int? = nil
     ) {
         self.displayName = displayName
         self.bio = bio
@@ -223,12 +239,13 @@ public struct UpdateUserRequest: Encodable, Sendable, Equatable {
         self.showAdvancedPostSettings = showAdvancedPostSettings
         self.isPrivateAccount = isPrivateAccount
         self.notificationTrayLimit = notificationTrayLimit
+        self.maxMessageLength = maxMessageLength
     }
 
     private enum CodingKeys: String, CodingKey {
         case displayName, bio, theme, defaultPubliclyVisible, messagesPerPage
         case viewingPreference, showPreviews, showAdvancedPostSettings, isPrivateAccount
-        case notificationTrayLimit
+        case notificationTrayLimit, maxMessageLength
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -241,6 +258,7 @@ public struct UpdateUserRequest: Encodable, Sendable, Equatable {
         try container.encodeIfPresent(viewingPreference, forKey: .viewingPreference)
         try container.encodeIfPresent(showPreviews, forKey: .showPreviews)
         try container.encodeIfPresent(showAdvancedPostSettings, forKey: .showAdvancedPostSettings)
+        try container.encodeIfPresent(maxMessageLength, forKey: .maxMessageLength)
         try container.encodeIfPresent(isPrivateAccount, forKey: .isPrivateAccount)
         try container.encodeIfPresent(notificationTrayLimit, forKey: .notificationTrayLimit)
     }
@@ -314,7 +332,48 @@ public struct IdentitiesResponse: Decodable, Sendable, Equatable {
     }
 }
 
-/// A single linked OAuth identity (GitHub, Mastodon, Bluesky, LinkedIn).
+/// Request body for `POST /api/user/identities/verify`.
+public struct VerifyIdentityRequest: Encodable, Sendable, Equatable {
+    public let provider: String
+
+    public init(provider: String) {
+        self.provider = provider
+    }
+}
+
+/// Response of `POST /api/user/identities/verify`.
+///
+/// Every field is optional and the shape is read permissively: the verify write
+/// was **not exercised live** — it mutates a shared recon account's connection
+/// state — so this follows the documented action rather than a capture. The
+/// fields are named for what `/help/settings` describes Verify as doing.
+/// Tighten once a real response is seen; until then a missing key degrades one
+/// field rather than failing the call, and `isVerified` falls back to "the call
+/// succeeded", which is the only thing the status code really tells us.
+public struct VerifyIdentityResponse: Decodable, Sendable, Equatable {
+    public let verified: Bool?
+    public let provider: String?
+    public let message: String?
+    public let lastVerifiedAt: Date?
+
+    public init(
+        verified: Bool? = nil,
+        provider: String? = nil,
+        message: String? = nil,
+        lastVerifiedAt: Date? = nil
+    ) {
+        self.verified = verified
+        self.provider = provider
+        self.message = message
+        self.lastVerifiedAt = lastVerifiedAt
+    }
+
+    /// Whether the connection is live. A body with no `verified` key but a 2xx
+    /// status counts as verified — the route answering at all is the signal.
+    public var isVerified: Bool { verified ?? true }
+}
+
+/// A single linked OAuth identity (GitHub, Mastodon, Bluesky, LinkedIn, X).
 public struct LinkedIdentityDTO: Decodable, Sendable, Equatable {
     public let id: String
     public let provider: String

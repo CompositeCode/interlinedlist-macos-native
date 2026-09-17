@@ -406,3 +406,48 @@ public struct GitHubNextIssueNumberResponse: Decodable, Sendable, Equatable {
         number = c.firstInt("nextIssueNumber", "next_issue_number", "number", "next") ?? 0
     }
 }
+
+// MARK: - Connection status (GitHub #47 / G33)
+
+/// Response of `GET /api/auth/github/status`.
+public struct GitHubStatusResponse: Decodable, Sendable, Equatable {
+    /// Whether GitHub OAuth is configured on the server at all. `false` means
+    /// no amount of client work will make linking succeed.
+    public let configured: Bool?
+    public let clientId: String?
+    /// The github.com page that manages this app's organization access — the
+    /// "Update orgs" destination.
+    public let manageOrgAccessUrl: String?
+
+    public init(configured: Bool? = nil, clientId: String? = nil, manageOrgAccessUrl: String? = nil) {
+        self.configured = configured
+        self.clientId = clientId
+        self.manageOrgAccessUrl = manageOrgAccessUrl
+    }
+}
+
+/// One row of the bare array `GET /api/github/orgs` returns.
+///
+/// Every field optional: the live response on the test account is `[]`, so the
+/// populated row shape is **unverified**. Modelled from GitHub's own org shape,
+/// which this route almost certainly passes through — and deliberately
+/// permissive until a populated payload is captured, because guessing a required
+/// key is how the G25 org-member defect happened.
+public struct GitHubOrgDTO: Decodable, Sendable, Equatable {
+    public let id: Int?
+    public let login: String?
+    public let avatarUrl: String?
+    public let description: String?
+
+    /// The stable human identifier. `login` is what GitHub URLs and this app's
+    /// own repo slugs use; the numeric id is a fallback, and an empty string
+    /// means a row so degraded it should not be rendered.
+    public var identifier: String { login ?? id.map(String.init) ?? "" }
+
+    public init(id: Int? = nil, login: String? = nil, avatarUrl: String? = nil, description: String? = nil) {
+        self.id = id
+        self.login = login
+        self.avatarUrl = avatarUrl
+        self.description = description
+    }
+}

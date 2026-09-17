@@ -1,10 +1,24 @@
 # InterlinedList macOS — Work Consolidation
 
-**Single source of truth for remaining work, in execution order.** This file consolidates and replaces six older docs (see [Provenance](#provenance)): the parity gap lists, the backend-blocker index + paste-ready prompts, the Document Sync Agent plan, and the v1 release checklist.
+**THE single source of truth — for remaining work, shipped status, and the evidence behind both.** This file consolidates and replaces six older docs (see [Provenance](#provenance)): the parity gap lists, the backend-blocker index + paste-ready prompts, the Document Sync Agent plan, and the v1 release checklist.
 
-- **Consolidated:** 2026-08-15 · **Last synced to code:** 2026-09-05 · **Last re-measured against the live API:** 2026-09-05 (`GET /api/openapi.json` under a Bearer token from the `.env` test account: **226 paths / 294 operations**; the client builds 154) · **Branch:** `dev` (⚠️ `main` is behind — catch it up before a release cut) · **Bundle:** `com.interlinedlist.macos` · **Team:** `BJA9558E4B`
+> **Division of labour (decided 2026-09-14).** This file owns the *plan*: ordering, architecture,
+> probe evidence, API shapes, the re-measure log, and the release path. **GitHub issues own
+> *execution*** — one issue per unit of work, carrying live open/closed state, and what PRs link to.
+> Epic **#66** is a pointer to this file, not a second backlog.
+>
+> **Every item here carries its issue number.** When they disagree, this file is wrong and should be
+> corrected — the tracker is the live state.
+>
+> ⚠️ **Same-PR doc-sync rule.** A PR that ships a `G`-item, closes a parity issue, or moves the test
+> baseline **must update this file in the same PR**. Between 2026-09-07 and 2026-09-13, seven PRs
+> (#67–#73) shipped without this file moving once; it drifted ~330 tests and two API re-measures
+> behind the code, and six issues it listed as open had already shipped. See
+> `.claude/skills/doc-engineer/assets/docs-quality-checklist.md`.
+
+- **Consolidated:** 2026-08-15 · **Last synced to code:** 2026-09-14 · **Last re-measured against the live API:** 2026-09-14 (`GET /api/openapi.json` under a Bearer token from the `.env` test account: **232 paths / 303 operations**, OpenAPI 3.1.0, `InterlinedList API 0.1.0`; the client builds **200** request builders covering **194** spec operations) · **Branch:** `dev` @ `01bc1a9` (⚠️ `main` is **28 commits behind** — catch it up before a release cut) · **Bundle:** `com.interlinedlist.macos` · **Team:** `BJA9558E4B`
 - **Structure:** [§1 Immediate work (do now)](#1-immediate-work--unblocked-do-now) — including [§1c verb defects](#1c-live-verb-defects--fix-first) and [§1d the 2026-09-05 parity batch](#1d-new-feature-areas-2026-09-05-re-measure) → [§2 Blocked work (backend / spike-first)](#2-blocked-work--backend-gated-or-spike-first) → [§3 Final work (release & App Store)](#3-final-work--release--app-store)
-- **Test baseline (all green, re-run 2026-09-07 on `feat/link-metadata-g21`):** InterlinedKit **398** · InterlinedDomain **701** · InterlinedPersistence **135** · App target **702** (`** TEST SUCCEEDED **`). *(The 2026-09-05 baseline was Kit 314 / Domain 619 / App 622; growth since is G17–G20 settings, the V1–V7 verb fixes, G15/G16 AI + Create-from, and G21 link metadata.)* *(Kit/Domain dipped from 317/628 because PR #19 removed the List Folders endpoint + service tests along with the feature.)* Packages verified this session under plain `swift test`; the App target ran green under `xcodebuild test … CODE_SIGNING_ALLOWED=NO` (the signing override is still required on this machine). *(Prior 2026-08-16 baseline was Kit 286 / Domain 590 / App 566; growth is from G4 GitHub issues, sharing collaborators/invites/visibility, and timeline cross-post links.)*
+- **Test baseline (all green, measured 2026-09-14 on `dev` @ `01bc1a9`):** InterlinedKit **478** · InterlinedDomain **946** · InterlinedPersistence **140** · App target **954** (`** BUILD SUCCEEDED **` + `** TEST SUCCEEDED **`, gate run three times). Packages run under plain `swift test`; the App target needs `CODE_SIGNING_ALLOWED=NO` on this machine. *(Growth since the 2026-09-07 figures — Kit 398 / Domain 701 / Persistence 135 / App 702 — is G22 DM, G23 lists sharing, G24 documents tree, G25 orgs lifecycle, G35 view preferences and the public-permalink fix, i.e. PRs #67–#73. Earlier baselines: 2026-09-05 Kit 314 / Domain 619 / App 622; 2026-08-16 Kit 286 / Domain 590 / App 566.)*
 - **Distribution model:** notarized **`.pkg`** (+ `.dmg`) is the **current** ship path (closed-source private repo, no `LICENSE`). Mac App Store is a **later** path on a separate branch. Billing is handled by the web app — the native app has **no** in-app-purchase surface; it only *reads* `customerStatus` to gate subscriber features.
 
 ---
@@ -149,27 +163,27 @@ Six shipping calls send an HTTP verb the live server does not accept, so the fea
 Product areas that exist on the live API and in the published help docs (`https://interlinedlist.com/help`) but have **no client implementation at all**. Ordered by user-visible value. Sizes are rough. Every one is client-side buildable: the backend already ships them.
 
 <a id="g15-ai"></a>
-**G15 · AI writing & generation — HIGH, the biggest single parity gap. Size L.**
-Live and available to the test account: `GET /api/ai/status` returns `{"subscriber":true,"providers":["anthropic"],"defaultModels":{…},"quota":{"usedToday":0,"dailyLimit":50,"remaining":50}}`; the write pair is `POST /api/ai/suggest` (run a feature, return a validated **preview**) and `POST /api/ai/generate` (persist a confirmed artifact from that preview). Per `/help/ai` the surface is four features: **composer writing assistant** (rewrite, tighten, expand, fix grammar, convert-to-thread, suggest tags), **series planning** (a brief → a sequence of connected posts, or an article series), **AI list templates** (describe a structure → drafted schema + starter rows), and **AI documents** (from a topic, a list, an existing article, or a URL). Subscriber-gated, and the user brings their own OpenAI / Anthropic / Gemini key via the web Integrations page. The suggest→confirm→generate shape maps cleanly onto a preview sheet with a Confirm button. **The `feature` enum and both request/response bodies are unmodelled in the OpenAPI spec** (`{"feature": string}` is all it declares) — probe live or read the web app's network calls before building.
+**G15 · AI writing & generation — ✅ SHIPPED 2026-09-06 (PR #31). Size L.** *(Remaining defect: the availability copy, GitHub #39 — see below.)*
+Live and available to the test account: `GET /api/ai/status` returns `{"subscriber":true,"providers":["anthropic"],"defaultModels":{…},"quota":{"usedToday":0,"dailyLimit":50,"remaining":50}}`; the write pair is `POST /api/ai/suggest` (run a feature, return a validated **preview**) and `POST /api/ai/generate` (persist a confirmed artifact from that preview). Per `/help/ai` the surface is four features: **composer writing assistant** (rewrite, tighten, expand, fix grammar, convert-to-thread, suggest tags), **series planning** (a brief → a sequence of connected posts, or an article series), **AI list templates** (describe a structure → drafted schema + starter rows), and **AI documents** (from a topic, a list, an existing article, or a URL). Subscriber-gated. **⚠️ CORRECTED 2026-09-14 — AI is *not* bring-your-own-key.** `/help/ai` and `/help/settings` state that AI is **powered by Claude and provided by InterlinedList as part of the subscription**: there is no user-supplied API key and no separate AI bill. Every earlier note in this file, in `docs/spikes/ai-materialize-live-shapes.md`, and in the client saying otherwise is **void**. The practical consequence: an empty `providers[]` from `GET /api/ai/status` means a **site-side outage**, not a missing user key, and must never be presented as something the user can fix. `AI.swift:143` still renders *"Add your own AI provider key in Settings on interlinedlist.com"* — that is a live user-facing defect tracked as **GitHub #39** and fixed alongside the capability gate. The suggest→confirm→generate shape maps cleanly onto a preview sheet with a Confirm button. **The `feature` enum and both request/response bodies are unmodelled in the OpenAPI spec** (`{"feature": string}` is all it declares) — probe live or read the web app's network calls before building.
 
 <a id="g16-materialize"></a>
-**G16 · "Create from…" (materialize) — HIGH. Size M.**
+**G16 · "Create from…" (materialize) — ✅ SHIPPED 2026-09-06 (PR #31). Size M.**
 `POST /api/materialize` creates a **List, a Document, or both** from a source object. Per `/help/create-from` the sources are one or many messages, one or many lists, one or many list rows, and a whole document or a highlighted markdown selection; the preview lets the user set title/description/visibility, rename columns and change column types for the list target, and choose numbered/bulleted styling for the doc target. On macOS this is a `＋ Create` menu on a row, a selection-bar action for multi-select, and a selection menu in the document editor. Request body is unmodelled in the spec (`{"source": string}`) — probe first.
 
 <a id="g17-app-settings"></a>
-**G17 · Applications: synced settings + device registry — HIGH for a native client specifically. Size M.**
+**G17 · Applications: synced settings + device registry — ✅ SHIPPED 2026-09-06 (PR #25 + #30). Size M.** *(Tail: the Applications pane still needs main-workstation / rename / remove / copy-to-shared — GitHub #56.)*
 `GET/PUT/DELETE /api/user/app-settings/{appKey}`, `GET /api/user/app-settings/{appKey}/bootstrap?deviceId=…`, `GET/POST /api/user/app-settings/{appKey}/devices`, `GET/PUT /api/user/app-settings/{appKey}/devices/{deviceId}/settings`, `PATCH/DELETE /api/user/app-settings/{appKey}/devices/{deviceId}`. Per `/help/app-settings` this is the platform's *own* mechanism for companion apps: **shared settings** follow the account to every machine, **per-machine settings** stay pinned to one computer, one machine is the "main workstation" whose config seeds a brand-new device on first sign-in, and devices can be renamed or deregistered. This is the sanctioned home for the macOS app's preferences **and** the Document Sync Agent's per-machine configuration, replacing purely local `UserDefaults` state. **✅ SHIPPED 2026-09-06** (PR #25 + #30). ⚠️ **The "register an `appKey`" instruction above was wrong — no registration mechanism exists.** A read-only live probe found the segment is a free-form namespace: `GET /api/user/app-settings/<invented-key>/devices` → `200 {"devices":[]}` for a key the server has never seen, and `OPTIONS` on the parent → `allow: DELETE, GET, HEAD, OPTIONS, PUT`. The client uses `interlinedlist-macos` (`AppEnvironment.appSettingsKey`); it must stay **stable**, since changing it orphans stored settings. **Also learned live:** 404 is the ordinary first-run state, not a failure — an app key with nothing stored 404s, and `bootstrap` returns `404 {"source":"none"}` for an unseen device; both now map to empty rather than throwing. **Still unverified:** the *populated* payload shapes, since nothing is stored yet — the DTOs stay tolerant.
 
 <a id="g18-notification-preferences"></a>
-**G18 · Notification preferences — MEDIUM. Size S.**
+**G18 · Notification preferences — ✅ SHIPPED 2026-09-06 (PR #25). Size S.**
 `GET /api/user/notification-preferences` returns a typed event catalogue — `{"events":[{"key":"dig","label":"Digs on your messages","description":"…","channels":{"push":true,"inApp":true}}, …]}` — and `PATCH` writes it. **✅ SHIPPED 2026-09-06** (PR #25) as Settings ▸ Notifications, and the shape is **live-verified**: 8 events, and their `channels` genuinely vary per event (`reply` offers only email; `follow` offers email+push but not inApp), so the pane renders only the channels the server sends — a fixed three-switch pane would show dead controls on six of the eight. Server-driven labels and descriptions mean the pane renders itself from the payload. Also the per-event `channels.push` flags are the switchboard [G9 push](#2b-spike-first-native-gaps) will need.
 
 <a id="g19-sessions"></a>
-**G19 · Active sessions & token revocation — MEDIUM. Size S. (Closes the client half of [P3-D](#p3-d-sessions-revocation).)**
+**G19 · Active sessions & token revocation — ✅ SHIPPED 2026-09-06 (PR #25). Size S. (Closed the client half of [P3-D](#p3-d-sessions-revocation).)**
 `GET /api/user/sessions` is **Bearer-reachable** and returns `{"sessions":[{"id","deviceLabel","createdAt","lastUsedAt","isCurrent"}…]}`; `DELETE /api/user/sessions/{id}` revokes one. **✅ SHIPPED 2026-09-06** (PR #25) as Settings ▸ Security, shape **live-verified** (`{sessions:[{id, deviceLabel, createdAt, lastUsedAt, isCurrent}]}`). Revoking the *current* session signs this Mac out, so that row alone is gated behind a confirmation. It is the honest complement to a never-expiring sync token.
 
 <a id="g20-tags"></a>
-**G20 · Tags: trending + autocomplete — MEDIUM. Size S.**
+**G20 · Tags: trending + autocomplete — ✅ SHIPPED 2026-09-06 (PR #25). Size S.**
 `GET /api/tags/trending` (verified: `{"tags":[{"tag","count","lastUsedAt"}…]}`) and `GET /api/tags/autocomplete` (prefix match on public messages). **✅ SHIPPED 2026-09-06** (PR #25): a composer tag-completion popover and a trending strip on the timeline that reuses the existing tag filter. Both shapes **live-verified** — trending is `{tags:[{tag, count, lastUsedAt}]}` and autocomplete returns the wrapped `{tags:[…]}` form. Pairs naturally with G15's "suggest tags" assistant.
 
 <a id="g21-link-metadata"></a>
@@ -253,8 +267,17 @@ Not verifiable read-only, and flagged rather than guessed: the **connected** sha
 `DELETE /api/notifications/{id}` (delete a single notification; the client can only mark read), `POST /api/messages/{id}/reply-counts`, `GET /api/user/engagement` (aggregate dig/push engagement on your own messages — **note:** returned 401 under Bearer in the 2026-09-05 probe, so it may be session-only; confirm before building), and `PUT /api/documents/{id}` (a full-replace variant beside the `PATCH` the client already uses).
 
 <a id="g28-dashboard"></a>
-**G28 · Dashboard / front-wall layouts + widgets — CONFIRM DEMAND before building. Size L.**
+**G28 · Dashboard / front-wall layouts + widgets — ✅ UNBLOCKED 2026-09-14; now purely a product decision (GitHub #61). Size L.**
 `GET`/`PUT /api/user/dashboard-layout`, `GET`/`PUT /api/user/front-wall-layout`, and the widget feeds `GET /api/widgets/{markets,news,transit,transit/stops,bike-share}` plus `GET /api/weather` and `GET /api/location`. `/help/getting-started` puts the Dashboard second in prominence on the web, so this is real product surface — but it is a large, web-layout-shaped feature, and a native app may want its own arrangement rather than mirroring the web's saved layout. **Owner decision needed before any of it is built.**
+
+> **⚠️ The "backend-blocked" framing is void as of 2026-09-14.** Epic #66 and earlier revisions of
+> this file recorded both layout routes and every `widgets/*` route as `x-auth-type: session` and
+> therefore unbuildable by a Bearer client. **They are now `sync-token`, and a live read-only probe
+> confirms it**: `GET /api/user/dashboard-layout` → `200 {"layout":null}`,
+> `GET /api/user/front-wall-layout` → `200 {"layout":null}`, `GET /api/widgets/news` → `200`,
+> `GET /api/widgets/markets` → `200`. `GET /api/user/engagement` also answers `200` with real data.
+> Nothing about the Dashboard is backend-gated any more — the only open question is the product one
+> this item already asked. See the [2026-09-14 re-measure](#re-measure-log).
 
 <a id="g29-blog"></a>
 **G29 · Blog — CONFIRM DEMAND. Size M (read) / L (authoring).**
@@ -263,6 +286,79 @@ Not verifiable read-only, and flagged rather than guessed: the **connected** sha
 **Explicitly out of scope for the native client** (counted here so future re-measures stop re-flagging them): `/api/admin/**` (26 ops, admin console), `/api/cron/**` (7, scheduler), `/api/webhooks/**` (2, Stripe + Resend), `/api/stripe/**` (2 — billing is managed in the web app by owner decision, see [G8](#2d-upstream-blocked--deferred-confirm-demand-before-building)), `POST /api/analytics/ingest`, `GET /api/test-db`, `GET /api/openapi.json`, `GET /api/oauth/client-metadata`, and `/api/architecture-aggregates/**`.
 
 ---
+
+### 1f. The work index — every open item, with its issue
+
+**This table is the contract between this file and the tracker.** The doc explains *why* and *in what
+order*; the issue carries live status and is what PRs close. If a row here disagrees with its issue,
+**the issue wins** and this table should be corrected.
+
+*(Deliberately not restated here: each issue's acceptance criteria and evidence. Duplicating those is
+what caused the 2026-09 drift — follow the link.)*
+
+| Item | Issue | State |
+|---|---|---|
+| G15 AI writing · G16 materialize | — | ✅ shipped, PR #31 |
+| G17 applications · G18 notif prefs · G19 sessions · G20 tags | — | ✅ shipped, PRs #25 / #30 |
+| G21 link metadata | — | ✅ shipped, PR #36 |
+| G22 DM completeness | [#53](https://github.com/CompositeCode/interlinedlist-macos-native/issues/53) | ✅ shipped, PR #69 |
+| G23 lists sharing | [#48](https://github.com/CompositeCode/interlinedlist-macos-native/issues/48) | ✅ shipped, PR #68 |
+| G24 documents tree | [#52](https://github.com/CompositeCode/interlinedlist-macos-native/issues/52) | ✅ shipped, PR #70 |
+| G25 orgs + org LinkedIn | [#54](https://github.com/CompositeCode/interlinedlist-macos-native/issues/54) | ✅ shipped, PR #67 |
+| G35 view preferences | [#43](https://github.com/CompositeCode/interlinedlist-macos-native/issues/43) | ✅ shipped, PR #73 |
+| Public permalink + embed | [#38](https://github.com/CompositeCode/interlinedlist-macos-native/issues/38) | ✅ shipped, PR #72 |
+| G30 AI availability copy | [#39](https://github.com/CompositeCode/interlinedlist-macos-native/issues/39) | 🔴 live defect — `AI.swift:143` |
+| G37 entitlement matrix | [#40](https://github.com/CompositeCode/interlinedlist-macos-native/issues/40) | 🔨 built, unmerged |
+| G38 email-verification gate | [#41](https://github.com/CompositeCode/interlinedlist-macos-native/issues/41) | 🔨 built, unmerged |
+| `accountStatus` unmodelled | [#42](https://github.com/CompositeCode/interlinedlist-macos-native/issues/42) | 🔨 built, unmerged |
+| G32 My Profile | [#44](https://github.com/CompositeCode/interlinedlist-macos-native/issues/44) | ☐ unbuilt — do first |
+| G33 Integrations | [#47](https://github.com/CompositeCode/interlinedlist-macos-native/issues/47) | ☐ unbuilt |
+| G34 profile settings | [#46](https://github.com/CompositeCode/interlinedlist-macos-native/issues/46) | ☐ unbuilt |
+| G31 sidebar IA | [#45](https://github.com/CompositeCode/interlinedlist-macos-native/issues/45) | ☐ unbuilt — **last** in the cluster |
+| G36 profile location | [#57](https://github.com/CompositeCode/interlinedlist-macos-native/issues/57) | ☐ unbuilt |
+| Applications pane tail | [#56](https://github.com/CompositeCode/interlinedlist-macos-native/issues/56) | ☐ unbuilt |
+| Lists form polish | [#50](https://github.com/CompositeCode/interlinedlist-macos-native/issues/50) | ☐ unbuilt |
+| GitHub-backed list creation | [#51](https://github.com/CompositeCode/interlinedlist-macos-native/issues/51) | ☐ unbuilt |
+| **G40 saved list views** | [**#81**](https://github.com/CompositeCode/interlinedlist-macos-native/issues/81) | ☐ **newly found 2026-09-14** |
+| Scheduled post editing | [#55](https://github.com/CompositeCode/interlinedlist-macos-native/issues/55) → [#74](https://github.com/CompositeCode/interlinedlist-macos-native/issues/74) | ⛔ upstream route does not exist |
+| `/api/lists/{id}` decode bug | [#75](https://github.com/CompositeCode/interlinedlist-macos-native/issues/75) | 🔴 latent |
+| DM decoder tightening | [#76](https://github.com/CompositeCode/interlinedlist-macos-native/issues/76) | ☐ needs a captured payload |
+| DM deep-link producer | [#77](https://github.com/CompositeCode/interlinedlist-macos-native/issues/77) | ☐ dead seam |
+| Document presence | [#78](https://github.com/CompositeCode/interlinedlist-macos-native/issues/78) | ☐ deferred |
+| LinkedIn destination picker | [#79](https://github.com/CompositeCode/interlinedlist-macos-native/issues/79) | ☐ after #47 |
+| Notification tray semantics | [#80](https://github.com/CompositeCode/interlinedlist-macos-native/issues/80) | 🔴 parity bug |
+| G28 dashboard · G29 blog · G39 subscription | [#61](https://github.com/CompositeCode/interlinedlist-macos-native/issues/61) | ❓ **unblocked 2026-09-14** — product decision only |
+| List folders | [#49](https://github.com/CompositeCode/interlinedlist-macos-native/issues/49) | ✋ **decided: not returning to macOS** |
+| G9 push / APNs | [#59](https://github.com/CompositeCode/interlinedlist-macos-native/issues/59) | 🔬 spike |
+| G10 multi-account | [#60](https://github.com/CompositeCode/interlinedlist-macos-native/issues/60) | ⛔ session-only, re-verified 401 |
+| Backend asks | [#58](https://github.com/CompositeCode/interlinedlist-macos-native/issues/58) | ⛔ blocked |
+| Release: pkg/dmg · sync agent · App Store | [#62](https://github.com/CompositeCode/interlinedlist-macos-native/issues/62) · [#63](https://github.com/CompositeCode/interlinedlist-macos-native/issues/63) · [#64](https://github.com/CompositeCode/interlinedlist-macos-native/issues/64) | §3 |
+
+<a id="g40-saved-views"></a>
+**G40 · Saved list views — NEWLY FOUND 2026-09-14 ([#81](https://github.com/CompositeCode/interlinedlist-macos-native/issues/81)). Size M.**
+
+Surfaced by the coverage re-measure: **five live, free-tier, Bearer-reachable operations the client
+does not build at all**, and which no issue and no previous revision of this file mentions.
+
+| Operation | What the spec says it does |
+|---|---|
+| `GET /api/lists/{id}/views` | *"Every shared view on the list, plus this user's own personal views."* |
+| `POST /api/lists/{id}/views` | Creates a saved view — `{name, scope, config, isDefault}`. |
+| `POST /api/lists/{id}/views/{viewId}` | *"Forks a shared view into a personal copy owned by the caller — the escape hatch."* |
+| `PUT /api/lists/{id}/views/{viewId}` | Updates a view's name, config or default flag. |
+| `DELETE /api/lists/{id}/views/{viewId}` | Removes a view. |
+
+All five are `x-auth-type: sync-token` and `x-subscription-tier: free`, so this is buildable today and
+gates on nothing. The shape implies a real collaboration model — **shared** views owned by the list
+plus **personal** views owned by the caller, with a fork operation to escape someone else's shared
+view and an `isDefault` flag per user.
+
+`config` is a **string**, not an object, so its grammar is unspecified by the schema — **probe a real
+saved view from the web before modelling it**, exactly as the G21 link-metadata and G25 members
+defects should have been. Do not guess this one.
+
+**Next step:** sequence after the account cluster. It is additive — nothing currently
+shipped is wrong without it.
 
 ## 2. Blocked work — backend-gated or spike-first
 
@@ -311,7 +407,7 @@ Reconciliations and additive niceties. The client already works around each; the
 > **PROMPT:** `PUT /api/messages/[id]` returns HTTP 405. Confirm the supported method for editing a message (we expect `PATCH /api/messages/[id]` with the same body shape as `POST /api/messages` — `content`, `publiclyVisible`, `tags`, cross-post flags). Document the verb, the accepted body fields, and the response envelope (the create response now wraps the message under `data` with a top-level `crossPosts` array — confirm edit matches). If `PUT` is intended to keep working, restore it.
 
 <a id="p2-j-article-series-provider-error"></a>
-**P2-J · `article_series` returns `502 provider_error` on every attempt** — **NEW, found 2026-09-05, re-confirmed 2026-09-06.** `POST /api/ai/suggest {"feature":"article_series"}` fails with `{"error":"The AI provider rejected the request.","code":"provider_error"}` on three separate attempts across two days, with different briefs, all over the ten-word minimum. The same account, key, and model succeed for `writing_assist`, `message_series`, `powered_template`, and `powered_document`, so it is not entitlement, quota, or input length — the failure is specific to this feature's own server-side path. The macOS client models the feature and maps the failure to a provider-blamed message rather than a user-blamed one, so it degrades honestly, but **Article Series cannot work for any client until this is fixed.**
+**P2-J · `article_series` returns `502 provider_error` on every attempt** — **found 2026-09-05; re-confirmed 2026-09-06 (four attempts total, the latest from a logged-in browser session). ⏱️ The 2026-09-06 re-probe took roughly four minutes to return the 502, where earlier attempts failed fast — a slow failure points at a server-side timeout or provider retry loop rather than a fast schema rejection, and is worth telling the backend. Recorded on GitHub #58.** `POST /api/ai/suggest {"feature":"article_series"}` fails with `{"error":"The AI provider rejected the request.","code":"provider_error"}` on three separate attempts across two days, with different briefs, all over the ten-word minimum. The same account, key, and model succeed for `writing_assist`, `message_series`, `powered_template`, and `powered_document`, so it is not entitlement, quota, or input length — the failure is specific to this feature's own server-side path. The macOS client models the feature and maps the failure to a provider-blamed message rather than a user-blamed one, so it degrades honestly, but **Article Series cannot work for any client until this is fixed.**
 
 > **PROMPT:** You are working on the InterlinedList API (interlinedlist.com). `POST /api/ai/suggest` with `{"feature":"article_series","input":"<a multi-sentence brief>"}` returns `502 {"error":"The AI provider rejected the request.","code":"provider_error"}` every time, for a subscriber with a working Anthropic key whose other AI features (`writing_assist`, `message_series`, `powered_template`, `powered_document`) all succeed on the same request path. Reproduced three times across 2026-09-05 and 2026-09-06 with different briefs. Please check the `article_series` prompt/schema construction and what the provider is actually rejecting — likely a malformed tool/response schema for that feature specifically — and confirm the artifact shape it should return (the other features return `{artifact:{kind,…}}`).
 
@@ -462,6 +558,66 @@ This file consolidates and replaces the following, now removed (recoverable via 
 Retained references: `App-Dmg-Pkg-Deployment.md` (deployment command detail), `README.md`, `docs/`.
 
 ## Re-measure log
+
+- **2026-09-14 — the session-only ceiling has largely collapsed; the Dashboard is no longer backend-blocked.**
+  Authenticated re-pull of `GET /api/openapi.json` (**232 paths / 303 operations**, up from 228/296 on
+  2026-09-07 and 226/294 on 2026-09-05). The headline is `x-auth-type`:
+
+  | | 2026-09-07 | 2026-09-14 |
+  |---|---|---|
+  | `session` (rejects Bearer) | **45** | **32** |
+  | `sync-token` (Bearer OK) | — | **207** |
+  | `none` | — | **57** |
+  | `cron` | — | **7** |
+
+  **And of the 32 remaining session-only operations, 28 are ones a native client should never call**
+  — 24 `/api/admin/*`, 2 `/api/architecture-aggregates/*`, 2 `/api/stripe/*` (billing is the web app's
+  by owner decision). The genuinely limiting set is **four operations**: `GET /api/auth/accounts`,
+  `POST /api/auth/switch`, `POST /api/auth/remove-account` (all [G10](#2b-spike-first-native-gaps) /
+  #60) and `POST /api/auth/send-verification-email`.
+
+  **Confirmed by live read-only probe, not by reading the spec** (each returned `200` under a Bearer
+  sync-token): `GET /api/user/dashboard-layout` → `{"layout":null}` · `GET /api/user/front-wall-layout`
+  → `{"layout":null}` · `GET /api/user/engagement` → `{"totalDigs":24,"totalPushes":6,"recent":[…]}` ·
+  `GET /api/widgets/news` · `GET /api/widgets/markets`. Controls, also probed: `GET /api/auth/accounts`
+  → **401** and `POST /api/auth/send-verification-email` → **401**, both still session-only as claimed.
+
+  **What this overturns:**
+  - **[G28](#g28-dashboard) / #61 is unblocked.** Both layout routes and all five widget routes are
+    Bearer-reachable. The "backend-blocked, not merely undecided" framing in epic #66 is **void** — it
+    is now purely a product decision about whether a native Dashboard is wanted.
+  - **Invite/share *claim* is buildable.** `POST /api/lists/invite/{token}`,
+    `POST /api/documents/invite/{token}`, `POST /api/lists/shared/{token}` and
+    `POST /api/documents/shared/{token}` are all `sync-token` now. PR #70 recorded document-invite
+    accept as *"genuinely out of reach … a Bearer client cannot claim however the request is shaped"*
+    and shipped an **Accept in Browser** hand-off with the absence asserted as a test. **That
+    assertion is now stale and should be revisited** (GitHub #52 is closed; file a follow-up).
+  - **`GET /api/user/engagement` is reachable**, and returns real data for the test account.
+  - **[G10](#2b-spike-first-native-gaps) / #60 is genuinely still blocked** — re-verified 401.
+  - **The `send-verification-email` question is settled: it is session-only.** The unmerged
+    `fix/account-status-gating` branch contradicts itself here — `EmailVerification.swift` deep-links
+    to web Settings (correct), while `AuthEndpoint.swift` ships a `.bearer` request builder justified
+    by a live 401 for an *unauthenticated* caller. A 401 for anonymous never proved Bearer works.
+    **Delete the `.bearer` builder when that branch merges.**
+
+  **Coverage:** the client builds **200** distinct `(method, path)` request builders, **194** of which
+  match a live spec operation. Of **259** in-scope operations (excluding admin / cron / webhooks /
+  Stripe / analytics / `test-db` / `openapi.json` / `oauth-client-metadata` / architecture-aggregates),
+  roughly **52** are genuinely unimplemented — down from ~78 (2026-09-07) and ~100 (2026-09-05).
+  *Method caveat, stated so the number is not over-trusted:* the count is derived by normalising Swift
+  path interpolation to `{}` and diffing against the spec. It under-counts where one parameterised
+  builder covers several spec paths (`/api/auth/{provider}/authorize` covers five) and where requests
+  are built inline rather than via `Request(` (`sync-token`, `login`). Treat it as ±5, not exact.
+
+  The largest genuinely-unimplemented clusters: **saved list views** (5 ops —
+  `GET`/`POST`/`PUT`/`DELETE /api/lists/{id}/views`, a real feature with no issue yet), **dashboard +
+  front-wall layouts** (4), **widgets** (5), **blog subscribe/unsubscribe** (4), **list folders** (4 —
+  deliberately not built, see #49), **identity unlink/verify** (2 — #47), **push register/unregister**
+  (2 — #59), **document presence** (2 — #78).
+
+  All probes were read-only (`GET`, plus one `POST` to `send-verification-email` that was rejected
+  before doing anything). No writes were made.
+
 
 - **2026-09-07 — G21 link metadata built; a live-rendering defect found in the process.** Probed `/api/link-metadata`, `/api/messages/{id}/metadata` and `/api/images/proxy` against the `.env` test account before writing any client code. The probe showed the server nests preview fields under `metadata` (image key `thumbnail`) where the client's `LinkPreviewDTO` expected them flat — an all-optional mismatch that decoded *successfully* to all-nil, so **every link on the timeline had been rendering as a host-only card**. Also closed [P3-F](#2c-backend-confirmation--polish-asks) by observation (`fetchStatus` ∈ {`success`, `failed`}), corrected this doc's claim that `/api/images/proxy` is a general image fetcher (it is Instagram-only), and made the long-dead Settings ▸ "Show link previews" toggle actually control rendering. All probes were read-only (`GET`/`OPTIONS`); no writes were made — `POST /api/messages/{id}/metadata` was confirmed by its `Allow` header rather than by issuing one.
 

@@ -281,6 +281,15 @@ final class NotificationDeepLinkRouterTests: XCTestCase {
         let dict = LocalNotificationScheduler.userInfo(for: note)
 
         XCTAssertEqual(dict[NotificationUserInfoKeys.notificationId], "n-check")
-        XCTAssertEqual(dict[NotificationUserInfoKeys.type], "reply")
+        // The **server's** spelling. This userInfo is round-tripped back through
+        // `NotificationKind(rawValue:)` when the user taps the alert, so it has
+        // to be a token that maps — which the bare `"reply"` did not, before
+        // GitHub #95.
+        XCTAssertEqual(dict[NotificationUserInfoKeys.type], "message_reply")
+        XCTAssertEqual(
+            NotificationKind(rawValue: dict[NotificationUserInfoKeys.type] as? String),
+            .reply,
+            "and it round-trips, which is the whole reason the token is stored"
+        )
     }
 }

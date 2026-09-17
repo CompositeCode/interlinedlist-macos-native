@@ -75,3 +75,31 @@ public extension ContentLimits {
         )
     }
 }
+
+public extension ContentLimits {
+
+    /// The character budget the composer should enforce: the **lower** of the
+    /// platform ceiling and the account's own `maxMessageLength` cap
+    /// (GitHub #46 / G34).
+    ///
+    /// Getting this backwards is the trap the issue named, and the live numbers
+    /// make it reachable rather than theoretical. Probed 2026-09-15:
+    ///
+    /// - `GET /api/limits` → `message.maxContentLength: 5000` — the platform.
+    /// - `PATCH /api/user/update` accepts `maxMessageLength` in `1...10000` —
+    ///   the account.
+    ///
+    /// So a user really can set a cap **above** the platform ceiling. Honouring
+    /// the account value there would let them write a message the server then
+    /// rejects; honouring only the platform value would quietly raise a cap they
+    /// deliberately lowered. One number, computed once, so the composer never
+    /// has to decide.
+    ///
+    /// - Parameter accountCap: the account's own cap, or `nil` when it has not
+    ///   been read — in which case the platform ceiling stands alone rather than
+    ///   a guessed default standing in for it.
+    func effectiveMessageLength(accountCap: Int?) -> Int {
+        guard let accountCap else { return messageMaxContentLength }
+        return min(messageMaxContentLength, accountCap)
+    }
+}

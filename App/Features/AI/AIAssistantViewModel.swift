@@ -5,11 +5,13 @@
 // views stay declarative: a view asks for an action, watches `phase`, and applies
 // an accepted result through `AIAssistantOutcome`.
 //
-// Two rules shape this type. First, **every run costs the user money** — a quota
-// unit and a call against their own provider key — so nothing runs implicitly:
-// no run on appear, no retry on failure, no speculative prefetch beyond the free
-// availability read. Second, a preview is *never* applied on its own; the user
-// confirms, and for series the confirm is what persists anything.
+// Two rules shape this type. First, **every run spends a unit of the user's daily
+// quota** — 50 on the probed account — so nothing runs implicitly: no run on
+// appear, no retry on failure, no speculative prefetch beyond the free
+// availability read. (The cost is quota, not money: AI is included in the
+// subscription and the user holds no provider key — GitHub #39.) Second, a
+// preview is *never* applied on its own; the user confirms, and for series the
+// confirm is what persists anything.
 //
 // Per Decision 0003 this view model consumes only `InterlinedDomain`.
 

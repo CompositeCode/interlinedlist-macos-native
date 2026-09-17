@@ -78,12 +78,38 @@ extension NotificationTarget {
         let metadata = dto.metadata
         let actionURL = dto.actionUrl.flatMap(URL.init(string:))
 
+        // The server's own `target` object first. It is the resolved answer and
+        // it is populated on every captured row that has one — the client had
+        // been digging through `metadata` under keys the server does not use
+        // (`metadata.messageId`, where the live payload carries
+        // `metadata.sourceMessageId`), so the target never resolved (GitHub #95).
+        //
+        // Ordered by specificity rather than by kind, so a row whose kind this
+        // build does not recognise still deep-links correctly.
+        if let messageId = dto.target?.messageId {
+            self = .message(id: messageId)
+            return
+        }
+        if let listId = dto.target?.listId {
+            self = .list(id: listId)
+            return
+        }
+        if let orgId = dto.target?.orgId {
+            self = .organization(id: orgId)
+            return
+        }
+
+        // Metadata is the fallback for a server that has not filled `target` in.
+        if kind.isMessageShaped,
+           let messageId = metadata?["sourceMessageId"]?.stringValue
+            ?? metadata?["messageId"]?.stringValue {
+            self = .message(id: messageId)
+            return
+        }
+
         switch kind {
-        case .dig, .reply, .mention:
-            if let messageId = metadata?["messageId"]?.stringValue {
-                self = .message(id: messageId)
-                return
-            }
+        case .dig, .reply, .mention, .push:
+            break
 
         case .listShared, .listRowAdded:
             if let listId = metadata?["listId"]?.stringValue {
@@ -108,11 +134,20 @@ extension NotificationTarget {
                 return
             }
 
-        case .other:
+        case .directMessage:
+            // No DM notification has been observed, so the key that would carry
+            // the conversation id is unknown. Falling through to the routePath
+            // is honest; inventing a key would produce a target that silently
+            // points nowhere.
+            break
+
+        case .integrationReconnect, .other:
             break
         }
 
-        self = .unknown(actionURL: actionURL)
+        // `routePath` is the server's own routing answer and the last thing to
+        // try before giving up.
+        self = .unknown(actionURL: actionURL ?? dto.routePath.flatMap(URL.init(string:)))
     }
 }
 

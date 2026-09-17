@@ -20,6 +20,9 @@ struct ListRowsView: View {
 
     @Environment(\.appEnvironment) private var environment
     @State private var selection: Set<String> = []
+    /// Presents the Add Row form.
+    @State private var showsAddRow = false
+
     @State private var deletePending: Bool = false
     /// Presents the GitHub issue browser/composer for a GitHub-backed list —
     /// the row-creation route for lists whose rows sync from GitHub.
@@ -106,6 +109,13 @@ struct ListRowsView: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .sheet(isPresented: $showsAddRow) {
+            AddRowSheetView(
+                listId: list.id,
+                schema: viewModel.schema,
+                onSaved: { Task { await viewModel.initialLoad() } }
+            )
+        }
         .sheet(isPresented: $showsIssues) {
             if let environment, let repo = viewModel.gitHubRepo {
                 GitHubIssuesView(repo: repo, environment: environment)
@@ -117,6 +127,44 @@ struct ListRowsView: View {
                     source: .rows(listId: list.id, rowIds: Array(selection)),
                     environment: environment
                 )
+            }
+        }
+    }
+
+    /// The repository a GitHub-backed list came from, linked, with a warning tag
+    /// when it is private (GitHub #50).
+    ///
+    /// `githubRepoPrivate` has been on the wire since the list routes shipped
+    /// and the client never read it. The tag is not decoration: a link to a
+    /// private repository sends a visitor to a GitHub sign-in or a "not found"
+    /// page, and the help page is explicit that the list should say so before
+    /// they follow it.
+    ///
+    /// Absent — rather than shown as "public" — when the server did not say.
+    @ViewBuilder
+    private var gitHubRepositoryBadge: some View {
+        if let source = list.gitHubSource, let repository = source.repository {
+            HStack(spacing: 4) {
+                if let url = source.repositoryURL {
+                    Link(destination: url) {
+                        Label("\(repository) issues", systemImage: "chevron.left.forwardslash.chevron.right")
+                            .font(.ilMono(10))
+                    }
+                    .help("Open \(repository) on GitHub")
+                } else {
+                    Label(repository, systemImage: "chevron.left.forwardslash.chevron.right")
+                        .font(.ilMono(10))
+                        .foregroundStyle(.secondary)
+                }
+                if source.isRepositoryPrivate == true {
+                    Text("Private repo")
+                        .font(.ilMono(9))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(ILColor.surface2, in: Capsule())
+                        .foregroundStyle(.secondary)
+                        .help("This repository is private — anyone without access will see a sign-in or a “not found” page")
+                }
             }
         }
     }
@@ -140,12 +188,23 @@ struct ListRowsView: View {
                     Label("New Issue", systemImage: "ladybug")
                 }
                 .help("This list syncs from GitHub — add a GitHub issue instead of a row")
+                gitHubRepositoryBadge
             } else {
                 Button {
-                    Task { await viewModel.addRow() }
+                    // The form, not a blank row (GitHub #50). `addRow()` created
+                    // an empty row and left the user to fill it in through the
+                    // inspector — which is why the columns' help text,
+                    // placeholders and validation rules had nowhere to appear.
+                    showsAddRow = true
                 } label: {
                     Label("Add Row", systemImage: "plus")
                 }
+                .disabled(viewModel.schema.fields.isEmpty)
+                .help(
+                    viewModel.schema.fields.isEmpty
+                        ? "Add columns in Edit Schema before adding rows"
+                        : "Add a row"
+                )
             }
 
             if !isReadOnly {
@@ -203,9 +262,16 @@ struct ListRowsView: View {
         let columns = effectiveColumns(viewModel)
         VStack(spacing: 0) {
             Table(viewModel.rows, selection: $selection) {
-                TableColumnForEach(columns, id: \.self) { column in
-                    TableColumn(column) { (row: ListRow) in
-                        Text(row.fields[column]?.displayText ?? "")
+                TableColumnForEach(columns) { column in
+                    // Header from `label`, cell lookup by `key` — see `ListColumn`
+                    // (#50) — at the row height the active saved view asks for
+                    // (G40). Both landed on this line; they compose, and taking
+                    // either alone loses something real: dropping `ListColumn`
+                    // reintroduces the empty-cell bug for a column whose key
+                    // differs from its label, and dropping `cellLineLimit`
+                    // silently ignores the view's density.
+                    TableColumn(column.label) { (row: ListRow) in
+                        Text(row.fields[column.key]?.displayText ?? "")
                             .lineLimit(cellLineLimit)
                     }
                 }
@@ -239,14 +305,15 @@ struct ListRowsView: View {
     /// Ordered column set for the table: the schema-derived columns when
     /// present, else the sorted union of keys across loaded rows so a
     /// schemaless list still renders a sensible grid.
-    private func effectiveColumns(_ viewModel: ListRowsViewModel) -> [String] {
+    private func effectiveColumns(_ viewModel: ListRowsViewModel) -> [ListColumn] {
         if !viewModel.columns.isEmpty { return viewModel.columns }
         var seen = Set<String>()
-        var ordered: [String] = []
+        var ordered: [ListColumn] = []
         for row in viewModel.rows {
             for key in row.fields.keys.sorted() where !seen.contains(key) {
                 seen.insert(key)
-                ordered.append(key)
+                // No schema means no separate label; the key is the header.
+                ordered.append(ListColumn(key: key, label: key))
             }
         }
         return ordered
@@ -379,15 +446,17 @@ struct ListRowsView: View {
     }
 
     @ViewBuilder
-    private func rowCard(row: ListRow, columns: [String]) -> some View {
-        let keys = columns.isEmpty ? row.fields.keys.sorted() : columns
+    private func rowCard(row: ListRow, columns: [ListColumn]) -> some View {
+        let keys = columns.isEmpty
+            ? row.fields.keys.sorted().map { ListColumn(key: $0, label: $0) }
+            : columns
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(keys, id: \.self) { key in
+            ForEach(keys) { column in
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(key)
+                    Text(column.label)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    Text(row.fields[key]?.displayText ?? "")
+                    Text(row.fields[column.key]?.displayText ?? "")
                         .font(.ilBody())
                         .lineLimit(cellLineLimit)
                     Spacer()
@@ -398,11 +467,13 @@ struct ListRowsView: View {
         .background(ILColor.surface2, in: RoundedRectangle(cornerRadius: ILMetric.radiusMd))
     }
 
-    private func rowAccessibilityLabel(row: ListRow, columns: [String]) -> String {
-        let keys = columns.isEmpty ? row.fields.keys.sorted() : columns
-        let pairs = keys.compactMap { key -> String? in
-            guard let value = row.fields[key]?.displayText, !value.isEmpty else { return nil }
-            return "\(key): \(value)"
+    private func rowAccessibilityLabel(row: ListRow, columns: [ListColumn]) -> String {
+        let keys = columns.isEmpty
+            ? row.fields.keys.sorted().map { ListColumn(key: $0, label: $0) }
+            : columns
+        let pairs = keys.compactMap { column -> String? in
+            guard let value = row.fields[column.key]?.displayText, !value.isEmpty else { return nil }
+            return "\(column.label): \(value)"
         }
         return pairs.isEmpty ? "Row" : pairs.joined(separator: ", ")
     }

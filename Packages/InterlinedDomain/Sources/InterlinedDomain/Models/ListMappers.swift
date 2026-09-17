@@ -110,12 +110,14 @@ extension RowsPage {
 // MARK: - Domain → wire projection
 
 /// Recursive projection from the domain's loose `ListCellValue` back to the
-/// kit's `ListJSONValue` — the inverse of `ListCellValue.init(from:)` above,
-/// used whenever the client writes loose JSON (row cells, and the saved-view
-/// `config.filters` whose element grammar is unconfirmed).
+/// kit's `ListJSONValue` — the inverse of `ListCellValue.init(from:)` above.
 ///
-/// Moved here from `ListsService.swift` (where it was `fileprivate`) when G40
-/// added a second writer: two files needing the same projection is exactly the
+/// Used whenever the client writes loose JSON: row cells, a column's
+/// `defaultValue`, and the saved-view `config.filters` whose element grammar is
+/// unconfirmed.
+///
+/// Moved here from `ListsService.swift` (where it was `fileprivate`) once a
+/// second writer appeared — two files needing the same projection is exactly the
 /// point at which a private copy becomes a duplicated one, and a drifted
 /// duplicate of a lossless round-trip would silently corrupt whatever it
 /// disagreed about. Sits next to its inverse so the pair is audited together.
@@ -128,9 +130,11 @@ extension ListJSONValue {
         case .double(let v): self = .double(v)
         case .string(let v): self = .string(v)
         case .array(let items):
-            self = .array(items.map(ListJSONValue.init(from:)))
+            // Explicit closures, not `ListJSONValue.init(from:)` — that
+            // reference is ambiguous against `Decodable.init(from:)`.
+            self = .array(items.map { ListJSONValue(from: $0) })
         case .object(let dict):
-            self = .object(dict.mapValues(ListJSONValue.init(from:)))
+            self = .object(dict.mapValues { ListJSONValue(from: $0) })
         }
     }
 }

@@ -94,11 +94,30 @@ final class NewListViewModel {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedDescription = descriptionText.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedSchema = schemaDSL.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // The DSL the user typed is parsed here, client-side, and the *columns*
+        // go on the wire. It used to be sent as a string, which the server
+        // rejects outright — so creating a list with columns from macOS never
+        // worked (GitHub #85). A malformed DSL is now caught before the network
+        // call and reported against the field the user typed it into, rather
+        // than coming back as an opaque 400.
+        let parsedSchema: ListSchema?
+        if trimmedSchema.isEmpty {
+            parsedSchema = nil
+        } else {
+            do {
+                parsedSchema = try SchemaDSL.parse(trimmedSchema)
+            } catch {
+                self.error = error
+                return
+            }
+        }
+
         do {
             let created = try await lists.create(
                 title: trimmedTitle,
                 description: trimmedDescription.isEmpty ? nil : trimmedDescription,
-                schema: trimmedSchema.isEmpty ? nil : trimmedSchema,
+                schema: parsedSchema,
                 parentId: parentID,
                 isPublic: visibility == .public
             )

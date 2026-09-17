@@ -23,6 +23,9 @@ enum NotificationRowCopy {
     static func symbol(for kind: NotificationKind) -> String {
         switch kind {
         case .dig:             return "hand.thumbsup.fill"
+        case .push:            return "arrow.2.squarepath"
+        case .directMessage:   return "bubble.left.and.bubble.right.fill"
+        case .integrationReconnect: return "link.badge.plus"
         case .reply:           return "bubble.left.fill"
         case .mention:         return "at"
         case .followRequest:   return "person.crop.circle.badge.questionmark"
@@ -55,6 +58,21 @@ enum NotificationRowCopy {
         switch kind {
         case .dig:
             return "\(handle) dug your post"
+        case .push(let hasCommentary):
+            // The two are genuinely different events, and the server sends them
+            // as different types. "Pushed your post" for a bare repost reads as
+            // a lie when there is a comment attached.
+            return hasCommentary
+                ? "\(handle) pushed your post with a comment"
+                : "\(handle) pushed your post"
+        case .directMessage:
+            return "\(handle) sent you a message"
+        case .integrationReconnect:
+            // The only kind that is not about another person, so `handle` —
+            // which falls back to "Someone" — would be actively wrong here.
+            // The server's own body is the accurate sentence.
+            if let body, !body.isEmpty { return body }
+            return "A connection needs reconnecting"
         case .reply:
             return "\(handle) replied to your post"
         case .mention:

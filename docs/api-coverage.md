@@ -2,7 +2,26 @@
 
 > **Re-baselined 2026-07-31 against the live `openapi.json` (~150 endpoints).** The **original 98 rows** below cover the 2026-06-11 API surface and keep their real ☑/◐/☐ implementation-and-test state unchanged. The live API has since grown across whole new feature areas; those are captured in the **[New endpoints](#new-endpoints-2026-07-31-re-baseline--implementation-state-reconciled-2026-09-05)** section, mapped to their gap ID (G1–G14) in **[`work-consolidation.md`](../work-consolidation.md)**. **Reconciled 2026-09-05** against the shipped code: the matrix is **187 rows** (not the previously stated 151 — see footnote 14), and the new rows now carry their real ☑/◐/☐ state instead of the blanket ☐/☐ they were added with. This file remains the home for the per-endpoint ☑/◐ **test** matrix; the maintenance rule below still governs when a new row may flip.
 
-> **⚠️ The endpoint inventory below is stale as of 2026-09-05.** A fresh authenticated pull of `GET /api/openapi.json` reports **226 paths / 294 operations** — this matrix holds 191 rows, and the client builds 154 request builders. Roughly 100 live operations have no row here at all (whole product areas: AI, "Create from…"/materialize, app-settings & devices, notification preferences, sessions, tags, link metadata). The gap analysis lives in [`work-consolidation.md` §1d](../work-consolidation.md#1d-new-feature-areas-2026-09-05-re-measure); **six shipping client calls also use a verb the live server rejects** — see [§1c](../work-consolidation.md#1c-live-verb-defects--fix-first). Re-baselining this matrix against the 294-operation surface is queued work, not done.
+> **⚠️ Re-measured 2026-09-14 — `Auth` is now verified; `Implemented` is NOT yet re-scored.** A fresh
+> authenticated pull of `GET /api/openapi.json` reports **232 paths / 303 operations** (up from
+> 226/294 on 2026-09-05), against this matrix's **191 rows**. The client builds **200** request
+> builders covering **194** spec operations; roughly **52** in-scope operations remain unimplemented
+> (down from ~100). The gap analysis lives in
+> [`work-consolidation.md` §1f](../work-consolidation.md#1f-the-work-index--every-open-item-with-its-issue).
+>
+> **What this pass did change:** the `Auth` column is now **derived from the live spec's
+> `x-auth-type`**, not hand-written — 168 of 191 rows rewritten, replacing the ~50 that read
+> *"per OpenAPI, unverified"*. **Bearer ✅** means a sync-token client can reach it; **Session-only ⛔**
+> means it rejects Bearer entirely. This is the difference between *not built* and *not buildable*,
+> and it is now legible per row. Eleven rows also had a stale **method or path** corrected — six of
+> them the §1c verb defects, where the matrix still documented the broken verb the client stopped
+> sending in PR #24 (see footnote 16).
+>
+> **What this pass did NOT do:** re-score `Implemented` / `Tested`. This file's own maintenance rule
+> requires a Kit builder **and** a DTO **and** a Domain service call path before a row may flip ☑ —
+> a semantic check per row, not a mechanical one. Flipping 191 rows mechanically would have produced
+> confident-looking marks nobody verified, which is the failure mode footnote 14 was written about.
+> **That re-score is queued as its own pass.** Footnote 16 records the evidence gathered for it.
 
 **Audience:** engineering (maintainers and implementing agents).
 
@@ -17,169 +36,169 @@ This matrix exists so that full coverage of the [InterlinedList API](https://int
 
 | Endpoint (method + path) | Group | Auth | Planned service | Milestone | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `POST /api/auth/login` | Auth | Public → session cookie | LiveSessionEstablisher (InterlinedKit/Auth) | M7 | ☑ | ☑ |
-| `POST /api/auth/logout` | Auth | Session | AuthService (InterlinedKit/Auth) | M0 | ☑ | ◐⁴ |
+| `POST /api/auth/login` | Auth | Public | LiveSessionEstablisher (InterlinedKit/Auth) | M7 | ☑ | ☑ |
+| `POST /api/auth/logout` | Auth | Public | AuthService (InterlinedKit/Auth) | M0 | ☑ | ◐⁴ |
 | `POST /api/auth/register` | Auth | Public | AuthService (InterlinedKit/Auth) | M0 | ☑ | ☐⁶ |
-| `POST /api/auth/sync-token` | Auth | Public → Bearer token | AuthService (InterlinedKit/Auth) | M0 | ☑ | ◐⁴ |
+| `POST /api/auth/sync-token` | Auth | Public | AuthService (InterlinedKit/Auth) | M0 | ☑ | ◐⁴ |
 | `POST /api/auth/forgot-password` | Auth | Public | AuthService (InterlinedKit/Auth) | M0 | ☑ | ◐⁴ |
 | `POST /api/auth/reset-password` | Auth | Public | AuthService (InterlinedKit/Auth) | M0 | ☑ | ◐⁴ |
-| `POST /api/auth/send-verification-email` | Auth | Public | AuthService (InterlinedKit/Auth) | M0 | ☑ | ◐⁴ |
+| `POST /api/auth/send-verification-email` | Auth | **Session-only** ⛔ | AuthService (InterlinedKit/Auth) | M0 | ☑ | ◐⁴ |
 | `POST /api/auth/verify-email` | Auth | Public | AuthService (InterlinedKit/Auth) | M0 | ☑ | ◐⁴ |
 | `GET /api/auth/github/authorize` | Auth (OAuth) | Public | AuthService (OAuth flows) | M6 | ☑ | ☐¹² |
 | `GET /api/auth/mastodon/authorize` | Auth (OAuth) | Public | AuthService (OAuth flows) | M6 | ☑ | ☐¹² |
 | `GET /api/auth/bluesky/authorize` | Auth (OAuth) | Public | AuthService (OAuth flows) | M6 | ☑ | ☐¹² |
 | `GET /api/auth/linkedin/authorize` | Auth (OAuth) | Public | AuthService (OAuth flows) | M6 | ☑ | ☐¹² |
-| `GET /api/user` | User | Session or Bearer | UserService¹ (+ EntitlementsService reads `customerStatus`) | M0 | ☑ | ☑ |
-| `POST /api/user/update` | User | Session | UserService¹ | M7 | ☑ | ☑ |
-| `POST /api/user/avatar/upload` | User | Session | UserService¹ | M7 | ☑ | ☑ |
-| `POST /api/user/avatar/from-url` | User | Session | UserService¹ | M7 | ☑ | ◐⁴ |
-| `GET /api/user/identities` | User | Session | UserService¹ | M6 | ☑ | ☑ |
-| `GET /api/user/organizations` | User | Session | UserService¹ ⁷ | M6 | ☑ | ☑ |
-| `POST /api/user/change-email/request` | User | Session | UserService¹ | M7 | ☑ | ☑ |
-| `POST /api/user/delete` | User | Session | UserService¹ | M7 | ☑ | ☑ |
-| `GET /api/messages` | Messages | Session or Bearer | MessagesService | M1 | ☑ | ☑ |
-| `POST /api/messages` | Messages | Session or Bearer | MessagesService | M2² | ☑ | ☑ |
-| `GET /api/messages/[id]` | Messages | Session or Bearer | MessagesService | M1 | ☑ | ☑ |
-| `PUT /api/messages/[id]` | Messages | Session or Bearer | MessagesService | M2 | ☑ | ☑ |
-| `DELETE /api/messages/[id]` | Messages | Session or Bearer | MessagesService | M2 | ☑ | ☑ |
-| `GET /api/messages/scheduled` | Messages | Session or Bearer | MessagesService | M6 | ☑ | ☑ |
-| `GET /api/messages/[id]/replies` | Messages | Session | MessagesService | M1 | ☑ | ☑ |
-| `POST /api/messages/[id]/dig` | Messages | Session | MessagesService | M2 | ☑ | ☑ |
-| `DELETE /api/messages/[id]/dig` | Messages | Session | MessagesService | M2 | ☑ | ☑ |
-| `POST /api/messages/images/upload` | Messages | Session or Bearer | MessagesService | M6 | ☑ | ☑ |
-| `POST /api/messages/videos/upload` | Messages | Session or Bearer | MessagesService | M6 | ☑ | ☑ |
-| `GET /api/lists` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `POST /api/lists` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴ |
-| `GET /api/lists/[id]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴⁹ |
-| `PUT /api/lists/[id]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴⁹ |
-| `DELETE /api/lists/[id]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `GET /api/lists/[id]/schema` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `PUT /api/lists/[id]/schema` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `POST /api/lists/[id]/refresh` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `GET /api/lists/[id]/data` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `POST /api/lists/[id]/data` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `GET /api/lists/[id]/data/[rowId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴⁹ |
-| `PATCH /api/lists/[id]/data/[rowId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `DELETE /api/lists/[id]/data/[rowId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `GET /api/lists/[id]/watchers` | Lists | Session or Bearer | ListsService | M3 | ☑ | ◐⁴⁹ |
-| `GET /api/lists/[id]/watchers/me` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `GET /api/lists/[id]/watchers/users` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `PUT /api/lists/[id]/watchers/[userId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `DELETE /api/lists/[id]/watchers/[userId]` | Lists | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `GET /api/users/[username]/lists` | Lists (public) | None | ListsService | M1 | ☑ | ☑ |
-| `GET /api/users/[username]/lists/[id]` | Lists (public) | None | ListsService | M1 | ☑ | ☑ |
-| `GET /api/users/[username]/lists/[id]/data` | Lists (public) | None | ListsService | M1 | ☑ | ☑ |
-| `GET /api/lists/connections` | List Connections | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `POST /api/lists/connections` | List Connections | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `DELETE /api/lists/connections/[id]` | List Connections | Session or Bearer | ListsService | M3 | ☑ | ☑ |
-| `GET /api/documents/sync` | Documents & Sync | Session or Bearer | DocumentSyncEngine (InterlinedPersistence) | M4 | ☑ | ☑ |
-| `POST /api/documents/sync` | Documents & Sync | Session or Bearer | DocumentSyncEngine (InterlinedPersistence) | M4 | ☑ | ☑ |
-| `GET /api/documents` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ☑ |
-| `POST /api/documents` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ☑ |
-| `GET /api/documents/[id]` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ◐⁴¹⁰ |
-| `PATCH /api/documents/[id]` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ☑ |
-| `DELETE /api/documents/[id]` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ☑ |
-| `POST /api/documents/[id]/images/upload` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ☑ |
-| `GET /api/documents/folders` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ☑ |
-| `POST /api/documents/folders` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ☑ |
-| `GET /api/documents/folders/[id]` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ◐⁴¹⁰ |
-| `PATCH /api/documents/folders/[id]` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ☑ |
-| `DELETE /api/documents/folders/[id]` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ☑ |
-| `GET /api/documents/folders/[id]/documents` | Documents & Sync | Session | DocumentsService | M4 | ☑ | ☑ |
-| `POST /api/follow/[userId]` | Follow | Session | SocialService | M5 | ☑ | ☑ |
-| `DELETE /api/follow/[userId]` | Follow | Session | SocialService | M5 | ☑ | ☑ |
-| `GET /api/follow/[userId]/status` | Follow | Session | SocialService | M5 | ☑ | ☑ |
-| `GET /api/follow/[userId]/followers` | Follow | Session | SocialService | M5 | ☑ | ☑ |
-| `GET /api/follow/[userId]/following` | Follow | Session | SocialService | M5 | ☑ | ☑ |
-| `GET /api/follow/[userId]/counts` | Follow | Session | SocialService | M5 | ☑ | ☑ |
-| `GET /api/follow/[userId]/mutual` | Follow | Session | SocialService | M5 | ☑ | ☑ |
-| `POST /api/follow/[userId]/approve` | Follow | Session | SocialService | M5 | ☑ | ☑ |
-| `POST /api/follow/[userId]/reject` | Follow | Session | SocialService | M5 | ☑ | ☑ |
-| `POST /api/follow/[userId]/remove` | Follow | Session | SocialService | M5 | ☑ | ◐⁴¹¹ |
-| `GET /api/follow/requests` | Follow | Session | SocialService | M5 | ☑ | ☑ |
-| `GET /api/organizations` | Organizations | Session | OrgService | M6 | ☑ | ◐⁴¹³ |
-| `POST /api/organizations` | Organizations | Session | OrgService | M6 | ☑ | ☑ |
-| `GET /api/organizations/[id]` | Organizations | Session | OrgService | M6 | ☑ | ☑ |
-| `PATCH /api/organizations/[id]` | Organizations | Session | OrgService | M6 | ☑ | ☑ |
-| `GET /api/organizations/[id]/members` | Organizations | Session | OrgService | M6 | ☑ | ☑ |
-| `POST /api/organizations/[id]/members` | Organizations | Session | OrgService | M6 | ☑ | ☑ |
-| `PUT /api/organizations/[id]/members/[userId]` | Organizations | Session | OrgService | M6 | ☑ | ☑ |
-| `DELETE /api/organizations/[id]/members/[userId]` | Organizations | Session | OrgService | M6 | ☑ | ☑ |
-| `GET /api/organizations/[id]/users` | Organizations | Session | OrgService | M6 | ☑ | ◐⁴¹³ |
-| `GET /api/exports/messages` | Exports | Session | ExportsService¹ | M7 | ☑ | ☑ |
-| `GET /api/exports/lists` | Exports | Session | ExportsService¹ | M7 | ☑ | ☑ |
-| `GET /api/exports/list-data-rows` | Exports | Session | ExportsService¹ | M7 | ☑ | ☑ |
-| `GET /api/exports/follows` | Exports | Session | ExportsService¹ | M7 | ☑ | ☑ |
-| `GET /api/notifications` | Notifications | Session | NotificationsService | M5 | ☑ | ☑ |
-| `PATCH /api/notifications/[id]/read` | Notifications | Session | NotificationsService | M5 | ☑ | ☑ |
-| `POST /api/notifications/mark-all-read` | Notifications | Session | NotificationsService | M5 | ☑ | ☑ |
-| `GET /api/user/[username]/messages` | Public | None | MessagesService⁸ | M1 | ☑ | ☑ |
-| `GET /api/auth/linkedin/status` | Public | None | AuthService (OAuth flows) | M6 | ☑ | ☐¹² |
+| `GET /api/user` | User | **Bearer** ✅ | UserService¹ (+ EntitlementsService reads `customerStatus`) | M0 | ☑ | ☑ |
+| `PATCH /api/user/update` | User | **Bearer** ✅ | UserService¹ | M7 | ☑ | ☑ |
+| `POST /api/user/avatar/upload` | User | **Bearer** ✅ | UserService¹ | M7 | ☑ | ☑ |
+| `POST /api/user/avatar/from-url` | User | **Bearer** ✅ | UserService¹ | M7 | ☑ | ◐⁴ |
+| `GET /api/user/identities` | User | **Bearer** ✅ | UserService¹ | M6 | ☑ | ☑ |
+| `GET /api/user/organizations` | User | **Bearer** ✅ | UserService¹ ⁷ | M6 | ☑ | ☑ |
+| `POST /api/user/change-email/request` | User | **Bearer** ✅ | UserService¹ | M7 | ☑ | ☑ |
+| `POST /api/user/delete` | User | **Bearer** ✅ | UserService¹ | M7 | ☑ | ☑ |
+| `GET /api/messages` | Messages | Public | MessagesService | M1 | ☑ | ☑ |
+| `POST /api/messages` | Messages | **Bearer** ✅ | MessagesService | M2² | ☑ | ☑ |
+| `GET /api/messages/[id]` | Messages | Public | MessagesService | M1 | ☑ | ☑ |
+| `PATCH /api/messages/[id]` | Messages | **Bearer** ✅ | MessagesService | M2 | ☑ | ☑ |
+| `DELETE /api/messages/[id]` | Messages | **Bearer** ✅ | MessagesService | M2 | ☑ | ☑ |
+| `GET /api/messages/scheduled` | Messages | **Bearer** ✅ | MessagesService | M6 | ☑ | ☑ |
+| `GET /api/messages/[id]/replies` | Messages | Public | MessagesService | M1 | ☑ | ☑ |
+| `POST /api/messages/[id]/dig` | Messages | **Bearer** ✅ | MessagesService | M2 | ☑ | ☑ |
+| `DELETE /api/messages/[id]/dig` | Messages | **Bearer** ✅ | MessagesService | M2 | ☑ | ☑ |
+| `POST /api/messages/images/upload` | Messages | **Bearer** ✅ | MessagesService | M6 | ☑ | ☑ |
+| `POST /api/messages/videos/upload` | Messages | **Bearer** ✅ | MessagesService | M6 | ☑ | ☑ |
+| `GET /api/lists` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ◐⁴ |
+| `POST /api/lists` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ◐⁴ |
+| `GET /api/lists/[id]` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ◐⁴⁹ |
+| `PUT /api/lists/[id]` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ◐⁴⁹ |
+| `DELETE /api/lists/[id]` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `GET /api/lists/[id]/schema` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `PUT /api/lists/[id]/schema` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `POST /api/lists/[id]/refresh` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `GET /api/lists/[id]/data` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `POST /api/lists/[id]/data` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `GET /api/lists/[id]/data/[rowId]` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ◐⁴⁹ |
+| `PUT /api/lists/[id]/data/[rowId]` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `DELETE /api/lists/[id]/data/[rowId]` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `GET /api/lists/[id]/watchers` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ◐⁴⁹ |
+| `GET /api/lists/[id]/watchers/me` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `GET /api/lists/[id]/watchers/users` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `PUT /api/lists/[id]/watchers/[userId]` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `DELETE /api/lists/[id]/watchers/[userId]` | Lists | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `GET /api/users/[username]/lists` | Lists (public) | Public | ListsService | M1 | ☑ | ☑ |
+| `GET /api/users/[username]/lists/[id]` | Lists (public) | Public | ListsService | M1 | ☑ | ☑ |
+| `GET /api/users/[username]/lists/[id]/data` | Lists (public) | Public | ListsService | M1 | ☑ | ☑ |
+| `GET /api/lists/connections` | List Connections | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `POST /api/lists/connections` | List Connections | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `DELETE /api/lists/connections/[id]` | List Connections | **Bearer** ✅ | ListsService | M3 | ☑ | ☑ |
+| `GET /api/documents/sync` | Documents & Sync | **Bearer** ✅ | DocumentSyncEngine (InterlinedPersistence) | M4 | ☑ | ☑ |
+| `POST /api/documents/sync` | Documents & Sync | **Bearer** ✅ | DocumentSyncEngine (InterlinedPersistence) | M4 | ☑ | ☑ |
+| `GET /api/documents` | Documents & Sync | **Bearer** ✅ | DocumentsService | M4 | ☑ | ☑ |
+| `POST /api/documents` | Documents & Sync | **Bearer** ✅ | DocumentsService | M4 | ☑ | ☑ |
+| `GET /api/documents/[id]` | Documents & Sync | Public | DocumentsService | M4 | ☑ | ◐⁴¹⁰ |
+| `PATCH /api/documents/[id]` | Documents & Sync | **Bearer** ✅ | DocumentsService | M4 | ☑ | ☑ |
+| `DELETE /api/documents/[id]` | Documents & Sync | **Bearer** ✅ | DocumentsService | M4 | ☑ | ☑ |
+| `POST /api/documents/[id]/images/upload` | Documents & Sync | **Bearer** ✅ | DocumentsService | M4 | ☑ | ☑ |
+| `GET /api/documents/folders` | Documents & Sync | **Bearer** ✅ | DocumentsService | M4 | ☑ | ☑ |
+| `POST /api/documents/folders` | Documents & Sync | **Bearer** ✅ | DocumentsService | M4 | ☑ | ☑ |
+| `GET /api/documents/folders/[id]` | Documents & Sync | **Bearer** ✅ | DocumentsService | M4 | ☑ | ◐⁴¹⁰ |
+| `PUT /api/documents/folders/[id]` | Documents & Sync | **Bearer** ✅ | DocumentsService | M4 | ☑ | ☑ |
+| `DELETE /api/documents/folders/[id]` | Documents & Sync | **Bearer** ✅ | DocumentsService | M4 | ☑ | ☑ |
+| `GET /api/documents/folders/[id]/documents` | Documents & Sync | **Bearer** ✅ | DocumentsService | M4 | ☑ | ☑ |
+| `POST /api/follow/[userId]` | Follow | **Bearer** ✅ | SocialService | M5 | ☑ | ☑ |
+| `DELETE /api/follow/[userId]` | Follow | **Bearer** ✅ | SocialService | M5 | ☑ | ☑ |
+| `GET /api/follow/[userId]/status` | Follow | **Bearer** ✅ | SocialService | M5 | ☑ | ☑ |
+| `GET /api/follow/[userId]/followers` | Follow | **Bearer** ✅ | SocialService | M5 | ☑ | ☑ |
+| `GET /api/follow/[userId]/following` | Follow | **Bearer** ✅ | SocialService | M5 | ☑ | ☑ |
+| `GET /api/follow/[userId]/counts` | Follow | **Bearer** ✅ | SocialService | M5 | ☑ | ☑ |
+| `GET /api/follow/[userId]/mutual` | Follow | **Bearer** ✅ | SocialService | M5 | ☑ | ☑ |
+| `POST /api/follow/[userId]/approve` | Follow | **Bearer** ✅ | SocialService | M5 | ☑ | ☑ |
+| `POST /api/follow/[userId]/reject` | Follow | **Bearer** ✅ | SocialService | M5 | ☑ | ☑ |
+| `DELETE /api/follow/[userId]/remove` | Follow | **Bearer** ✅ | SocialService | M5 | ☑ | ◐⁴¹¹ |
+| `GET /api/follow/requests` | Follow | **Bearer** ✅ | SocialService | M5 | ☑ | ☑ |
+| `GET /api/organizations` | Organizations | **Bearer** ✅ | OrgService | M6 | ☑ | ◐⁴¹³ |
+| `POST /api/organizations` | Organizations | **Bearer** ✅ | OrgService | M6 | ☑ | ☑ |
+| `GET /api/organizations/[id]` | Organizations | **Bearer** ✅ | OrgService | M6 | ☑ | ☑ |
+| `PUT /api/organizations/[id]` | Organizations | **Bearer** ✅ | OrgService | M6 | ☑ | ☑ |
+| `GET /api/organizations/[id]/members` | Organizations | **Bearer** ✅ | OrgService | M6 | ☑ | ☑ |
+| `POST /api/organizations/[id]/members` | Organizations | **Bearer** ✅ | OrgService | M6 | ☑ | ☑ |
+| `PUT /api/organizations/[id]/members/[userId]` | Organizations | **Bearer** ✅ | OrgService | M6 | ☑ | ☑ |
+| `DELETE /api/organizations/[id]/members/[userId]` | Organizations | **Bearer** ✅ | OrgService | M6 | ☑ | ☑ |
+| `GET /api/organizations/[id]/users` | Organizations | **Bearer** ✅ | OrgService | M6 | ☑ | ◐⁴¹³ |
+| `GET /api/exports/messages` | Exports | **Bearer** ✅ | ExportsService¹ | M7 | ☑ | ☑ |
+| `GET /api/exports/lists` | Exports | **Bearer** ✅ | ExportsService¹ | M7 | ☑ | ☑ |
+| `GET /api/exports/list-data-rows` | Exports | **Bearer** ✅ | ExportsService¹ | M7 | ☑ | ☑ |
+| `GET /api/exports/follows` | Exports | **Bearer** ✅ | ExportsService¹ | M7 | ☑ | ☑ |
+| `GET /api/notifications` | Notifications | **Bearer** ✅ | NotificationsService | M5 | ☑ | ☑ |
+| `PATCH /api/notifications/[id]/read` | Notifications | **Bearer** ✅ | NotificationsService | M5 | ☑ | ☑ |
+| `POST /api/notifications/mark-all-read` | Notifications | **Bearer** ✅ | NotificationsService | M5 | ☑ | ☑ |
+| `GET /api/user/[username]/messages` | Public | Public | MessagesService⁸ | M1 | ☑ | ☑ |
+| `GET /api/auth/linkedin/status` | Public | Public | AuthService (OAuth flows) | M6 | ☑ | ☐¹² |
 
 **Original-surface totals:** 98 endpoints — Auth 12 · User 8 · Messages 11 · Lists 21 (incl. 3 public) · List Connections 3 · Documents & Sync 14 · Follow 11 · Organizations 9 · Exports 4 · Notifications 3 · Public-only 2.
 
 ## New endpoints (2026-07-31 re-baseline) — implementation state reconciled 2026-09-05
 
-The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-consolidation.md)) plus `GET /api/openapi.json` show the surface has grown well beyond the original 98-row matrix. Every endpoint below is **absent** from those 98 rows (verified: zero path overlap). Rows were added ☐/☐ on 2026-07-31 and **reconciled against the shipped code on 2026-09-05** (see footnote 14) — most of G1–G5, G11a, G12 and G14 shipped in the interim and had never been scored and maps to the gap ID (G1–G14) in [`work-consolidation.md`](../work-consolidation.md). **Backend** column: ✅ = confirmed live & Bearer-reachable in the 2026-07-31 probe; ⚠️ = live but constrained; *per OpenAPI, unverified* = present in the spec / named in the gap plan but **not** individually hit in the read-only probe (writes were deliberately not exercised). Rows flip ◐→☑ only under the same maintenance rule (a tested App-layer view model drives them end-to-end).
+The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-consolidation.md)) plus `GET /api/openapi.json` show the surface has grown well beyond the original 98-row matrix. Every endpoint below is **absent** from those 98 rows (verified: zero path overlap). Rows were added ☐/☐ on 2026-07-31 and **reconciled against the shipped code on 2026-09-05** (see footnote 14) — most of G1–G5, G11a, G12 and G14 shipped in the interim and had never been scored and maps to the gap ID (G1–G14) in [`work-consolidation.md`](../work-consolidation.md). **Auth** column *(regenerated 2026-09-14 from the live spec's `x-auth-type` — see footnote 16)*: **Bearer ✅** = a sync-token client can reach it; **Session-only ⛔** = rejects Bearer entirely and is unbuildable natively; **Public** = no auth; **Does not exist ⛔** = the matrix documented a method or path the live spec does not serve. The retired *"per OpenAPI, unverified"* marker is gone from every row — that uncertainty is what the regeneration resolved. Rows flip ◐→☑ only under the same maintenance rule (a tested App-layer view model drives them end-to-end).
 
 ### Direct Messages (G1) — 11
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/dm` | Direct Messages | ✅ | G1 | List DMs by folder (inbox/sent/deleted), cursor-paginated | ☑ | ☑ |
-| `POST /api/dm` | Direct Messages | ✅ | G1 | Send a DM to a mutual follower (≤8 image attachments) | ☑ | ☑ |
-| `POST /api/dm/images/upload` | Direct Messages | ✅ | G1 | Upload an image for a DM | ☐ | ☐ |
-| `GET /api/dm/recipients` | Direct Messages | ✅ | G1 | List eligible DM recipients (mutual followers) | ☑ | ☑ |
-| `GET /api/dm/thread/{username}` | Direct Messages | ✅ | G1 | Fetch the conversation thread with a user | ☑ | ☑ |
-| `GET /api/dm/thread/{username}/updates` | Direct Messages | ✅ | G1 | Poll for new messages in a thread since a marker | ☑ | ◐ |
-| `GET /api/dm/unread-count` | Direct Messages | ✅ | G1 | Unread-DM count for the badge | ☑ | ☑ |
-| `GET /api/dm/{id}` | Direct Messages | ✅ | G1 | Fetch a single DM | ☐ | ☐ |
-| `POST /api/dm/{id}/read` | Direct Messages | ✅ | G1 | Mark a DM read | ☑ | ◐ |
-| `POST /api/dm/{id}/restore` | Direct Messages | ✅ | G1 | Restore a trashed DM (per-side) | ☑ | ◐ |
-| `POST /api/dm/{id}/trash` | Direct Messages | ✅ | G1 | Soft-delete a DM (per-side) | ☑ | ◐ |
+| `GET /api/dm` | Direct Messages | **Bearer** ✅ | G1 | List DMs by folder (inbox/sent/deleted), cursor-paginated | ☑ | ☑ |
+| `POST /api/dm` | Direct Messages | **Bearer** ✅ | G1 | Send a DM to a mutual follower (≤8 image attachments) | ☑ | ☑ |
+| `POST /api/dm/images/upload` | Direct Messages | **Bearer** ✅ | G1 | Upload an image for a DM | ☐ | ☐ |
+| `GET /api/dm/recipients` | Direct Messages | **Bearer** ✅ | G1 | List eligible DM recipients (mutual followers) | ☑ | ☑ |
+| `GET /api/dm/thread/{username}` | Direct Messages | **Bearer** ✅ | G1 | Fetch the conversation thread with a user | ☑ | ☑ |
+| `GET /api/dm/thread/{username}/updates` | Direct Messages | **Bearer** ✅ | G1 | Poll for new messages in a thread since a marker | ☑ | ◐ |
+| `GET /api/dm/unread-count` | Direct Messages | **Bearer** ✅ | G1 | Unread-DM count for the badge | ☑ | ☑ |
+| `GET /api/dm/{id}` | Direct Messages | **Bearer** ✅ | G1 | Fetch a single DM | ☐ | ☐ |
+| `POST /api/dm/{id}/read` | Direct Messages | **Bearer** ✅ | G1 | Mark a DM read | ☑ | ◐ |
+| `POST /api/dm/{id}/restore` | Direct Messages | **Bearer** ✅ | G1 | Restore a trashed DM (per-side) | ☑ | ◐ |
+| `POST /api/dm/{id}/trash` | Direct Messages | **Bearer** ✅ | G1 | Soft-delete a DM (per-side) | ☑ | ◐ |
 
 ### Moderation (G2) — 10
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/user/blocks` | Moderation | ✅ | G2 | List blocked users (paginated) | ☑ | ☑ |
-| `POST /api/users/{username}/block` | Moderation | per OpenAPI, unverified | G2 | Block a user | ☑ | ◐ |
-| `DELETE /api/users/{username}/block` | Moderation | per OpenAPI, unverified | G2 | Unblock a user | ☑ | ◐ |
-| `GET /api/user/blocks/{username}` | Moderation | per OpenAPI, unverified | G2 | Is-blocking status for a user | ☐ | ☐ |
-| `GET /api/user/mutes` | Moderation | ✅ | G2 | List muted users (paginated) | ☑ | ☑ |
-| `POST /api/users/{username}/mute` | Moderation | per OpenAPI, unverified | G2 | Mute a user | ☑ | ◐ |
-| `DELETE /api/users/{username}/mute` | Moderation | per OpenAPI, unverified | G2 | Unmute a user | ☑ | ◐ |
-| `GET /api/user/mutes/{username}` | Moderation | per OpenAPI, unverified | G2 | Is-muting status for a user | ☐ | ☐ |
-| `POST /api/users/{username}/report` | Moderation | per OpenAPI, unverified | G2 | Report a user (reason + detail) | ☑ | ☑ |
-| `POST /api/messages/{id}/report` | Moderation | per OpenAPI, unverified | G2 | Report a message (reason + detail) | ☑ | ◐ |
+| `GET /api/user/blocks` | Moderation | **Bearer** ✅ | G2 | List blocked users (paginated) | ☑ | ☑ |
+| `POST /api/users/{username}/block` | Moderation | **Bearer** ✅ | G2 | Block a user | ☑ | ◐ |
+| `DELETE /api/users/{username}/block` | Moderation | **Bearer** ✅ | G2 | Unblock a user | ☑ | ◐ |
+| `GET /api/users/{username}/block` | Moderation | **Bearer** ✅ | G2 | Is-blocking status for a user | ☐ | ☐ |
+| `GET /api/user/mutes` | Moderation | **Bearer** ✅ | G2 | List muted users (paginated) | ☑ | ☑ |
+| `POST /api/users/{username}/mute` | Moderation | **Bearer** ✅ | G2 | Mute a user | ☑ | ◐ |
+| `DELETE /api/users/{username}/mute` | Moderation | **Bearer** ✅ | G2 | Unmute a user | ☑ | ◐ |
+| `GET /api/users/{username}/mute` | Moderation | **Bearer** ✅ | G2 | Is-muting status for a user | ☐ | ☐ |
+| `POST /api/users/{username}/report` | Moderation | **Bearer** ✅ | G2 | Report a user (reason + detail) | ☑ | ☑ |
+| `POST /api/messages/{id}/report` | Moderation | **Bearer** ✅ | G2 | Report a message (reason + detail) | ☑ | ◐ |
 
 ### Share Links & Collaborators (G3) — 23
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/lists/{id}/share-links` | Share Links & Collaborators | ✅ | G3 | List a list's tokenized share links | ☑ | ☑ |
-| `POST /api/lists/{id}/share-links` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Create a share link (role + expiry, subscriber-gated) | ☑ | ☑ |
-| `DELETE /api/lists/{id}/share-links/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Revoke a list share link | ☑ | ☑ |
-| `GET /api/lists/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Resolve a shared list by token (read-only viewer) | ☑ | ☑ |
-| `POST /api/lists/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Claim a shared list link | ☑ | ◐ |
-| `GET /api/lists/shared/{token}/data` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Read shared-list row data by token | ☐ | ☐ |
-| `GET /api/lists/watching` | Share Links & Collaborators | ✅ | G3 | "Shared-with-me" lists the user is watching | ☐ | ☐ |
-| `GET /api/documents/{id}/share-links` | Share Links & Collaborators | ✅ | G3 | List a document's share links | ☑ | ◐ |
-| `POST /api/documents/{id}/share-links` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Create a document share link (subscriber-gated) | ☑ | ◐ |
-| `DELETE /api/documents/{id}/share-links/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Revoke a document share link | ☑ | ◐ |
-| `GET /api/documents/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Resolve a shared document by token | ☑ | ◐ |
-| `POST /api/documents/shared/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Claim a shared document link | ☑ | ◐ |
-| `GET /api/documents/{id}/collaborators` | Share Links & Collaborators | ✅ | G3 | List per-person document collaborators (paginated) | ☑ | ☑ |
-| `POST /api/documents/{id}/collaborators` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Add a document collaborator (by @handle + role) | ☑ | ☑ |
-| `GET /api/documents/{id}/collaborators/users` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Search users for collaborator invite | ☑ | ☑ |
-| `PUT /api/documents/{id}/collaborators/{userId}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Set a collaborator's role | ☑ | ◐ |
-| `DELETE /api/documents/{id}/collaborators/{userId}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Remove a document collaborator | ☑ | ◐ |
-| `GET /api/lists/{id}/invites` | Share Links & Collaborators | per OpenAPI, unverified | G3 | List a list's pending email invites | ☑ | ◐ |
-| `POST /api/lists/{id}/invites` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Invite someone to a list by email | ☑ | ◐ |
-| `DELETE /api/lists/{id}/invites/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Revoke a list invite | ☑ | ◐ |
-| `GET /api/documents/{id}/invites` | Share Links & Collaborators | per OpenAPI, unverified | G3 | List a document's pending email invites | ☑ | ☑ |
-| `POST /api/documents/{id}/invites` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Invite someone to a document by email | ☑ | ☑ |
-| `DELETE /api/documents/{id}/invites/{token}` | Share Links & Collaborators | per OpenAPI, unverified | G3 | Revoke a document invite | ☑ | ◐ |
+| `GET /api/lists/{id}/share-links` | Share Links & Collaborators | **Bearer** ✅ | G3 | List a list's tokenized share links | ☑ | ☑ |
+| `POST /api/lists/{id}/share-links` | Share Links & Collaborators | **Bearer** ✅ | G3 | Create a share link (role + expiry, subscriber-gated) | ☑ | ☑ |
+| `DELETE /api/lists/{id}/share-links/{token}` | Share Links & Collaborators | **Bearer** ✅ | G3 | Revoke a list share link | ☑ | ☑ |
+| `GET /api/lists/shared/{token}` | Share Links & Collaborators | Public | G3 | Resolve a shared list by token (read-only viewer) | ☑ | ☑ |
+| `POST /api/lists/shared/{token}` | Share Links & Collaborators | **Bearer** ✅ | G3 | Claim a shared list link | ☑ | ◐ |
+| `GET /api/lists/shared/{token}/data` | Share Links & Collaborators | Public | G3 | Read shared-list row data by token | ☐ | ☐ |
+| `GET /api/lists/watching` | Share Links & Collaborators | **Bearer** ✅ | G3 | "Shared-with-me" lists the user is watching | ☐ | ☐ |
+| `GET /api/documents/{id}/share-links` | Share Links & Collaborators | **Bearer** ✅ | G3 | List a document's share links | ☑ | ◐ |
+| `POST /api/documents/{id}/share-links` | Share Links & Collaborators | **Bearer** ✅ | G3 | Create a document share link (subscriber-gated) | ☑ | ◐ |
+| `DELETE /api/documents/{id}/share-links/{token}` | Share Links & Collaborators | **Bearer** ✅ | G3 | Revoke a document share link | ☑ | ◐ |
+| `GET /api/documents/shared/{token}` | Share Links & Collaborators | Public | G3 | Resolve a shared document by token | ☑ | ◐ |
+| `POST /api/documents/shared/{token}` | Share Links & Collaborators | **Bearer** ✅ | G3 | Claim a shared document link | ☑ | ◐ |
+| `GET /api/documents/{id}/collaborators` | Share Links & Collaborators | **Bearer** ✅ | G3 | List per-person document collaborators (paginated) | ☑ | ☑ |
+| `POST /api/documents/{id}/collaborators` | Share Links & Collaborators | **Bearer** ✅ | G3 | Add a document collaborator (by @handle + role) | ☑ | ☑ |
+| `GET /api/documents/{id}/collaborators/users` | Share Links & Collaborators | **Bearer** ✅ | G3 | Search users for collaborator invite | ☑ | ☑ |
+| `PUT /api/documents/{id}/collaborators/{userId}` | Share Links & Collaborators | **Bearer** ✅ | G3 | Set a collaborator's role | ☑ | ◐ |
+| `DELETE /api/documents/{id}/collaborators/{userId}` | Share Links & Collaborators | **Bearer** ✅ | G3 | Remove a document collaborator | ☑ | ◐ |
+| `GET /api/lists/{id}/invites` | Share Links & Collaborators | **Bearer** ✅ | G3 | List a list's pending email invites | ☑ | ◐ |
+| `POST /api/lists/{id}/invites` | Share Links & Collaborators | **Bearer** ✅ | G3 | Invite someone to a list by email | ☑ | ◐ |
+| `DELETE /api/lists/{id}/invites/{token}` | Share Links & Collaborators | **Bearer** ✅ | G3 | Revoke a list invite | ☑ | ◐ |
+| `GET /api/documents/{id}/invites` | Share Links & Collaborators | **Bearer** ✅ | G3 | List a document's pending email invites | ☑ | ☑ |
+| `POST /api/documents/{id}/invites` | Share Links & Collaborators | **Bearer** ✅ | G3 | Invite someone to a document by email | ☑ | ☑ |
+| `DELETE /api/documents/{id}/invites/{token}` | Share Links & Collaborators | **Bearer** ✅ | G3 | Revoke a document invite | ☑ | ◐ |
 
 ### List Folders (G6) — 4 — ~~planned~~ **FEATURE REMOVED**
 
@@ -187,102 +206,102 @@ The 2026-07-31 authenticated live probe ([`work-consolidation.md`](../work-conso
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/folders` | List Folders | ✅ | ~~G6~~ **REMOVED** | List hierarchical list-folders (flat array + `parentId`) | — | — |
-| `POST /api/folders` | List Folders | per OpenAPI, unverified | ~~G6~~ **REMOVED** | Create a list-folder (subscriber-gated) | — | — |
-| `PUT /api/folders/{id}` | List Folders | per OpenAPI, unverified | ~~G6~~ **REMOVED** | Rename / move a list-folder (cycle-safe) | — | — |
-| `DELETE /api/folders/{id}` | List Folders | per OpenAPI, unverified | ~~G6~~ **REMOVED** | Delete a list-folder (detaches lists to root) | — | — |
+| `GET /api/folders` | List Folders | **Bearer** ✅ | ~~G6~~ **REMOVED** | List hierarchical list-folders (flat array + `parentId`) | — | — |
+| `POST /api/folders` | List Folders | **Bearer** ✅ | ~~G6~~ **REMOVED** | Create a list-folder (subscriber-gated) | — | — |
+| `PUT /api/folders/{id}` | List Folders | **Bearer** ✅ | ~~G6~~ **REMOVED** | Rename / move a list-folder (cycle-safe) | — | — |
+| `DELETE /api/folders/{id}` | List Folders | **Bearer** ✅ | ~~G6~~ **REMOVED** | Delete a list-folder (detaches lists to root) | — | — |
 
 ### Search (G5) — 3
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/messages/search` | Search | ✅ | G5 | Server-side message search (`?q=`; POST → 405, search is GET) | ☑ | ☑ |
-| `GET /api/lists/search` | Search | ✅ | G5 | Server-side list search | ☑ | ☑ |
-| `GET /api/documents/search` | Search | ✅ | G5 | Server-side document search | ☑ | ☑ |
+| `GET /api/messages/search` | Search | **Bearer** ✅ | G5 | Server-side message search (`?q=`; POST → 405, search is GET) | ☑ | ☑ |
+| `GET /api/lists/search` | Search | **Bearer** ✅ | G5 | Server-side list search | ☑ | ☑ |
+| `GET /api/documents/search` | Search | **Bearer** ✅ | G5 | Server-side document search | ☑ | ☑ |
 
 ### GitHub (G4) — 8
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/github/repos` | GitHub | ⚠️ | G4 | List linked-account repos (400 "not linked" until OAuth link) | ☑ | ☑ |
-| `GET /api/github/issues` | GitHub | per OpenAPI, unverified | G4 | List issues for a repo | ☑ | ☑ |
-| `POST /api/github/issues` | GitHub | per OpenAPI, unverified | G4 | Create an issue | ☑ | ☑ |
-| `PATCH /api/github/issues/{owner}/{repo}/{number}`¹⁵ | GitHub | ✅ live (`Allow: OPTIONS, PATCH`) | G4 | Edit an issue (labels / assignees / state) — **the client points at `/api/github/repos/{repo}/issues/{number}`, which 404s** | ☐ | ☐ |
-| `POST /api/github/issues/{owner}/{repo}/{number}/comments`¹⁵ | GitHub | ✅ live (`Allow: OPTIONS, POST`) | G4 | Comment on an issue — **the client points at `/api/github/repos/{repo}/issues/{number}/comments`, which 404s** | ☐ | ☐ |
-| `GET /api/github/repos/{owner}/{repo}/assignees` | GitHub | per OpenAPI, unverified | G4 | List assignable users for a repo | ☑ | ☑ |
-| `GET /api/github/repos/{owner}/{repo}/labels` | GitHub | per OpenAPI, unverified | G4 | List labels for a repo | ☑ | ☑ |
-| `GET /api/github/repos/{owner}/{repo}/next-issue-number` | GitHub | per OpenAPI, unverified | G4 | Next issue number for a repo | ☑ | ☑ |
+| `GET /api/github/repos` | GitHub | **Bearer** ✅ | G4 | List linked-account repos (400 "not linked" until OAuth link) | ☑ | ☑ |
+| `GET /api/github/issues` | GitHub | **Bearer** ✅ | G4 | List issues for a repo | ☑ | ☑ |
+| `POST /api/github/issues` | GitHub | **Bearer** ✅ | G4 | Create an issue | ☑ | ☑ |
+| `PATCH /api/github/issues/{owner}/{repo}/{number}`¹⁵ | GitHub | **Bearer** ✅ | G4 | Edit an issue (labels / assignees / state) — **the client points at `/api/github/repos/{repo}/issues/{number}`, which 404s** | ☐ | ☐ |
+| `POST /api/github/issues/{owner}/{repo}/{number}/comments`¹⁵ | GitHub | **Bearer** ✅ | G4 | Comment on an issue — **the client points at `/api/github/repos/{repo}/issues/{number}/comments`, which 404s** | ☐ | ☐ |
+| `GET /api/github/repos/{owner}/{repo}/assignees` | GitHub | **Bearer** ✅ | G4 | List assignable users for a repo | ☑ | ☑ |
+| `GET /api/github/repos/{owner}/{repo}/labels` | GitHub | **Bearer** ✅ | G4 | List labels for a repo | ☑ | ☑ |
+| `GET /api/github/repos/{owner}/{repo}/next-issue-number` | GitHub | **Bearer** ✅ | G4 | Next issue number for a repo | ☑ | ☑ |
 
 ### Push (G9) — 2
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `POST /api/push/register` | Push | ✅ | G9 | Register an APNs device token (400 "token is required" when empty → route live) | ☐ | ☐ |
-| `DELETE /api/push/unregister` | Push | ⚠️ | G9 | Unregister a device token (POST → 405; verb likely DELETE — confirm) | ☐ | ☐ |
+| `POST /api/push/register` | Push | **Bearer** ✅ | G9 | Register an APNs device token (400 "token is required" when empty → route live) | ☐ | ☐ |
+| `DELETE /api/push/unregister` | Push | **Bearer** ✅ | G9 | Unregister a device token (POST → 405; verb likely DELETE — confirm) | ☐ | ☐ |
 
 ### Stripe / Billing (G8) — 2
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `POST /api/stripe/checkout-session` | Stripe / Billing | **404 not deployed** | ~~G8~~ **OUT OF SCOPE** | Billing managed in the online app (owner decision 2026-07-31); route also 404s live | — | — |
-| `GET /api/stripe/customer-portal-session` | Stripe / Billing | **404 not deployed** | ~~G8~~ **OUT OF SCOPE** | Billing managed in the online app; route also 404s live | — | — |
+| `POST /api/stripe/create-checkout-session` | Stripe / Billing | **Session-only** ⛔ | ~~G8~~ **OUT OF SCOPE** | Billing managed in the online app (owner decision 2026-07-31); route also 404s live | — | — |
+| `POST /api/stripe/create-portal-session` | Stripe / Billing | **Session-only** ⛔ | ~~G8~~ **OUT OF SCOPE** | Billing managed in the online app; route also 404s live | — | — |
 
 ### LinkedIn targets (G11a) — 4
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/linkedin/targets` | LinkedIn targets | ✅ | G11a | List LinkedIn posting targets (personal target present) | ☐ | ☐ |
-| `GET /api/linkedin/posting-targets` | LinkedIn targets | ✅ | G11a | Read enabled posting targets (`enabled:true`, `orgScopeMissing:true`) | ☑ | ☑ |
-| `PUT /api/linkedin/posting-targets` | LinkedIn targets | per OpenAPI, unverified | G11a | Set enabled posting targets | ☐ | ☐ |
-| `POST /api/linkedin/sync-pages` | LinkedIn targets | per OpenAPI, unverified | G11a | Refresh available LinkedIn pages | ☐ | ☐ |
+| `GET /api/linkedin/targets` | LinkedIn targets | **Bearer** ✅ | G11a | List LinkedIn posting targets (personal target present) | ☐ | ☐ |
+| `GET /api/linkedin/posting-targets` | LinkedIn targets | **Bearer** ✅ | G11a | Read enabled posting targets (`enabled:true`, `orgScopeMissing:true`) | ☑ | ☑ |
+| `PUT /api/linkedin/posting-targets` | LinkedIn targets | **Bearer** ✅ | G11a | Set enabled posting targets | ☐ | ☐ |
+| `POST /api/linkedin/sync-pages` | LinkedIn targets | **Bearer** ✅ | G11a | Refresh available LinkedIn pages | ☐ | ☐ |
 
 ### Twitter / X auth (G7) — 3
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/auth/twitter/authorize` | Twitter / X auth | ✅ | G7 | Begin X/Twitter OAuth authorization — built by the shared `Auth.authorize(provider:)` builder (`OAuthProvider` includes `.twitter`), consumed by `UserService` + `LinkedAccountsViewModel` | ☑ | ☑ |
-| `GET /api/auth/twitter/callback` | Twitter / X auth | per OpenAPI, unverified | G7 | X/Twitter OAuth callback | ☐ | ☐ |
-| `GET /api/auth/twitter/status` | Twitter / X auth | ✅ | G7 | X/Twitter link status (`configured:true`) | ☐ | ☐ |
+| `GET /api/auth/twitter/authorize` | Twitter / X auth | Public | G7 | Begin X/Twitter OAuth authorization — built by the shared `Auth.authorize(provider:)` builder (`OAuthProvider` includes `.twitter`), consumed by `UserService` + `LinkedAccountsViewModel` | ☑ | ☑ |
+| `GET /api/auth/twitter/callback` | Twitter / X auth | Public | G7 | X/Twitter OAuth callback | ☐ | ☐ |
+| `GET /api/auth/twitter/status` | Twitter / X auth | Public | G7 | X/Twitter link status (`configured:true`) | ☐ | ☐ |
 
 ### Document templates & tree (G12) — 6
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/documents/templates` | Document templates & tree | ✅ | G12 | List server-side document templates (seeded + `_templates` folder) | ☑ | ☑ |
-| `POST /api/documents/templates/seed-defaults` | Document templates & tree | per OpenAPI, unverified | G12 | Seed the default template set | ☑ | ◐ |
-| `GET /api/documents/from-template` | Document templates & tree | per OpenAPI, unverified | G12 | Preview a new document from a template | ☐ | ☐ |
-| `POST /api/documents/from-template` | Document templates & tree | per OpenAPI, unverified | G12 | Create a document from a template | ☑ | ☑ |
-| `GET /api/documents/tree` | Document templates & tree | ✅ | G12 | One-call folders + documents sidebar payload | ☐ | ☐ |
-| `POST /api/documents/folders/{id}/documents` | Document templates & tree | per OpenAPI, unverified | G12 | Create a document directly inside a folder | ☐ | ☐ |
+| `GET /api/documents/templates` | Document templates & tree | **Bearer** ✅ | G12 | List server-side document templates (seeded + `_templates` folder) | ☑ | ☑ |
+| `POST /api/documents/templates/seed-defaults` | Document templates & tree | **Bearer** ✅ | G12 | Seed the default template set | ☑ | ◐ |
+| `POST /api/documents/from-template` | Document templates & tree | **Bearer** ✅ | G12 | Preview a new document from a template | ☐ | ☐ |
+| `POST /api/documents/from-template` | Document templates & tree | **Bearer** ✅ | G12 | Create a document from a template | ☑ | ☑ |
+| `GET /api/documents/tree` | Document templates & tree | **Bearer** ✅ | G12 | One-call folders + documents sidebar payload | ☐ | ☐ |
+| `POST /api/documents/folders/{id}/documents` | Document templates & tree | **Bearer** ✅ | G12 | Create a document directly inside a folder | ☐ | ☐ |
 
 ### Document presence (G13) — 2
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `POST /api/documents/{id}/presence` | Document presence | per OpenAPI, unverified | G13 | Send a live co-editing presence heartbeat | ☐ | ☐ |
-| `DELETE /api/documents/{id}/presence` | Document presence | per OpenAPI, unverified | G13 | Clear presence on leaving a document | ☐ | ☐ |
+| `POST /api/documents/{id}/presence` | Document presence | **Bearer** ✅ | G13 | Send a live co-editing presence heartbeat | ☐ | ☐ |
+| `DELETE /api/documents/{id}/presence` | Document presence | **Bearer** ✅ | G13 | Clear presence on leaving a document | ☐ | ☐ |
 
 ### Utility / limits (G14) — 2
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/limits` | Utility / limits | ✅ | G14 | Quota / media limits (drives composer validation + plan card) | ☑ | ☑ |
-| `GET /api/images/proxy` | Utility / limits | per OpenAPI, unverified | G14 | Image-proxy helper (rich previews / avatars) | ☐ | ☐ |
+| `GET /api/limits` | Utility / limits | Public | G14 | Quota / media limits (drives composer validation + plan card) | ☑ | ☑ |
+| `GET /api/images/proxy` | Utility / limits | Public | G14 | Image-proxy helper (rich previews / avatars) | ☐ | ☐ |
 
 ### Multi-account (G10) — 3
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/auth/accounts` | Multi-account | ⚠️ | G10 | List switchable accounts (**401 under Bearer — session-cookie-only**; spike S4) | ☐ | ☐ |
-| `POST /api/auth/switch` | Multi-account | ⚠️ | G10 | Switch the active account (session-bound) | ☐ | ☐ |
-| `POST /api/auth/remove-account` | Multi-account | per OpenAPI, unverified | G10 | Remove a linked account | ☐ | ☐ |
+| `GET /api/auth/accounts` | Multi-account | **Session-only** ⛔ | G10 | List switchable accounts (**401 under Bearer — session-cookie-only**; spike S4) | ☐ | ☐ |
+| `POST /api/auth/switch` | Multi-account | **Session-only** ⛔ | G10 | Switch the active account (session-bound) | ☐ | ☐ |
+| `POST /api/auth/remove-account` | Multi-account | **Session-only** ⛔ | G10 | Remove a linked account | ☐ | ☐ |
 
 ### Public profile & multi-account (migrations D2 / OAuth-link) — 2
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/users/{username}` | Public profile | ✅ | D2 (fn 8) | Direct public-profile read (now live — replaces the decision-0002 fallback) | ☑ | ◐ |
-| `POST /api/auth/{provider}/link` | Auth (OAuth) | ✅ | fn 12 | Bearer native OAuth identity-link completion (endpoint live; native flow built on this branch) | ☑ | ◐ |
+| `GET /api/users/{username}` | Public profile | Public | D2 (fn 8) | Direct public-profile read (now live — replaces the decision-0002 fallback) | ☑ | ◐ |
+| `POST /api/auth/{provider}/link` | Auth (OAuth) | **Bearer** ✅ | fn 12 | Bearer native OAuth identity-link completion (endpoint live; native flow built on this branch) | ☑ | ◐ |
 
 ### Messages & auth drift additions (D1 / D3 / new methods on existing paths) — 4
 
@@ -290,10 +309,10 @@ New HTTP methods / paths on already-listed resource families, surfaced by the re
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `POST /api/messages/scheduled` | Messages | per OpenAPI, unverified | D1 | Explicit schedule-create (app uses `scheduledAt`-on-create — verify preferred) | ☐ | ☐ |
-| `POST /api/messages/{id}/replies` | Messages | per OpenAPI, unverified | D3 | Post a reply via POST (app currently reads replies via GET — align verbs) | ☐ | ☐ |
-| `POST /api/lists/{id}/watchers` | Lists | per OpenAPI, unverified | — | Invite a watcher via POST (matrix has `PUT …/watchers/{userId}`) | ☐ | ☐ |
-| `POST /api/auth/verify-email-change` | Auth | per OpenAPI, unverified | — | Confirm a pending email-change (pairs with existing `change-email/request`) | ☐ | ☐ |
+| `POST /api/messages/scheduled` | Messages | **Does not exist** ⛔ | D1 | **RESOLVED 2026-09-14 — speculative row.** The live spec offers only `GET /api/messages/scheduled`; there is no POST. The app's `scheduledAt`-on-create *is* the mechanism. Not a target. | — | — |
+| `POST /api/messages/{id}/replies` | Messages | **Does not exist** ⛔ | D3 | **RESOLVED 2026-09-14 — speculative row.** The live spec offers only `GET /api/messages/{id}/replies`. Replies are created via `POST /api/messages` with a parent reference; there is no verb to align. Not a target. | — | — |
+| `POST /api/lists/{id}/watchers` | Lists | **Bearer** ✅ | — | Invite a watcher via POST (matrix has `PUT …/watchers/{userId}`) | ☐ | ☐ |
+| `POST /api/auth/verify-email-change` | Auth | Public | — | Confirm a pending email-change (pairs with existing `change-email/request`) | ☐ | ☐ |
 
 ### User lookup & provider status — 4
 
@@ -301,10 +320,10 @@ New HTTP methods / paths on already-listed resource families, surfaced by the re
 
 | Endpoint (method + path) | Group | Backend | Gap | Purpose | Implemented | Tested |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/users/search` | User | ✅ | — | Search users by handle (collaborator / invite pickers) | ☑ | ◐ |
-| `GET /api/users/lookup` | User | ✅ | — | Resolve a single `@handle` to a user | ☑ | ◐ |
-| `GET /api/auth/bluesky/status` | Auth (OAuth) | ✅ | NW-4 | Whether Bluesky OAuth is configured on the server | ☑ | ◐ |
-| `GET /api/auth/mastodon/status` | Auth (OAuth) | ✅ | NW-4 | Whether Mastodon OAuth is configured for an instance | ☑ | ◐ |
+| `GET /api/users/search` | User | **Bearer** ✅ | — | Search users by handle (collaborator / invite pickers) | ☑ | ◐ |
+| `GET /api/users/lookup` | User | **Bearer** ✅ | — | Resolve a single `@handle` to a user | ☑ | ◐ |
+| `GET /api/auth/bluesky/status` | Auth (OAuth) | **Bearer** ✅ | NW-4 | Whether Bluesky OAuth is configured on the server | ☑ | ◐ |
+| `GET /api/auth/mastodon/status` | Auth (OAuth) | **Bearer** ✅ | NW-4 | Whether Mastodon OAuth is configured for an instance | ☑ | ◐ |
 
 **New-endpoints subtotal:** **93 rows** — Direct Messages 11 · Moderation 10 · Share Links & Collaborators 23 · List Folders 4 (retired) · Search 3 · GitHub 8 · Push 2 · Stripe/Billing 2 · LinkedIn targets 4 · Twitter/X auth 3 · Document templates & tree 6 · Document presence 2 · Utility/limits 2 · Multi-account 3 · Public profile & OAuth-link (D2 / fn 12) 2 · Messages & auth drift additions 4 · User lookup & provider status 4. *(Recomputed from the rows themselves on 2026-09-05. The former "53" was an arithmetic slip — it is the running total through the GitHub section, i.e. the addition stopped six sections early. Share Links grew 17 → 23 when the six shipped `/invites` endpoints were added; see footnote 14.)*
 
@@ -345,6 +364,44 @@ New HTTP methods / paths on already-listed resource families, surfaced by the re
 
 15. **GitHub issue update / comment: the live routes are the FLAT ones, and the client points elsewhere (2026-09-05 live re-measure).** Both audit passes on 2026-09-05 corrected these rows to the *client's* nested path. The live API disagrees with the client: `GET /api/openapi.json` lists `PATCH /api/github/issues/{owner}/{repo}/{number}` and `POST /api/github/issues/{owner}/{repo}/{number}/comments`, and authenticated `OPTIONS` calls return `Allow: OPTIONS, PATCH` and `Allow: OPTIONS, POST` on those paths — i.e. exactly the three-segment flat form the 2026-07-31 re-baseline originally documented. The client's `GitHub.updateIssue` / `GitHub.comment` build `/api/github/repos/{repo}/issues/{number}[/comments]`, which 404s, so these rows are **Implemented ☐**: a builder exists, but not for this route. This also resolves the backend ask [P1-H2](../work-consolidation.md#p1-h2-github-issue-update-comment-routes) — no backend change is needed, only a client path fix ([`work-consolidation.md` §1c · V7](../work-consolidation.md#1c-live-verb-defects--fix-first)). `labels`, `assignees`, and `next-issue-number` are unaffected — their nested `/api/github/repos/{owner}/{repo}/…` routes answer `GET`.
 
+16. **2026-09-14 auth-verification pass — what was done, and what was deliberately left.**
+    `GET /api/openapi.json` was pulled under a Bearer sync-token from the `.env` test account
+    (**232 paths / 303 operations**, OpenAPI 3.1.0) and every row's `Auth` cell was regenerated from
+    that operation's `x-auth-type`. 176 of 191 rows matched a live operation; 168 cells changed.
+
+    **The `x-auth-type` distribution is the headline**, and it overturns a standing conclusion:
+    `sync-token` **207** · `none` **57** · `session` **32** · `cron` **7**. The matrix and
+    `work-consolidation.md` both previously recorded **45** session-only operations as a hard ceiling
+    on native parity. It is now **32**, and **28 of those are routes a native client should never call**
+    (24 `/api/admin/*`, 2 `/api/architecture-aggregates/*`, 2 `/api/stripe/*`). The genuinely limiting
+    set is **four**: `GET /api/auth/accounts`, `POST /api/auth/switch`, `POST /api/auth/remove-account`
+    (G10 / #60) and `POST /api/auth/send-verification-email`. Both dashboard-layout routes, both
+    front-wall-layout routes, `GET /api/user/engagement` and all five `widgets/*` routes are now
+    `sync-token` and were **confirmed `200` under Bearer by live read-only probe** — so the Dashboard
+    (G28 / #61) is no longer backend-blocked. Controls probed the other way: `/api/auth/accounts` and
+    `send-verification-email` both returned **401**, confirming they really are session-only.
+
+    **Eleven rows carried a method or path the live spec does not serve.** Six were the §1c verb
+    defects — the matrix still documented `POST /api/user/update`, `PUT /api/messages/[id]`,
+    `PATCH /api/lists/[id]/data/[rowId]`, `PATCH /api/documents/folders/[id]`,
+    `POST /api/follow/[userId]/remove` and `PATCH /api/organizations/[id]`, i.e. **the broken verbs the
+    client stopped sending in PR #24**. The matrix was behind the code, not ahead of it. Two block/mute
+    rows had the wrong path shape (`/api/user/blocks/{username}` → `/api/users/{username}/block`), two
+    Stripe rows had pre-rename paths, and `GET /api/documents/from-template` is a **POST**. Two further
+    rows (`POST /api/messages/scheduled`, `POST /api/messages/{id}/replies`) were **speculative
+    inventions** — the spec offers only `GET` on both paths — and are now scored `—`, not targets.
+
+    **`Implemented` / `Tested` were NOT re-scored, on purpose.** Footnote 14's rule requires a Kit
+    request builder **and** a DTO **and** a Domain service call path before a row may show ☑. That is a
+    per-row semantic judgement; a script can see the builder but not the call path. Mechanically
+    flipping 191 rows would have produced exactly the unverified-but-confident marks footnote 14 exists
+    to prevent. **Evidence gathered for that queued pass:** the client builds **200** distinct
+    `(method, path)` request builders, **194** matching live operations; of **259** in-scope operations
+    about **52** are unimplemented. That count is ±5 — it under-counts parameterised builders (one
+    `/api/auth/{provider}/authorize` builder covers five spec paths) and requests built inline rather
+    than through `Request(` (`sync-token`, `login`).
+
+
 ## Cross-check against PLAN.md §1 (2026-06-11)
 
 - Every API surface named in PLAN.md §1 maps to at least one row above. No PLAN.md endpoint is missing from the live reference.
@@ -353,6 +410,8 @@ New HTTP methods / paths on already-listed resource families, surfaced by the re
 - PLAN.md §4's "Session-only" list (replies, digs, follow, organizations, notifications, document CRUD) matches the live annotations. The live reference additionally marks the User group's write endpoints and Exports as Session — the M0 spike should probe these groups too.
 
 ## Update history
+
+- **2026-09-14 — auth column verified against the live spec; eleven stale rows corrected; the session-only ceiling collapses.** Pulled `GET /api/openapi.json` under a Bearer sync-token (**232 paths / 303 operations**, up from 226/294) and regenerated every row's `Auth` cell from `x-auth-type`: **168 of 191 cells rewritten**, retiring the ~50 that read *"per OpenAPI, unverified"*. `Bearer ✅` vs `Session-only ⛔` now makes *not built* and *not buildable* distinguishable per row — the column the 2026-09-07 sweep asked for. **Session-only operations fell 45 → 32, and 28 of the 32 are admin/architecture/Stripe routes a native client should never call**, leaving four that genuinely constrain us; the Dashboard, front-wall and widget routes are all Bearer-reachable now and were probed `200` live, so G28/#61 is a product decision rather than a blocker. **Eleven rows had a stale method or path corrected**, six of them the §1c verb defects where this matrix still documented the broken verb the client stopped sending in PR #24 — the matrix was behind the code. Two speculative rows (`POST /api/messages/scheduled`, `POST /api/messages/{id}/replies`) were disproved by the spec and rescored `—`. **`Implemented`/`Tested` were deliberately NOT re-scored** — footnote 14's rule needs a per-row semantic check, and a mechanical flip would manufacture unverified marks; that pass is queued, with its evidence recorded in footnote 16. All probes read-only. See footnote 16.
 
 - **2026-09-05 (later) — reconciled the two parallel audit passes and folded in the live re-measure.** Two sessions audited this matrix the same evening; PR #22 merged the first. This entry merges the second pass on top and adds what a fresh live pull found. **From the second pass:** four implemented endpoints neither pass had a row for (`GET /api/users/search`, `GET /api/users/lookup`, `GET /api/auth/bluesky/status`, `GET /api/auth/mastodon/status`) are added as a new section, and `GET /api/auth/twitter/authorize` flips ☐/☐ → ☑/☑ — it is built by the shared `Auth.authorize(provider:)` builder (`OAuthProvider` includes `.twitter`) and consumed by `UserService` + `LinkedAccountsViewModel`. Where the two passes graded *Tested* differently on shared rows, PR #22's grades stand; they are internally consistent and no less defensible. **From the live re-measure:** the two GitHub issue rows are corrected again — to the **flat** routes the live spec and `OPTIONS` confirm, with Implemented back to ☐ because the client's builders point at a 404ing nested path (footnote 15); and a staleness banner now heads the file, because `GET /api/openapi.json` reports **294 operations** against this matrix's 191 rows. **Totals recomputed:** 93 new rows, 191 total.
 
