@@ -162,12 +162,110 @@ struct SchemaEditorView: View {
             if field.type == .select {
                 selectOptionsEditor(viewModel: viewModel, field: field)
             }
+            // The per-column metadata the server has always stored and no client
+            // ever wrote (GitHub #50). Behind a disclosure so the common case —
+            // naming a column and picking its type — stays a single line.
+            fieldDetailEditor(viewModel: viewModel, field: field)
             if let error = viewModel.validationError(for: field) {
                 Text(error)
                     .font(.ilMono(10))
                     .foregroundStyle(.red)
             }
         }
+    }
+
+    /// Help text, placeholder, visibility and the validation rules for one
+    /// column (GitHub #50).
+    ///
+    /// The controls offered are **type-dependent**: length rules only for the
+    /// text family, range rules only for `number`. Showing a "Min length" on a
+    /// checkbox would be a control that cannot do anything, and sending the rule
+    /// would put a constraint on the server that nothing enforces.
+    @ViewBuilder
+    private func fieldDetailEditor(
+        viewModel: SchemaEditorViewModel,
+        field: SchemaEditorViewModel.EditableField
+    ) -> some View {
+        DisclosureGroup("Details") {
+            VStack(alignment: .leading, spacing: 6) {
+                LabeledContent("Help text") {
+                    TextField("Shown under the field", text: binding(viewModel, field, \.helpText))
+                        .textFieldStyle(.roundedBorder)
+                }
+                LabeledContent("Placeholder") {
+                    TextField("Shown when empty", text: binding(viewModel, field, \.placeholder))
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                if field.type.acceptsRangeRules {
+                    HStack(spacing: 8) {
+                        LabeledContent("Min") {
+                            TextField("", text: binding(viewModel, field, \.minValue))
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        LabeledContent("Max") {
+                            TextField("", text: binding(viewModel, field, \.maxValue))
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
+                }
+
+                if field.type.acceptsLengthRules {
+                    HStack(spacing: 8) {
+                        LabeledContent("Min length") {
+                            TextField("", text: binding(viewModel, field, \.minLength))
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        LabeledContent("Max length") {
+                            TextField("", text: binding(viewModel, field, \.maxLength))
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
+                    LabeledContent("Pattern") {
+                        TextField("Regular expression", text: binding(viewModel, field, \.pattern))
+                            .textFieldStyle(.roundedBorder)
+                            .font(.ilMono(11))
+                    }
+                    Text("Checked by InterlinedList when a row is saved. This app doesn’t test it locally — a different regex engine could disagree and reject a value the server would accept.")
+                        .font(.ilMono(10))
+                        .foregroundStyle(.secondary)
+                }
+
+                Toggle("Show this column", isOn: Binding(
+                    get: { field.isVisible },
+                    set: { newValue in
+                        if let index = viewModel.fields.firstIndex(where: { $0.id == field.id }) {
+                            viewModel.fields[index].isVisible = newValue
+                        }
+                    }
+                ))
+                .toggleStyle(.checkbox)
+                Text("A hidden column keeps its data. This isn’t the same as removing it.")
+                    .font(.ilMono(10))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 4)
+            .disabled(!viewModel.isEditable)
+        }
+        .font(.ilMono(11))
+    }
+
+    /// One binding shape for every string field on a row, so the
+    /// find-the-index-then-mutate dance is written once rather than eleven
+    /// times.
+    private func binding(
+        _ viewModel: SchemaEditorViewModel,
+        _ field: SchemaEditorViewModel.EditableField,
+        _ keyPath: WritableKeyPath<SchemaEditorViewModel.EditableField, String>
+    ) -> Binding<String> {
+        Binding(
+            get: { field[keyPath: keyPath] },
+            set: { newValue in
+                if let index = viewModel.fields.firstIndex(where: { $0.id == field.id }) {
+                    viewModel.fields[index][keyPath: keyPath] = newValue
+                }
+            }
+        )
     }
 
     /// Inline, per-option editor shown only for `select` columns. Each option
