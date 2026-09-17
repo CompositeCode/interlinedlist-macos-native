@@ -63,47 +63,27 @@ enum ListsEvent: Sendable, Equatable {
 /// subscription stream; terminate by cancelling the consuming task.
 final class ListsEventBus: Sendable {
 
-    private let storage = Storage()
+    /// Subscriber registry. Shared with the other three feature buses; see
+    /// `EventBusStorage` for why registration is synchronous (GitHub #82).
+    private let storage = EventBusStorage<ListsEvent>()
 
     init() {}
 
     /// Returns an `AsyncStream` that yields every event posted after
-    /// subscription. The stream finishes when the consumer cancels.
+    /// subscription. The subscriber is registered before this returns, so an
+    /// immediately-following `post` is delivered. The stream finishes when the
+    /// consuming task is cancelled.
     func events() -> AsyncStream<ListsEvent> {
-        let id = UUID()
-        return AsyncStream { continuation in
-            Task { await self.storage.register(id: id, continuation: continuation) }
-            continuation.onTermination = { _ in
-                Task { await self.storage.unregister(id: id) }
-            }
-        }
+        storage.stream()
     }
 
-    /// Publish an event to every active subscriber. Late subscribers
-    /// do not receive past events.
+    /// Publish an event to every active subscriber. Late subscribers do not
+    /// receive past events. Delivery is synchronous with the call.
     func post(_ event: ListsEvent) {
-        Task { await storage.broadcast(event) }
+        storage.broadcast(event)
     }
 
-    // MARK: - Storage
-
-    /// Holds the live continuations keyed by registration UUID. An
-    /// actor because publishers and subscribers aren't serialized.
-    private actor Storage {
-        private var continuations: [UUID: AsyncStream<ListsEvent>.Continuation] = [:]
-
-        func register(id: UUID, continuation: AsyncStream<ListsEvent>.Continuation) {
-            continuations[id] = continuation
-        }
-
-        func unregister(id: UUID) {
-            continuations[id] = nil
-        }
-
-        func broadcast(_ event: ListsEvent) {
-            for continuation in continuations.values {
-                continuation.yield(event)
-            }
-        }
-    }
+    /// Live subscriber count, for tests that need to assert a subscription
+    /// exists rather than wait for one.
+    var subscriberCount: Int { storage.subscriberCount }
 }

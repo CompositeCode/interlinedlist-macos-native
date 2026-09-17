@@ -148,15 +148,15 @@ final class FollowRequestRowViewModelTests: XCTestCase {
                 break
             }
         }
-        // Give the actor-storage register call a turn to land.
-        for _ in 0..<5 { await Task.yield() }
+        // No turn is needed for registration any more: the bus registers the
+        // subscriber synchronously inside `events()`, so the subscription above
+        // is already live (GitHub #82). Assert that rather than yielding at it.
+        XCTAssertEqual(bus.subscriberCount, 1)
         await work()
-        // Give the broadcast a few turns to make it through the bus
-        // actor and into the mailbox.
-        for _ in 0..<20 {
-            if await mailbox.value != nil { break }
-            await Task.yield()
-        }
+        // The broadcast itself is synchronous, but the consumer Task still has
+        // to be scheduled to move it into the mailbox — so poll for the
+        // post-condition instead of spending a fixed number of turns on it.
+        await settle(until: { await mailbox.value != nil }, "No event reached the mailbox")
         consumer.cancel()
         return await mailbox.value
     }
