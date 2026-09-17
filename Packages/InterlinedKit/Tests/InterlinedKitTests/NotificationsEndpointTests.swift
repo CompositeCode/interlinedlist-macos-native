@@ -25,13 +25,33 @@ final class NotificationsEndpointTests: XCTestCase {
         XCTAssertEqual(Notifications.tray().path, "/api/notifications")
         XCTAssertEqual(Notifications.tray().method, .get)
         XCTAssertEqual(Notifications.tray().auth, .bearer)
-        XCTAssertEqual(Notifications.tray().query.first(where: { $0.name == "scope" })?.value, "tray")
+        // `all`, not `tray`: `scope=tray` is unread-only and ignores `limit`,
+        // so the macOS tray emptied as the user read it (GitHub #80).
+        XCTAssertEqual(Notifications.tray().query.first(where: { $0.name == "scope" })?.value, "all")
 
         XCTAssertEqual(Notifications.markRead(id: "n1").method, .patch)
         XCTAssertEqual(Notifications.markRead(id: "n1").path, "/api/notifications/n1/read")
 
         XCTAssertEqual(Notifications.markAllRead().method, .post)
         XCTAssertEqual(Notifications.markAllRead().path, "/api/notifications/mark-all-read")
+    }
+
+    // MARK: - Tray limit (G35 / issue #43)
+
+    func test_givenTrayLimit_whenTrayBuilt_thenSendsItAlongsideScope() {
+        // Happy path: the account's `notificationTrayLimit` reaches the wire.
+        let request = Notifications.tray(limit: 25)
+
+        XCTAssertEqual(request.query.first(where: { $0.name == "scope" })?.value, "all")
+        XCTAssertEqual(request.query.first(where: { $0.name == "limit" })?.value, "25")
+    }
+
+    func test_givenNoTrayLimit_whenTrayBuilt_thenOmitsTheParameter() {
+        // Boundary: `nil` must leave the page size to the server rather than
+        // sending `limit=` and risking a zero-row tray.
+        let request = Notifications.tray()
+
+        XCTAssertNil(request.query.first(where: { $0.name == "limit" })?.value)
     }
 
     // MARK: - Happy path
@@ -55,7 +75,7 @@ final class NotificationsEndpointTests: XCTestCase {
 
         let received = await transport.received
         let comps = URLComponents(url: try XCTUnwrap(received[0].url), resolvingAgainstBaseURL: false)
-        XCTAssertTrue(comps?.queryItems?.contains(URLQueryItem(name: "scope", value: "tray")) ?? false)
+        XCTAssertTrue(comps?.queryItems?.contains(URLQueryItem(name: "scope", value: "all")) ?? false)
     }
 
     func test_givenOkBody_whenMarkReadSent_thenDecodesOk() async throws {
@@ -117,5 +137,45 @@ final class NotificationsEndpointTests: XCTestCase {
                 return XCTFail("Expected .decoding, got \(error)")
             }
         }
+    }
+}
+
+// MARK: - Scope (GitHub #80)
+
+extension NotificationsEndpointTests {
+
+    /// The read-inclusive scope is the default, and the unread-only one is still
+    /// reachable for anything that genuinely wants it.
+    ///
+    /// Probed live 2026-09-15 on the test account:
+    ///
+    ///     ?scope=tray&limit=5  -> 1 item   (the single unread one)
+    ///     ?scope=all&limit=3   -> 3 items
+    ///     ?scope=all&limit=10  -> 10 items
+    ///     ?scope=all           -> 20 items (the account's notificationTrayLimit)
+    func test_givenTheDefaultScope_whenBuildingTheTrayRequest_thenItIsReadInclusive() {
+        XCTAssertEqual(
+            Notifications.tray().query.first(where: { $0.name == "scope" })?.value,
+            "all"
+        )
+        XCTAssertEqual(
+            Notifications.tray(scope: "tray").query.first(where: { $0.name == "scope" })?.value,
+            "tray",
+            "the unread-only scope stays available; it is just not the tray's default"
+        )
+    }
+
+    func test_givenALimit_whenBuildingTheTrayRequest_thenItTravelsAlongsideTheScope() {
+        // Boundary: the limit is only meaningful under `scope=all` — `scope=tray`
+        // ignores it server-side — so the two have to go out together.
+        let request = Notifications.tray(limit: 40)
+        XCTAssertEqual(request.query.first(where: { $0.name == "scope" })?.value, "all")
+        XCTAssertEqual(request.query.first(where: { $0.name == "limit" })?.value, "40")
+    }
+
+    func test_givenNoLimit_whenBuildingTheTrayRequest_thenTheParameterIsOmitted() {
+        // Omitting it is not the same as sending zero: an absent `limit` makes
+        // the server apply the account's own stored preference.
+        XCTAssertNil(Notifications.tray().query.first(where: { $0.name == "limit" })?.value)
     }
 }

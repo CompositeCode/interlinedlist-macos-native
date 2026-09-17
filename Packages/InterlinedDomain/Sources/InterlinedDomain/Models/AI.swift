@@ -103,10 +103,21 @@ public enum AIDocumentMode: Sendable, Equatable {
 
 // MARK: - Availability
 
-/// Whether AI can be used right now, and if not, why. AI is gated on **two**
-/// things the server owns: an active subscription and a provider key the user
-/// supplied on the web Integrations page. Asking the server beats guessing from
-/// `customerStatus`, because a paying user with no key still cannot call.
+/// Whether AI can be used right now, and if not, why.
+///
+/// AI is gated on the **subscription alone**. There is no user-supplied provider
+/// key and no separate AI bill: per `/help/ai` and `/help/settings`, AI is
+/// powered by Claude and provided by InterlinedList as part of the subscription.
+/// Live probe 2026-09-15 on a subscriber account:
+///
+/// ```
+/// GET /api/ai/status → 200 {"subscriber":true,"providers":["anthropic"],
+///                           "quota":{"usedToday":0,"dailyLimit":50,"remaining":50}}
+/// ```
+///
+/// So an empty `providers[]` is a **service-side** state, not a user
+/// misconfiguration — see `unavailableReason`. Asking the server still beats
+/// guessing from `customerStatus`, because it also carries the quota.
 public struct AIAvailability: Sendable, Equatable {
     public let isSubscriber: Bool
     /// Provider slugs the account has configured, e.g. `["anthropic"]`.
@@ -140,7 +151,16 @@ public struct AIAvailability: Sendable, Equatable {
             return "AI features are part of a subscription."
         }
         if providers.isEmpty {
-            return "Add your own AI provider key in Settings on interlinedlist.com to use AI features."
+            // GitHub #39. This used to read "Add your own AI provider key in
+            // Settings on interlinedlist.com" — which was wrong and, worse,
+            // actionable-sounding: it sent subscribers hunting for a setting
+            // that does not exist. Per /help/ai and /help/settings, AI is
+            // powered by Claude and provided by InterlinedList as part of the
+            // subscription; there is no user-supplied key and no separate AI
+            // bill. An empty `providers[]` is therefore a *service-side* state,
+            // not a user misconfiguration, so the copy says so and asks for
+            // nothing the user cannot do.
+            return "AI features are temporarily unavailable. Nothing is wrong with your account — please try again later."
         }
         if let quota, !quota.hasRemaining {
             return "You've used today's \(quota.dailyLimit) AI requests. The limit resets tomorrow."
@@ -163,8 +183,11 @@ public struct AIQuota: Sendable, Equatable {
     public var hasRemaining: Bool { dailyLimit <= 0 || remaining > 0 }
 }
 
-/// Token spend and model for one AI call. Shown next to a preview so the cost of
-/// the user's own provider key is visible rather than hidden.
+/// Token spend and model for one AI call.
+///
+/// Shown next to a preview so the run is legible rather than opaque. It is **not**
+/// a bill: the user has no provider key and pays nothing per call beyond their
+/// daily quota. Quota, not money, is the scarce thing to show them.
 public struct AIUsage: Sendable, Equatable {
     public let inputTokens: Int?
     public let outputTokens: Int?
@@ -350,7 +373,9 @@ public enum AIGenerationResult: Sendable, Equatable {
 /// Failures the AI surface can present meaningfully. Anything else propagates as
 /// the underlying `APIError`.
 public enum AIError: Error, Sendable, Equatable {
-    /// The account is not a subscriber, or has no provider key configured.
+    /// AI cannot be used right now: no subscription, no quota left, or the
+    /// service reporting no providers. The `reason` is the sentence to show —
+    /// it never asks the user to configure something that does not exist.
     case unavailable(reason: String)
     /// The draft is shorter than the feature's minimum.
     case inputTooShort(minimumWords: Int)

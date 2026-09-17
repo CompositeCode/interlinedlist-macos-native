@@ -50,21 +50,49 @@ final class LinkPreviewRenderingTests: XCTestCase {
     }
 
     // Mixed list: only the renderable entries survive, preserving order.
+    //
+    // RULE CHANGED in G21 (2026-09-07): a preview whose only signal is a ready
+    // `fetchStatus` no longer renders. The live server sends
+    // `fetchStatus: "success"` on every resolved link while nesting the actual
+    // title/description/thumbnail under a `metadata` object the DTO used to
+    // drop — so status-only rendering drew a bordered card containing nothing
+    // but the host for every link on the timeline.
     func test_givenMessageWithMixedPreviews_whenFilteringRenderable_thenOnlyRenderableSurviveInOrder() {
         // Given
         let good = LinkPreview(url: URL(string: "https://a.example.com")!, title: "A")
         let bare = LinkPreview(url: URL(string: "https://b.example.com")!)
-        let alsoGood = LinkPreview(url: URL(string: "https://c.example.com")!, fetchStatus: "ok")
+        let statusOnly = LinkPreview(url: URL(string: "https://c.example.com")!, fetchStatus: "ok")
+        let withImage = LinkPreview(
+            url: URL(string: "https://d.example.com")!,
+            imageURL: URL(string: "https://cdn.example.com/d.png")!
+        )
         let message = MessageFixtures.message(
             id: "m1",
-            linkPreviews: [good, bare, alsoGood]
+            linkPreviews: [good, bare, statusOnly, withImage]
         )
 
         // When
         let renderable = message.linkPreviews.filter(\.isRenderable)
 
+        // Then — `statusOnly` is dropped; content-bearing entries keep order.
+        XCTAssertEqual(renderable.map(\.url.host), ["a.example.com", "d.example.com"])
+    }
+
+    // A resolved preview carrying only a description is still worth showing.
+    func test_givenDescriptionOnlyPreview_whenFilteringRenderable_thenPreviewIsIncluded() {
+        // Given
+        let preview = LinkPreview(
+            url: URL(string: "https://a.example.com")!,
+            fetchStatus: "success",
+            description: "A summary the card can render."
+        )
+        let message = MessageFixtures.message(id: "m1", linkPreviews: [preview])
+
+        // When
+        let renderable = message.linkPreviews.filter(\.isRenderable)
+
         // Then
-        XCTAssertEqual(renderable.map(\.url.host), ["a.example.com", "c.example.com"])
+        XCTAssertEqual(renderable.count, 1)
     }
 
     // Empty / boundary: a message with no previews yields nothing to render.

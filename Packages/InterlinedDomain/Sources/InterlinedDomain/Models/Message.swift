@@ -80,6 +80,19 @@ public struct Message: Sendable, Equatable, Identifiable {
     /// when a row is rendered purely from the local cache before a refresh.
     public let linkPreviews: [LinkPreview]
 
+    /// The cross-post destinations a **queued scheduled post** will fan out to
+    /// when it fires (GitHub #55). `nil` when the server sent no
+    /// `scheduledCrossPostConfig` for this message — which is the normal case
+    /// for anything already published.
+    ///
+    /// SCOPE DECISION (mirrors `linkPreviews` and `crossPostLocations`): the
+    /// destinations are a fetch-time projection and are **not** persisted in
+    /// SwiftData (`MessageRecord`). They are re-derived from the DTO on every
+    /// load, so a row painted purely from the on-disk cache before the first
+    /// revalidation shows no destination chips; they appear as soon as the
+    /// background refresh lands. This deliberately avoids a schema migration.
+    public let scheduledDestinations: ScheduledDestinations?
+
     public init(
         id: String,
         author: UserSummary,
@@ -97,7 +110,8 @@ public struct Message: Sendable, Equatable, Identifiable {
         scheduledAt: Date? = nil,
         crossPostResults: [CrossPostResult] = [],
         crossPostLocations: [CrossPostLocation] = [],
-        linkPreviews: [LinkPreview] = []
+        linkPreviews: [LinkPreview] = [],
+        scheduledDestinations: ScheduledDestinations? = nil
     ) {
         self.id = id
         self.author = author
@@ -116,6 +130,7 @@ public struct Message: Sendable, Equatable, Identifiable {
         self.crossPostResults = crossPostResults
         self.crossPostLocations = crossPostLocations
         self.linkPreviews = linkPreviews
+        self.scheduledDestinations = scheduledDestinations
     }
 }
 
@@ -129,6 +144,70 @@ public indirect enum Repost: Sendable, Equatable {
         switch self {
         case .message(let message): return message
         }
+    }
+}
+
+// MARK: - ScheduledDestinations (GitHub #55)
+
+/// Which networks a queued scheduled post will publish to when it fires.
+///
+/// The domain projection of `ScheduledCrossPostConfigDTO`. Where the DTO has
+/// four independent optionals (the server omits keys for unselected networks),
+/// this resolves them to definite values so the UI never branches on `nil`:
+/// an absent key means "not a destination".
+///
+/// Deliberately *not* the same type as `CrossPostLocation`: that models where a
+/// published message actually landed and always carries a live permalink. This
+/// models a stated intent for a post that has not gone anywhere yet, so it has
+/// no URLs to offer — only names.
+public struct ScheduledDestinations: Sendable, Equatable {
+    /// The Mastodon provider ids selected. Empty when Mastodon is not a
+    /// destination. Kept as ids (not names) because resolving an id to an
+    /// instance name needs the account's linked-identity list, which the
+    /// message payload does not carry.
+    public let mastodonProviderIds: [String]
+    public let bluesky: Bool
+    public let linkedIn: Bool
+    /// X / Twitter. See `ScheduledCrossPostConfigDTO.crossPostToTwitter` — the
+    /// server accepts this on create but is not confirmed to echo it back, so in
+    /// practice this is usually `false` even for a post scheduled with X
+    /// selected. Modelled so the value is carried the moment the server does
+    /// send it.
+    public let twitter: Bool
+
+    public init(
+        mastodonProviderIds: [String] = [],
+        bluesky: Bool = false,
+        linkedIn: Bool = false,
+        twitter: Bool = false
+    ) {
+        self.mastodonProviderIds = mastodonProviderIds
+        self.bluesky = bluesky
+        self.linkedIn = linkedIn
+        self.twitter = twitter
+    }
+
+    /// No network selected — the post publishes to InterlinedList only.
+    public static let none = ScheduledDestinations()
+
+    /// True when the post fans out nowhere beyond InterlinedList. The UI shows
+    /// "InterlinedList only" rather than an empty chip row, so a reader can tell
+    /// "no destinations" apart from "destinations not loaded yet".
+    public var isEmpty: Bool {
+        mastodonProviderIds.isEmpty && !bluesky && !linkedIn && !twitter
+    }
+
+    /// Human-facing destination labels, in the order the web lists them
+    /// (Mastodon, Bluesky, LinkedIn, X). Mastodon collapses to a single label
+    /// regardless of how many provider ids are selected — matching the web
+    /// badge, which draws one Mastodon icon per config, not one per id.
+    public var displayNames: [String] {
+        var names: [String] = []
+        if !mastodonProviderIds.isEmpty { names.append("Mastodon") }
+        if bluesky { names.append("Bluesky") }
+        if linkedIn { names.append("LinkedIn") }
+        if twitter { names.append("X") }
+        return names
     }
 }
 
@@ -230,10 +309,13 @@ public struct LinkPreview: Sendable, Equatable, Identifiable {
     /// Source platform label the server attached (e.g. "youtube", "github"),
     /// when it recognised one.
     public let platform: String?
-    /// The server's fetch-state string for this preview. The exact vocabulary
-    /// (which value means "ready") is **not documented** in the API reference
-    /// as of 2026-07-18 — see `isFetchStatusReady`. Kept as the raw string so
-    /// no information is lost and the client stays forward-compatible.
+    /// The server's fetch-state string for this preview.
+    ///
+    /// Vocabulary **confirmed live 2026-09-07** (G21 probe, closing the P3-F
+    /// "value set the client guessed" question): `"success"` when the fetch
+    /// resolved, `"failed"` when the server could not reach the URL. Kept as
+    /// the raw string so an unrecognised future value loses no information —
+    /// see `isFetchStatusReady` and `didFetchFail`.
     public let fetchStatus: String?
     public let title: String?
     public let description: String?
@@ -260,13 +342,11 @@ public struct LinkPreview: Sendable, Equatable, Identifiable {
     /// Whether `fetchStatus` names a state the client recognises as a completed,
     /// successful fetch.
     ///
-    /// NOTE (backend question, feature-gaps §1.5): the API reference does not
-    /// document the `fetchStatus` vocabulary, so we cannot be certain which
-    /// string means "ready". This matches a small, case-insensitive set of the
-    /// conventional success tokens. It is intentionally **not** the sole gate on
-    /// rendering — `isRenderable` also renders whenever a title or image is
-    /// present — so an unknown-but-successful status string never hides an
-    /// otherwise-complete card.
+    /// The live server sends `"success"` (confirmed 2026-09-07). The remaining
+    /// tokens are kept as forward-compatible synonyms: matching a superset costs
+    /// nothing and protects against a server-side rename. Deliberately **not**
+    /// the sole gate on rendering — `isRenderable` also passes on a title or
+    /// image — so an unknown-but-successful status never hides a complete card.
     public var isFetchStatusReady: Bool {
         guard let status = fetchStatus?.lowercased() else { return false }
         return ["ready", "success", "succeeded", "ok", "complete", "completed", "fetched"].contains(status)
@@ -278,10 +358,45 @@ public struct LinkPreview: Sendable, Equatable, Identifiable {
     /// with no resolved metadata returns `false` — the UI degrades to nothing
     /// (or a minimal chip) rather than an empty card.
     public var isRenderable: Bool {
-        if isFetchStatusReady { return true }
+        // A ready status alone is NOT enough. Before G21 it was, and because the
+        // DTO decoded the server's nested metadata to all-nil, every link on the
+        // timeline rendered as a bordered card containing nothing but its host.
+        // Require something a human can actually read.
+        hasDisplayableContent
+    }
+
+    /// Whether the preview carries a field worth putting on screen — a
+    /// non-blank title, a description, or an image. This is the real gate:
+    /// a preview with a ready status but no resolved fields renders nothing.
+    public var hasDisplayableContent: Bool {
         if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
-        if imageURL != nil { return true }
-        return false
+        if let description, !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        return imageURL != nil
+    }
+
+    /// Whether the server tried to resolve this link and could not. Drives the
+    /// "Retry link previews" affordance, which calls
+    /// `POST /api/messages/{id}/metadata` to re-fetch.
+    public var didFetchFail: Bool {
+        guard let status = fetchStatus?.lowercased() else { return false }
+        return ["failed", "failure", "error"].contains(status)
+    }
+
+    /// Whether `imageURL` must be loaded through `GET /api/images/proxy` rather
+    /// than fetched directly.
+    ///
+    /// The proxy is **not** a general-purpose image fetcher: the live route
+    /// answers `403 {"error":"Only Instagram image URLs are allowed"}` for any
+    /// other host (verified 2026-09-07). It exists because Instagram's CDN
+    /// blocks hotlinking, so route Instagram thumbnails through it and load
+    /// everything else directly — sending a non-Instagram URL there would turn
+    /// a working thumbnail into a 403.
+    public var needsImageProxy: Bool {
+        guard let host = imageURL?.host?.lowercased() else { return false }
+        return host == "cdninstagram.com"
+            || host.hasSuffix(".cdninstagram.com")
+            || host == "fbcdn.net"
+            || host.hasSuffix(".fbcdn.net")
     }
 
     /// The host component shown as the card subtitle (e.g. "github.com"),

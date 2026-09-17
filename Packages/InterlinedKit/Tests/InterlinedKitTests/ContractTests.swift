@@ -77,6 +77,36 @@ final class ContractTests: XCTestCase {
         XCTAssertNotNil(try store.read())
     }
 
+    /// Live-shape contract for `accountStatus` (GitHub #42).
+    ///
+    /// The OpenAPI schema types this as a bare string with no enum, so the only
+    /// way to know what the server actually sends is to ask it. Read-only.
+    func test_givenLiveCredentials_whenFetchingUser_thenAccountStatusIsPresentAndKnown() async throws {
+        guard let credentials = credentialsFromEnvironment() else {
+            throw XCTSkip("Live credentials not set — skipping contract test.")
+        }
+
+        let store = InMemoryTokenStore()
+        let (client, service) = makeLiveStack(tokenStore: store)
+        _ = try await service.signIn(email: credentials.email, password: credentials.password)
+
+        let response = try await client.send(User.current())
+
+        // The field the client used to drop entirely.
+        XCTAssertNotNil(response.user.accountStatus, "GET /api/user should carry accountStatus")
+
+        // If the server ever introduces a value outside the documented set,
+        // this fails loudly here rather than silently mis-gating the whole app.
+        // The client still fails *open* at runtime — this is the early warning.
+        let documented = ["new", "active", "restricted", "suspended", "banned"]
+        if let status = response.user.accountStatus {
+            XCTAssertTrue(
+                documented.contains(status.lowercased()),
+                "Undocumented accountStatus \"\(status)\" — the gating matrix may need revisiting"
+            )
+        }
+    }
+
     func test_givenLiveCredentials_whenFetchingTimeline_thenReturns200AndDecodes() async throws {
         guard let credentials = credentialsFromEnvironment() else {
             throw XCTSkip("Live credentials not set — skipping contract test.")
@@ -213,6 +243,64 @@ final class ContractTests: XCTestCase {
             XCTAssertTrue(
                 verbs.contains(expectation.verb),
                 "\(expectation.path) no longer allows \(expectation.verb) — live Allow is \(allow)"
+            )
+        }
+    }
+
+    /// Pins the **absence** of a scheduled-post editor route (GitHub #55).
+    ///
+    /// macOS deliberately ships a time-only editor for a queued post, because
+    /// `PATCH /api/messages/[id]` honours `scheduledAt` alone and there is no
+    /// other route that touches a scheduled post. That is a server-side gap, and
+    /// the day it closes we want the gate to say so rather than the constraint
+    /// quietly outliving its reason. This test fails — on purpose — if the API
+    /// grows a scheduled-post editor, which is the signal to reopen #55.
+    ///
+    /// Verified read-only 2026-09-09: `/api/messages/scheduled` allows
+    /// `GET, HEAD, OPTIONS`; both candidate editor paths 404.
+    func test_givenLiveCredentials_whenOptioningScheduledRoutes_thenNoEditorRouteHasAppeared() async throws {
+        guard let credentials = credentialsFromEnvironment() else {
+            throw XCTSkip("Live credentials not set — skipping contract test.")
+        }
+
+        let store = InMemoryTokenStore()
+        let (_, service) = makeLiveStack(tokenStore: store)
+        let token = try await service.signIn(
+            email: credentials.email,
+            password: credentials.password
+        )
+
+        func options(_ path: String) async throws -> (status: Int, allow: String?) {
+            var request = URLRequest(url: liveBaseURL.appendingPathComponent(path))
+            request.httpMethod = "OPTIONS"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let http = try XCTUnwrap(response as? HTTPURLResponse)
+            return (http.statusCode, http.value(forHTTPHeaderField: "Allow"))
+        }
+
+        // The scheduled *list* is read-only — no write verb to update a queued
+        // post in bulk or in place.
+        let scheduled = try await options("/api/messages/scheduled")
+        let scheduledVerbs = Set(
+            (scheduled.allow ?? "").split(separator: ",").map {
+                $0.trimmingCharacters(in: .whitespaces).uppercased()
+            }
+        )
+        XCTAssertFalse(
+            scheduledVerbs.contains("PATCH") || scheduledVerbs.contains("PUT")
+                || scheduledVerbs.contains("POST"),
+            "/api/messages/scheduled grew a write verb — live Allow is "
+                + "\(scheduled.allow ?? "none"). Reopen GitHub #55."
+        )
+
+        // Neither candidate per-post editor route exists.
+        for path in ["/api/messages/scheduled/probe", "/api/messages/probe/schedule"] {
+            let result = try await options(path)
+            XCTAssertEqual(
+                result.status, 404,
+                "\(path) now resolves (HTTP \(result.status), Allow: \(result.allow ?? "none")). "
+                    + "A scheduled-post editor route may exist — reopen GitHub #55."
             )
         }
     }

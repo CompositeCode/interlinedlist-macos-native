@@ -7,6 +7,11 @@
 // log so tests can assert both the returned value and that the right
 // call was (or was not) made.
 //
+// G22 adds `conversations` (the server-grouped inbox), `message(id:)` (the
+// deep-link fetch), and `uploadImage` (photo attachments) — each with its
+// own outcome queue and recorded-call kind. `uploadImage` records only the
+// byte count so assertions stay readable.
+//
 // The `send` guard (`DirectMessagesError.emptyMessage` on a blank body
 // with no images) lives in the concrete `DirectMessagesService`, not in
 // the protocol, so this stub does NOT re-implement it — a view model
@@ -20,6 +25,9 @@ import InterlinedDomain
 struct RecordedDMCall: Sendable, Equatable {
     enum Kind: Sendable, Equatable {
         case folder(folder: DMFolder, cursor: String?)
+        case conversations(cursor: String?)
+        case message(id: String)
+        case uploadImage(byteCount: Int)
         case thread(username: String, cursor: String?)
         case threadUpdates(username: String, since: String?)
         case send(recipientId: String, body: String, imageURLs: [String])
@@ -35,6 +43,9 @@ struct RecordedDMCall: Sendable, Equatable {
 actor StubDirectMessagesService: DirectMessagesServicing {
 
     private var folderOutcomes: [Result<DMPage, Error>] = []
+    private var conversationsOutcomes: [Result<DMConversationPage, Error>] = []
+    private var messageOutcomes: [Result<DirectMessage, Error>] = []
+    private var uploadImageOutcomes: [Result<String, Error>] = []
     private var threadOutcomes: [Result<DMThread, Error>] = []
     private var threadUpdatesOutcomes: [Result<DMThread, Error>] = []
     private var sendOutcomes: [Result<DirectMessage, Error>] = []
@@ -50,6 +61,15 @@ actor StubDirectMessagesService: DirectMessagesServicing {
 
     func enqueueFolder(success value: DMPage) { folderOutcomes.append(.success(value)) }
     func enqueueFolder(failure error: Error) { folderOutcomes.append(.failure(error)) }
+
+    func enqueueConversations(success value: DMConversationPage) { conversationsOutcomes.append(.success(value)) }
+    func enqueueConversations(failure error: Error) { conversationsOutcomes.append(.failure(error)) }
+
+    func enqueueMessage(success value: DirectMessage) { messageOutcomes.append(.success(value)) }
+    func enqueueMessage(failure error: Error) { messageOutcomes.append(.failure(error)) }
+
+    func enqueueUploadImage(success url: String) { uploadImageOutcomes.append(.success(url)) }
+    func enqueueUploadImage(failure error: Error) { uploadImageOutcomes.append(.failure(error)) }
 
     func enqueueThread(success value: DMThread) { threadOutcomes.append(.success(value)) }
     func enqueueThread(failure error: Error) { threadOutcomes.append(.failure(error)) }
@@ -80,6 +100,23 @@ actor StubDirectMessagesService: DirectMessagesServicing {
     func folder(_ folder: DMFolder, cursor: String?) async throws -> DMPage {
         recorded.append(.init(kind: .folder(folder: folder, cursor: cursor)))
         return try take(&folderOutcomes, label: "folder")
+    }
+
+    func conversations(cursor: String?) async throws -> DMConversationPage {
+        recorded.append(.init(kind: .conversations(cursor: cursor)))
+        return try take(&conversationsOutcomes, label: "conversations")
+    }
+
+    func message(id: String) async throws -> DirectMessage {
+        recorded.append(.init(kind: .message(id: id)))
+        return try take(&messageOutcomes, label: "message")
+    }
+
+    func uploadImage(_ data: Data) async throws -> String {
+        // Record the byte count rather than the bytes so assertions stay
+        // readable and the log doesn't carry image payloads.
+        recorded.append(.init(kind: .uploadImage(byteCount: data.count)))
+        return try take(&uploadImageOutcomes, label: "uploadImage")
     }
 
     func thread(username: String, cursor: String?) async throws -> DMThread {

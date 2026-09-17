@@ -22,13 +22,25 @@ final class OrgRecord {
     var createdAt: Date?
     var updatedAt: Date?
 
+    var slug: String?
+
+    /// The system-org flag ("The Public"). Cached because the client-side
+    /// no-leave rule has to hold when the list paints from cache, before any
+    /// network read has confirmed it.
+    var isSystem: Bool = false
+
+    var memberCount: Int?
+
     init(
         id: String,
         name: String,
         orgDescription: String? = nil,
         isPublic: Bool = false,
         createdAt: Date? = nil,
-        updatedAt: Date? = nil
+        updatedAt: Date? = nil,
+        slug: String? = nil,
+        isSystem: Bool = false,
+        memberCount: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -36,6 +48,9 @@ final class OrgRecord {
         self.isPublic = isPublic
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.slug = slug
+        self.isSystem = isSystem
+        self.memberCount = memberCount
     }
 }
 
@@ -76,10 +91,18 @@ final class OrgMemberRecord {
     /// Wire string for the role. Rehydrated via `OrgRole(wireToken:)`.
     var roleRaw: String
 
-    /// Whether the membership is active. `nil` when the server omits it.
+    /// Whether the membership is active. `nil` when the server omits it;
+    /// `false` is a suspended member.
     var active: Bool?
 
     var createdAt: Date?
+
+    // Identity, denormalized onto the row by the live members listing so the
+    // cached roster renders names and avatars offline.
+    var username: String?
+    var displayName: String?
+    var avatarURLString: String?
+    var emailVerified: Bool?
 
     init(
         orgID: String,
@@ -87,7 +110,11 @@ final class OrgMemberRecord {
         membershipId: String? = nil,
         roleRaw: String,
         active: Bool? = nil,
-        createdAt: Date? = nil
+        createdAt: Date? = nil,
+        username: String? = nil,
+        displayName: String? = nil,
+        avatarURLString: String? = nil,
+        emailVerified: Bool? = nil
     ) {
         self.orgID = orgID
         self.userId = userId
@@ -95,5 +122,9 @@ final class OrgMemberRecord {
         self.roleRaw = roleRaw
         self.active = active
         self.createdAt = createdAt
+        self.username = username
+        self.displayName = displayName
+        self.avatarURLString = avatarURLString
+        self.emailVerified = emailVerified
     }
 }

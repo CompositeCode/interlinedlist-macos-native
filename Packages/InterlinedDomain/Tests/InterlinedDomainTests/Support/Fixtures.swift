@@ -22,13 +22,19 @@ enum Fixtures {
         pushCount: Int = 1,
         parentId: String? = nil,
         scheduledAt: String? = nil,
-        pushedMessageId: String? = nil
+        pushedMessageId: String? = nil,
+        /// Raw JSON for `scheduledCrossPostConfig` (GitHub #55). Passed as a
+        /// string so a test can assert on the exact live shape — including the
+        /// partial objects the server sends, where unselected networks are
+        /// omitted rather than sent as `false`.
+        scheduledCrossPostConfigJSON: String? = nil
     ) -> String {
         let displayNameJSON = displayName.map { "\"\($0)\"" } ?? "null"
         let tagsJSON = tags.map { "[" + $0.map { "\"\($0)\"" }.joined(separator: ",") + "]" } ?? "null"
         let parentJSON = parentId.map { "\"\($0)\"" } ?? "null"
         let scheduledJSON = scheduledAt.map { "\"\($0)\"" } ?? "null"
         let pushedIdJSON = pushedMessageId.map { "\"\($0)\"" } ?? "null"
+        let scheduledConfigJSON = scheduledCrossPostConfigJSON ?? "null"
         return """
         {
           "id": "\(id)",
@@ -49,7 +55,8 @@ enum Fixtures {
             "displayName": \(displayNameJSON),
             "avatar": "https://cdn.interlinedlist.com/\(username).png"
           },
-          "dugByMe": \(dugByMe)
+          "dugByMe": \(dugByMe),
+          "scheduledCrossPostConfig": \(scheduledConfigJSON)
         }
         """
     }
@@ -87,29 +94,211 @@ enum Fixtures {
 
     // MARK: - Lists fixtures
 
-    /// A single `ListDTO` object body (the inner JSON of one list).
+    /// A single list object, as the live API actually sends one.
+    ///
+    /// Captured 2026-09-15 from `GET /api/lists` and `POST /api/lists` on the
+    /// `.env` test account. The previous version of this fixture carried a
+    /// `"schema": "Title:text, Year:number"` key that **the server has never
+    /// sent** — a fabricated field that kept `OwnedList.schemaDescription`'s
+    /// tests green while the real thing was always `nil` (GitHub #85).
+    ///
+    /// - Parameter properties: the column projection, present on the
+    ///   single-list and write routes and absent from the collection rows.
+    ///   `nil` reproduces a collection row.
     static func listObject(
         id: String,
         title: String = "Books",
         description: String? = "Things I have read",
         isPublic: Bool? = true,
-        schema: String? = "Title:text, Year:number",
-        parentId: String? = nil
+        parentId: String? = nil,
+        properties: String? = nil
     ) -> String {
         let descJSON = description.map { "\"\($0)\"" } ?? "null"
-        let schemaJSON = schema.map { "\"\($0)\"" } ?? "null"
         let parentJSON = parentId.map { "\"\($0)\"" } ?? "null"
         let isPublicJSON = isPublic.map { $0 ? "true" : "false" } ?? "null"
+        let propertiesJSON = properties.map { ",\n          \"properties\": \($0)" } ?? ""
         return """
         {
           "id": "\(id)",
+          "userId": "usr_1",
+          "messageId": null,
+          "parentId": \(parentJSON),
+          "folderId": null,
           "title": "\(title)",
           "description": \(descJSON),
           "isPublic": \(isPublicJSON),
-          "schema": \(schemaJSON),
-          "parentId": \(parentJSON),
+          "metadata": null,
+          "source": "local",
+          "githubRepo": null,
+          "githubRepoPrivate": null,
           "createdAt": "\(createdAtISO)",
-          "updatedAt": "\(createdAtISO)"
+          "updatedAt": "\(createdAtISO)",
+          "deletedAt": null\(propertiesJSON)
+        }
+        """
+    }
+
+    /// The `properties` array exactly as `POST /api/lists` returned it for a
+    /// two-column schema. Captured, not written by hand.
+    ///
+    /// Note `propertyKey` differs from `propertyName` on the second column —
+    /// that is deliberate, and is what makes the key/label split testable.
+    static let listPropertiesJSON = """
+    [
+      {
+        "id": "prp_1",
+        "listId": "L1",
+        "propertyKey": "title",
+        "propertyName": "Title",
+        "propertyType": "text",
+        "displayOrder": 0,
+        "isRequired": true,
+        "defaultValue": null,
+        "validationRules": { "minLength": 2, "maxLength": 80 },
+        "helpText": "What is it called?",
+        "placeholder": "e.g. Dune",
+        "isVisible": true,
+        "visibilityCondition": null,
+        "createdAt": "\(createdAtISO)",
+        "updatedAt": "\(createdAtISO)"
+      },
+      {
+        "id": "prp_2",
+        "listId": "L1",
+        "propertyKey": "year",
+        "propertyName": "Publication Year",
+        "propertyType": "number",
+        "displayOrder": 1,
+        "isRequired": false,
+        "defaultValue": null,
+        "validationRules": { "min": 1000, "max": 2100 },
+        "helpText": null,
+        "placeholder": null,
+        "isVisible": true,
+        "visibilityCondition": null,
+        "createdAt": "\(createdAtISO)",
+        "updatedAt": "\(createdAtISO)"
+      }
+    ]
+    """
+
+    /// `GET /api/lists/[id]` → `{ "data": { … } }`, and with a `message` the
+    /// same envelope the create / update / schema writes answer.
+    static func listEnvelope(
+        id: String,
+        title: String = "Books",
+        description: String? = "Things I have read",
+        isPublic: Bool? = true,
+        parentId: String? = nil,
+        properties: String? = nil,
+        message: String? = nil
+    ) -> String {
+        let object = listObject(
+            id: id,
+            title: title,
+            description: description,
+            isPublic: isPublic,
+            parentId: parentId,
+            properties: properties
+        )
+        let messageJSON = message.map { "\"message\": \"\($0)\",\n          " } ?? ""
+        return """
+        { \(messageJSON)"data": \(object) }
+        """
+    }
+
+    /// `GET /api/lists/[id]/schema` → `{ "data": { name, description?, fields[] } }`.
+    ///
+    /// The field list is the captured payload from the 2026-09-15 probe, right
+    /// down to the `select` column carrying its options under **both**
+    /// `validation.options` and `options`.
+    static let listSchemaEnvelope = """
+    {
+      "data": {
+        "name": "probe",
+        "description": "recon probe",
+        "fields": [
+          {
+            "key": "title",
+            "type": "text",
+            "label": "Title",
+            "displayOrder": 0,
+            "required": true,
+            "helpText": "What is it called?",
+            "placeholder": "e.g. Dune",
+            "visible": true,
+            "validation": { "pattern": "^[A-Za-z].*$", "maxLength": 80, "minLength": 2 }
+          },
+          {
+            "key": "year",
+            "type": "number",
+            "label": "Publication Year",
+            "displayOrder": 1,
+            "required": false,
+            "visible": true,
+            "validation": { "max": 2100, "min": 1000 }
+          },
+          {
+            "key": "status",
+            "type": "select",
+            "label": "Status",
+            "displayOrder": 2,
+            "required": false,
+            "visible": true,
+            "defaultValue": "todo",
+            "validation": { "options": ["todo", "doing", "done"] },
+            "options": ["todo", "doing", "done"]
+          }
+        ]
+      }
+    }
+    """
+
+    /// A schema envelope built from `(key, type, label)` triples, for the cases
+    /// that care about mapping rather than about the full captured payload.
+    ///
+    /// Passing a `label` that differs from the `key` is the point: it is the
+    /// combination the client used to get wrong.
+    static func listSchemaEnvelope(fields: [(key: String, type: String, label: String)]) -> String {
+        let fieldObjects = fields.enumerated().map { index, field in
+            """
+            {
+              "key": "\(field.key)",
+              "type": "\(field.type)",
+              "label": "\(field.label)",
+              "displayOrder": \(index),
+              "required": false,
+              "visible": true
+            }
+            """
+        }.joined(separator: ",")
+        return """
+        { "data": { "name": "fixture", "fields": [\(fieldObjects)] } }
+        """
+    }
+
+    /// `GET /api/users/[username]/lists/[id]` → `{ "list": {…}, "ancestors": [] }`.
+    ///
+    /// A much lighter projection than the authenticated route: no `isPublic`,
+    /// no timestamps, and no columns. Captured 2026-09-15.
+    static func publicListEnvelope(
+        id: String,
+        title: String = "Books",
+        description: String? = "Things I have read",
+        parentId: String? = nil
+    ) -> String {
+        let descJSON = description.map { "\"\($0)\"" } ?? "null"
+        let parentJSON = parentId.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "list": {
+            "id": "\(id)",
+            "title": "\(title)",
+            "description": \(descJSON),
+            "parentId": \(parentJSON),
+            "children": []
+          },
+          "ancestors": []
         }
         """
     }
@@ -212,37 +401,211 @@ enum Fixtures {
         """
     }
 
-    /// A single `ListWatcherDTO` object body.
+    /// A single `ListWatcherDTO` object body, in the shape the live route
+    /// returns: the person nested under `user`
+    /// (`/help/api/lists`: `{ id, userId, role, createdAt, user }`).
     static func watcherObject(
         userId: String,
-        role: String? = "editor",
-        username: String? = "ada"
+        role: String? = "collaborator",
+        username: String? = "ada",
+        displayName: String? = "Ada Lovelace"
     ) -> String {
         let roleJSON = role.map { "\"\($0)\"" } ?? "null"
         let usernameJSON = username.map { "\"\($0)\"" } ?? "null"
+        let displayNameJSON = displayName.map { "\"\($0)\"" } ?? "null"
         return """
         {
+          "id": "w-\(userId)",
           "userId": "\(userId)",
           "role": \(roleJSON),
-          "username": \(usernameJSON),
-          "createdAt": "\(createdAtISO)"
+          "createdAt": "\(createdAtISO)",
+          "user": {
+            "id": "\(userId)",
+            "username": \(usernameJSON),
+            "displayName": \(displayNameJSON),
+            "avatar": null
+          }
         }
         """
     }
 
-    /// A bare array of watcher objects (the shape `/watchers` returns).
-    static func watchersArray(_ entries: [(userId: String, role: String?)]) -> String {
+    /// The `{ "watchers": [...], "pagination": {...} }` envelope
+    /// `GET /api/lists/[id]/watchers` really returns (verified live
+    /// 2026-09-09 — work-consolidation.md G23). The route was previously
+    /// modelled as a bare array, which never decoded.
+    static func watchersEnvelope(_ entries: [(userId: String, role: String?)]) -> String {
         let objects = entries.map { watcherObject(userId: $0.userId, role: $0.role) }
             .joined(separator: ",")
-        return "[\(objects)]"
+        return """
+        {
+          "watchers": [\(objects)],
+          "pagination": {
+            "total": \(entries.count),
+            "limit": 20,
+            "offset": 0,
+            "hasMore": false
+          }
+        }
+        """
     }
 
-    /// `GET /api/lists/[id]/watchers/me` envelope.
+    /// `GET /api/lists/[id]/watchers/me` envelope. The wire key is `watching`,
+    /// not `isWatching` (verified live 2026-09-09).
     static func watcherStatusEnvelope(isWatching: Bool?, role: String?) -> String {
         let watchingJSON = isWatching.map { $0 ? "true" : "false" } ?? "null"
         let roleJSON = role.map { "\"\($0)\"" } ?? "null"
         return """
-        { "isWatching": \(watchingJSON), "role": \(roleJSON) }
+        { "watching": \(watchingJSON), "role": \(roleJSON) }
+        """
+    }
+
+    /// `PUT /api/lists/[id]/watchers/[userId]` response: `{ "role" }`.
+    static func setWatcherRoleEnvelope(role: String?) -> String {
+        let roleJSON = role.map { "\"\($0)\"" } ?? "null"
+        return """
+        { "role": \(roleJSON) }
+        """
+    }
+
+    // MARK: - G23 shared-with-me fixtures
+
+    /// One `/api/lists/watching` row — the owned-list shape plus `role`,
+    /// the embedded owner, and the `parent` projection.
+    static func watchedListObject(
+        id: String,
+        title: String = "Shows Upcoming & Seen",
+        role: String? = "collaborator",
+        ownerUsername: String = "adron",
+        parentTitle: String? = nil,
+        isPublic: Bool = true
+    ) -> String {
+        let roleJSON = role.map { "\"\($0)\"" } ?? "null"
+        let parentJSON = parentTitle.map {
+            """
+            { "id": "parent-\(id)", "title": "\($0)" }
+            """
+        } ?? "null"
+        let parentIdJSON = parentTitle == nil ? "null" : "\"parent-\(id)\""
+        return """
+        {
+          "id": "\(id)",
+          "userId": "owner-\(id)",
+          "messageId": null,
+          "parentId": \(parentIdJSON),
+          "folderId": null,
+          "title": "\(title)",
+          "description": null,
+          "isPublic": \(isPublic),
+          "metadata": null,
+          "source": "local",
+          "githubRepo": null,
+          "githubRepoPrivate": null,
+          "createdAt": "\(createdAtISO)",
+          "updatedAt": "\(createdAtISO)",
+          "deletedAt": null,
+          "user": {
+            "id": "owner-\(id)",
+            "username": "\(ownerUsername)",
+            "displayName": "Adron Hall"
+          },
+          "parent": \(parentJSON),
+          "children": [],
+          "role": \(roleJSON)
+        }
+        """
+    }
+
+    /// The `{ "lists": [...], "pagination": {...} }` envelope
+    /// `GET /api/lists/watching` returns.
+    static func watchingEnvelope(
+        _ entries: [(id: String, role: String?)],
+        limit: Int = 50,
+        offset: Int = 0,
+        hasMore: Bool = false
+    ) -> String {
+        let objects = entries
+            .map { watchedListObject(id: $0.id, role: $0.role) }
+            .joined(separator: ",")
+        return """
+        {
+          "lists": [\(objects)],
+          "pagination": {
+            "total": \(entries.count),
+            "limit": \(limit),
+            "offset": \(offset),
+            "hasMore": \(hasMore)
+          }
+        }
+        """
+    }
+
+    /// `GET /api/lists/[id]/contributors` — `{ contributors, totalContributors }`.
+    static func contributorsEnvelope(
+        _ entries: [(id: String, added: Int, edited: Int)]
+    ) -> String {
+        let objects = entries.map { entry in
+            """
+            {
+              "id": "\(entry.id)",
+              "username": "\(entry.id)",
+              "displayName": "User \(entry.id)",
+              "avatar": "https://cdn.interlinedlist.com/\(entry.id).png",
+              "addedCount": \(entry.added),
+              "editedCount": \(entry.edited),
+              "score": \(entry.added + entry.edited)
+            }
+            """
+        }.joined(separator: ",")
+        return """
+        { "contributors": [\(objects)], "totalContributors": \(entries.count) }
+        """
+    }
+
+    /// `GET /api/lists/[id]/watchers/users` — `{ users, total, pagination }`.
+    static func watcherCandidatesEnvelope(_ ids: [String], total: Int? = nil) -> String {
+        let objects = ids.map { id in
+            """
+            {
+              "id": "\(id)",
+              "username": "\(id)",
+              "displayName": "User \(id)",
+              "email": "\(id)@example.com",
+              "avatar": null
+            }
+            """
+        }.joined(separator: ",")
+        return """
+        {
+          "users": [\(objects)],
+          "total": \(total ?? ids.count),
+          "pagination": { "limit": 50, "offset": 0, "hasMore": false }
+        }
+        """
+    }
+
+    /// `POST /api/lists/[id]/watchers` — the documented `{ watching: true }`.
+    static let addWatcherEnvelope: String = #"{ "watching": true }"#
+
+    /// `GET /api/lists/invite/{token}` landing payload.
+    static func listInviteEnvelope(
+        role: String? = "collaborator",
+        needsAuth: Bool = false,
+        canClaim: Bool = true,
+        wrongAccount: Bool = false,
+        accepted: Bool = false,
+        resourceTitle: String? = "Q3 Planning"
+    ) -> String {
+        let roleJSON = role.map { "\"\($0)\"" } ?? "null"
+        let titleJSON = resourceTitle.map { "\"\($0)\"" } ?? "null"
+        return """
+        {
+          "role": \(roleJSON),
+          "needsAuth": \(needsAuth),
+          "canClaim": \(canClaim),
+          "wrongAccount": \(wrongAccount),
+          "accepted": \(accepted),
+          "resourceTitle": \(titleJSON)
+        }
         """
     }
 

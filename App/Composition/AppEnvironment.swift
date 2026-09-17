@@ -58,6 +58,17 @@ final class AppEnvironment: ObservableObject {
         EntitlementsService(user: currentUserStore.currentUser)
     }
 
+    /// The composed capability gate — account status, email verification, and
+    /// subscription tier answered as one question (GitHub #40 / #41 / #42).
+    ///
+    /// Features should prefer this over `liveEntitlements`: a subscriber who is
+    /// `restricted`, or who has not verified their email, is entitled but still
+    /// cannot post, and only the composed gate knows that. Derived live from
+    /// `currentUserStore.currentUser`, exactly like `liveEntitlements`.
+    var liveCapabilities: CapabilityGate {
+        CapabilityGate(user: currentUserStore.currentUser)
+    }
+
     /// The visibility a new-message composer draft opens on — the signed-in
     /// account's "new posts are public by default" preference. Derived live from
     /// `currentUserStore.currentUser`, exactly like `liveEntitlements` above, so
@@ -72,6 +83,23 @@ final class AppEnvironment: ObservableObject {
     var defaultComposeVisibility: InterlinedDomain.Visibility {
         currentUserStore.currentUser?.defaultVisibility ?? .public
     }
+
+    // MARK: - View preferences (G35 / issue #43)
+    //
+    // One additive block reading the account's server-synced View Preferences
+    // off `userPreferences`, so features get them without importing the store
+    // directly. All three fall back to `UserSettings.default` before the first
+    // load resolves, so nothing waits on a preferences round-trip.
+
+    /// The scope a newly-opened timeline window starts on, from the account's
+    /// stored `viewingPreference`.
+    var defaultTimelineScope: TimelineScope { userPreferences.defaultTimelineScope }
+
+    /// How many rows the notification bell tray renders (10...40, default 20).
+    var notificationTrayLimit: Int { userPreferences.notificationTrayLimit }
+
+    /// Whether the composer opens with its advanced post options revealed.
+    var showsAdvancedPostOptionsByDefault: Bool { userPreferences.showAdvancedPostSettings }
 
     /// Re-resolves the signed-in account's `customerStatus` (PLAN.md §8 — a
     /// gated call returning 403 means the subscription lapsed mid-session, so
@@ -228,6 +256,17 @@ final class AppEnvironment: ObservableObject {
     /// Tag trending + autocomplete (work-consolidation.md G20).
     let tags: TagsServicing?
 
+    /// Link metadata / rich previews (work-consolidation.md G21) — resolves a
+    /// URL for the composer, reads and refreshes a message's stored metadata,
+    /// and decides when a thumbnail must go through the server's Instagram
+    /// image proxy.
+    let linkMetadata: LinkMetadataServicing?
+
+    /// App-wide projection of the account's reading preferences, so surfaces
+    /// outside Settings can honour them (G21: "Show link previews" had no
+    /// reader beyond the Settings pane itself).
+    let userPreferences: UserPreferencesStore
+
     /// The Direct Messages surface the Messages feature binds against
     /// (work-consolidation.md G1). Exposed as the protocol so test doubles
     /// substitute in. Wraps the `/api/messages/*` DM endpoints (folders,
@@ -309,7 +348,11 @@ final class AppEnvironment: ObservableObject {
         appSettings: AppSettingsServicing? = nil,
         notificationPreferences: NotificationPreferencesServicing? = nil,
         sessions: SessionsServicing? = nil,
-        tags: TagsServicing? = nil
+        tags: TagsServicing? = nil,
+        linkMetadata: LinkMetadataServicing? = nil,
+        // Defaults to a store over the injected `userService`, so the many
+        // test/preview call sites that predate G21 need no change.
+        userPreferences: UserPreferencesStore? = nil
     ) {
         self.messages = messages
         self.lists = lists
@@ -346,6 +389,8 @@ final class AppEnvironment: ObservableObject {
         self.notificationPreferences = notificationPreferences
         self.sessions = sessions
         self.tags = tags
+        self.linkMetadata = linkMetadata
+        self.userPreferences = userPreferences ?? UserPreferencesStore(userService: userService)
     }
 
     /// The app-settings namespace this client stores its settings under
@@ -470,7 +515,12 @@ final class AppEnvironment: ObservableObject {
             // deltas stay consistent (stale-while-revalidate paint).
             store: documentStore,
             // Live image ceilings for `uploadImage` prep (G14 tail).
-            contentLimits: contentLimits
+            contentLimits: contentLimits,
+            // Gate for document *creation* only (#40 matrix) — moving,
+            // editing and deleting stay free on every tier. Same live box the
+            // messages gate reads, so a mid-session subscribe or lapse re-gates
+            // without a relaunch.
+            entitlementsProvider: { liveEntitlements.current() }
         )
         // Server document templates (work-consolidation.md G12). Reuses the same
         // kit-layer `APIClient` like the other services do — the
@@ -500,7 +550,8 @@ final class AppEnvironment: ObservableObject {
         // decision-0001 session allowlist, both already routed by the shared
         // `authTransport`. `UserService` takes the default production base URL
         // for the browser-handoff OAuth link flow.
-        let orgService = OrgService(api: api)
+        // Subscriber gate for organization *creation* only (GitHub #40).
+        let orgService = OrgService(api: api, entitlements: { liveEntitlements.current() })
         // Org-memberships cache (work-consolidation.md) — the Organizations switcher's
         // initial-view data. On-disk in Application Support with disposable /
         // auto-rebuild semantics; falls back to `NullOrgStore` if the container
@@ -536,7 +587,9 @@ final class AppEnvironment: ObservableObject {
         // endpoints are already routed by the shared `authTransport`. The
         // event bus is a singleton so the DM list, an open thread, and the
         // dock-badge coordinator all see the same stream.
-        let directMessages = DirectMessagesService(api: api)
+        // G22: DM photo upload runs through the same `ImagePrep` pipeline as
+        // the post composer, driven by the live `GET /api/limits` ceilings.
+        let directMessages = DirectMessagesService(api: api, contentLimits: contentLimits)
         let directMessagesEventBus = DirectMessagesEventBus()
         // Settings cluster (work-consolidation.md G17-G20). All reuse the shared
         // kit-layer `APIClient`.
@@ -548,6 +601,13 @@ final class AppEnvironment: ObservableObject {
         let notificationPreferences = NotificationPreferencesService(api: api)
         let sessions = SessionsService(api: api)
         let tags = TagsService(api: api)
+        // G21. `shareBaseURL` doubles as the origin for /api/images/proxy URLs,
+        // which AsyncImage needs as an absolute URL rather than a Request.
+        let linkMetadata = LinkMetadataService(
+            api: api,
+            baseURL: InterlinedKit.defaultBaseURL
+        )
+        let userPreferences = UserPreferencesStore(userService: userService)
         // Crash reporting (GitHub issue #29). Two things happen here, in this
         // order, and the order matters:
         //
@@ -567,6 +627,29 @@ final class AppEnvironment: ObservableObject {
         // who opts in *after* a crash still has a report to send.
         let crashReportService = CrashReportService()
         Self.installCrashHandler(service: crashReportService)
+        // Publish this machine's device id to the shared Keychain group at
+        // launch (GitHub issue #104), not when Settings ▸ Applications is first
+        // opened. The document-sync agent needs the id to address its
+        // per-machine settings document, and most users never visit that pane —
+        // leaving the agent stranded on local `UserDefaults` forever.
+        //
+        // **Detached, and that is not a nicety.** `DeviceIdentity.current()`
+        // reads and writes the Keychain, which is synchronous IPC to `securityd`
+        // against a shared access group. Calling it inline here hung the process
+        // at launch outright — the App test host never finished starting, and
+        // `xcodebuild test` failed with "The test runner hung before
+        // establishing connection" on every run. An unsigned or
+        // wrongly-entitled build has no claim on that access group, and the
+        // failure mode is a stall rather than a clean `errSecMissingEntitlement`.
+        //
+        // Even signed and entitled, a locked or first-unlock Keychain can make
+        // this slow. Nothing on the launch path should wait on it: the agent
+        // reads the published id on its own schedule, so being a few hundred
+        // milliseconds late costs nothing, and the Applications pane calls
+        // `current()` directly when it genuinely needs the value synchronously.
+        Task.detached(priority: .utility) {
+            DeviceIdentity.current()
+        }
         return AppEnvironment(
             messages: messages,
             lists: lists,
@@ -608,7 +691,9 @@ final class AppEnvironment: ObservableObject {
             appSettings: appSettings,
             notificationPreferences: notificationPreferences,
             sessions: sessions,
-            tags: tags
+            tags: tags,
+            linkMetadata: linkMetadata,
+            userPreferences: userPreferences
         )
     }
 

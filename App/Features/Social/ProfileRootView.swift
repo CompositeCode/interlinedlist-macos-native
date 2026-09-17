@@ -28,6 +28,17 @@ struct ProfileRootView: View {
 
     @State private var viewModel: ProfileViewModel?
 
+    /// The public-document count, reported upward by the documents column.
+    ///
+    /// Lives here rather than on the view model because the column already
+    /// fetches the documents for its own rows: asking a second time would be a
+    /// duplicate request whose answer could disagree with what is on screen.
+    @State private var documentCount: Int?
+
+    /// Mirrors of the view model's session-derived flags, read in the body.
+    private var isOwnProfile: Bool { viewModel?.isOwnProfile ?? false }
+    private var isSignedIn: Bool { viewModel?.isSignedIn ?? false }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -45,13 +56,23 @@ struct ProfileRootView: View {
             // building the view model in `.task` is the canonical
             // pattern.
             if viewModel == nil, let environment {
-                viewModel = ProfileViewModel(
+                let model = ProfileViewModel(
                     social: environment.social,
                     relationshipReader: environment.followRelationshipReader,
                     currentUserID: { [weak environment] in
                         environment?.currentUserStore.currentUserID
+                    },
+                    currentUsername: { [weak environment] in
+                        environment?.currentUserStore.currentUsername
                     }
                 )
+                viewModel = model
+                // Land on your own profile (GitHub #44 / G32). The session
+                // already knows who the user is, so opening Profile to an
+                // "enter a username" prompt made the one profile everybody
+                // wants to see the one that took the most typing to reach.
+                // The lookup field stays, as the way to visit someone else.
+                await model.loadOwnProfileIfNeeded()
             }
         }
     }
@@ -148,12 +169,48 @@ struct ProfileRootView: View {
         followButton: FollowButtonViewModel?
     ) -> some View {
         ScrollView {
-            ProfileHeaderView(
-                profile: profile,
-                counts: counts,
-                mutuals: mutuals,
-                followButton: followButton
-            )
+            VStack(alignment: .leading, spacing: 16) {
+                ProfileHeaderView(
+                    profile: profile,
+                    counts: counts,
+                    mutuals: mutuals,
+                    followButton: followButton
+                )
+                // The five stat tiles the web profile shows (GitHub #44).
+                // Followers / Following / Posts / Lists come straight off the
+                // profile payload — the client had been decoding the last two
+                // and dropping them at the domain boundary. Documents has no
+                // count on that payload, so the documents column reports its
+                // own, which is also why the tile and the column can never
+                // disagree.
+                ProfileStatTilesView(
+                    profile: profile,
+                    counts: counts,
+                    documentCount: documentCount
+                )
+                .padding(.horizontal, 16)
+
+                // work-consolidation.md G24 — the documents column the web
+                // profile has and macOS lacked. Self-contained: it owns its
+                // view model and its own load, so this stays one line and the
+                // Social feature learns nothing about `DocumentsServicing`.
+                Divider()
+                PublicUserDocumentsView(
+                    username: profile.username,
+                    onCountChange: { documentCount = $0 }
+                )
+                .padding(.horizontal, 16)
+
+                // The public-lists column, with a Watch button per row when the
+                // profile is someone else's (GitHub #44 / G32).
+                Divider()
+                PublicUserListsView(
+                    username: profile.username,
+                    isOwnProfile: isOwnProfile,
+                    isSignedIn: isSignedIn
+                )
+                .padding(.horizontal, 16)
+            }
         }
     }
 

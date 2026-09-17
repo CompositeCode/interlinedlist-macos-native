@@ -21,8 +21,21 @@ extension Organization {
             description: dto.description,
             isPublic: dto.isPublic ?? false,
             createdAt: dto.createdAt,
-            updatedAt: dto.updatedAt
+            updatedAt: dto.updatedAt,
+            slug: dto.slug,
+            // A missing `isSystem` means "ordinary org". Defaulting the other
+            // way would make an org un-leavable on a lean response.
+            isSystem: dto.isSystem ?? false,
+            memberCount: dto.memberCount
         )
+    }
+
+    /// The caller's role in this org, when the row carries one. The live
+    /// collection routes emit `role` and `userRole` with the same value;
+    /// either is accepted so a route that sends only one still resolves.
+    public static func callerRole(from dto: OrganizationDTO) -> OrgRole? {
+        guard let token = dto.role ?? dto.userRole else { return nil }
+        return OrgRole(wireToken: token)
     }
 }
 
@@ -43,14 +56,24 @@ extension OrgsPage {
 
 extension OrgMember {
 
-    /// Maps a member listing row (keyed by `userId`, no membership-record id).
+    /// Maps a member listing row (no membership-record id on this shape).
+    /// Carries the identity fields the live listing denormalizes onto the row,
+    /// so the roster renders names and avatars without a second lookup.
     public init(from dto: OrganizationMemberDTO) {
         self.init(
             userId: dto.userId,
             membershipId: nil,
             role: OrgRole(wireToken: dto.role),
             active: dto.active,
-            createdAt: dto.createdAt
+            createdAt: dto.createdAt,
+            username: dto.username,
+            displayName: dto.displayName,
+            // The live rows use "" for "no avatar", not null — treat a blank
+            // string as absent so the UI falls back to its placeholder.
+            avatarURL: dto.avatar
+                .flatMap { $0.isEmpty ? nil : $0 }
+                .flatMap(URL.init(string:)),
+            emailVerified: dto.emailVerified
         )
     }
 

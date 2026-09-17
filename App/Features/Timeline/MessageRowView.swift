@@ -23,6 +23,10 @@ import InterlinedDomain
 
 struct MessageRowView: View {
 
+    /// Read for the account's link-preview preference and the image-proxy
+    /// decision (G21). The row stays otherwise passive.
+    @EnvironmentObject private var environment: AppEnvironment
+
     let message: Message
 
     /// Whether the current viewer is the author and the row should
@@ -129,14 +133,28 @@ struct MessageRowView: View {
     /// The subset of `message.linkPreviews` the domain deems worth showing
     /// (feature-gaps §1.5). A bare URL with no resolved metadata is filtered
     /// out here — the row degrades to no card rather than an empty one.
+    ///
+    /// Gated on the account's "Show link previews" preference (G21). That
+    /// toggle shipped in Settings ▸ Preferences with no reader outside the
+    /// Settings pane, so turning it off had no effect anywhere; this is the
+    /// reader. `showLinkPreviews` defaults to true, matching the server
+    /// default, so a row renders normally before preferences have loaded.
     private var renderablePreviews: [LinkPreview] {
-        message.linkPreviews.filter(\.isRenderable)
+        guard environment.userPreferences.showLinkPreviews else { return [] }
+        return message.linkPreviews.filter(\.isRenderable)
     }
 
     private var linkPreviews: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(renderablePreviews) { preview in
-                LinkPreviewCardView(preview: preview)
+                LinkPreviewCardView(
+                    preview: preview,
+                    // Instagram thumbnails must go through the server proxy
+                    // (their CDN blocks hotlinking); everything else loads
+                    // directly. The service owns that host test.
+                    imageURL: environment.linkMetadata?.displayImageURL(for: preview)
+                        ?? preview.imageURL
+                )
             }
         }
     }
@@ -195,20 +213,20 @@ struct MessageRowView: View {
     }
 
     /// The row's action bar. Order matches the web's message actions:
-    /// Reply, I Dig!, Push, Push & Comment, Link.
+    /// Reply, I Dig!, Push, Push & Comment, Share.
     ///
     /// Reply / Dig / Push degrade to a plain count label when the host wired
     /// no handler (search results, previews), so a read-only row still shows
-    /// the numbers without offering a control that would do nothing. Link is
-    /// unconditional — it is a pure client-side permalink and needs no host
-    /// wiring, so it works everywhere the message has an id.
+    /// the numbers without offering a control that would do nothing. Share
+    /// needs no host wiring — it is a pure client-side projection — so it
+    /// appears wherever the message is public and carries an id and a handle.
     private var footer: some View {
         HStack(spacing: 16) {
             replyButton
             digButton
             pushButton
             pushAndCommentButton
-            linkButton
+            shareButton
 
             if message.visibility == .private {
                 Label("Private", systemImage: "lock")
@@ -294,20 +312,45 @@ struct MessageRowView: View {
         }
     }
 
-    /// Link to this specific post. `SwiftUI.ShareLink` (disambiguated from
-    /// `InterlinedDomain.ShareLink`) opens the system share sheet, which
-    /// includes Copy \u{2014} no `NSPasteboard`, no AppKit in the App target.
+    /// Share this post. Mirrors the web's Share dropdown, which offers exactly
+    /// two actions (GitHub #38): **Copy link** \u{2014} the public permalink at
+    /// `/user/<handle>/status/<id>` \u{2014} and **Get embed code**, the HTML
+    /// snippet for pasting into a blog post.
+    ///
+    /// Both use `SwiftUI.ShareLink` (disambiguated from
+    /// `InterlinedDomain.ShareLink`), whose system share sheet includes Copy
+    /// \u{2014} no `NSPasteboard`, no AppKit in the App target.
+    ///
+    /// The whole menu disappears for a **private** post: `permalink()` and
+    /// `embedHTML()` both return nil there, because only public messages
+    /// resolve for the person on the other end of the link.
     @ViewBuilder
-    private var linkButton: some View {
-        if let url = message.permalink() {
-            SwiftUI.ShareLink(item: url) {
+    private var shareButton: some View {
+        if let url = message.permalink(), let embed = message.embedHTML() {
+            Menu {
+                shareItems(url: url, embed: embed)
+            } label: {
                 Image(systemName: "link")
                     .font(.ilMono(10))
                     .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Link to this post")
-            .help("Share or copy a link to this post")
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .accessibilityLabel("Share this post")
+            .help("Copy link or get embed code for this post")
+        }
+    }
+
+    /// The two share actions, shared verbatim by the action-bar menu and the
+    /// row's context menu so the two discovery paths can never drift.
+    @ViewBuilder
+    private func shareItems(url: URL, embed: String) -> some View {
+        SwiftUI.ShareLink(item: url) {
+            Label("Copy link", systemImage: "link")
+        }
+        SwiftUI.ShareLink(item: embed) {
+            Label("Get embed code", systemImage: "chevron.left.forwardslash.chevron.right")
         }
     }
 
@@ -370,10 +413,8 @@ struct MessageRowView: View {
             }
         }
 
-        if let url = message.permalink() {
-            SwiftUI.ShareLink(item: url) {
-                Label("Link", systemImage: "link")
-            }
+        if let url = message.permalink(), let embed = message.embedHTML() {
+            shareItems(url: url, embed: embed)
         }
 
         if actions.onReply != nil || actions.onPush != nil || actions.onPushAndComment != nil {

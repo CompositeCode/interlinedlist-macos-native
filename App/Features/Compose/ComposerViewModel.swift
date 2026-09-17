@@ -45,6 +45,15 @@ final class ComposerViewModel {
     /// domain `MessagesService` enforces the same status as a backstop.
     private(set) var entitlements: EntitlementsService
 
+    /// The composed capability gate — account status, email verification, and
+    /// subscription tier as one answer (GitHub #40 / #41 / #42).
+    ///
+    /// `entitlements` alone cannot tell the composer why a post will fail: a
+    /// subscriber who is `restricted`, or who has not verified their email, is
+    /// entitled but still cannot post. This is the gate the Post button and the
+    /// media affordance consult.
+    private(set) var capabilities: CapabilityGate
+
     /// Reads a local file's bytes at send time. Injected so tests can supply
     /// bytes without touching the filesystem; production reads the file URL.
     private let readData: @Sendable (URL) async throws -> Data
@@ -61,6 +70,12 @@ final class ComposerViewModel {
     /// Optional so preview / test hosts that don't wire it fall back to the
     /// built-in `ContentLimits.default` for the character counter.
     private let contentLimits: ContentLimitsProviding?
+
+    /// The account's own per-message character cap, injected by the composition
+    /// root from the session-cached `CurrentUser` (GitHub #46). `nil` when no
+    /// account has resolved, in which case the platform ceiling stands alone
+    /// rather than a guessed default standing in for it.
+    private let accountMessageCap: Int?
 
     /// LinkedIn posting-targets surface (work-consolidation.md G11a). Optional so
     /// preview / test hosts without it keep the plain boolean toggle behaviour.
@@ -147,11 +162,29 @@ final class ComposerViewModel {
     /// a connect hint — mirrors the Bluesky/Mastodon NW-4 pattern.
     private(set) var linkedInNotConfigured: Bool = false
 
-    /// The primary LinkedIn destination the post will publish to (the personal
-    /// profile, falling back to the first available target). `nil` until targets
-    /// are loaded.
-    var linkedInPersonalTarget: LinkedInTarget? {
-        linkedInTargets.first { $0.kind == .personal } ?? linkedInTargets.first
+    /// The LinkedIn destination this post will actually publish to
+    /// (work-consolidation.md G25).
+    ///
+    /// **This is not always the personal profile.** Per `/help/organizations`,
+    /// a member who has been assigned an organization company page gets that
+    /// page as their *default* destination: enabling the LinkedIn toggle
+    /// without picking a target publishes to the company page, not to them.
+    ///
+    /// The previous implementation looked up the personal target first, so an
+    /// assigned member was told "Posting as <their own name>" while the server
+    /// published to a company page. The precedence now matches the server's.
+    var linkedInEffectiveTarget: LinkedInTarget? {
+        LinkedInPostingTargets(
+            targets: linkedInTargets,
+            orgScopeMissing: linkedInOrgScopeMissing
+        ).defaultDestination
+    }
+
+    /// Whether the resolved destination is a company page rather than the
+    /// user's own profile. The view uses this to say so explicitly instead of
+    /// leaving the distinction to a bare name.
+    var linkedInPostsToCompanyPage: Bool {
+        linkedInEffectiveTarget?.isCompanyPage ?? false
     }
 
     // MARK: - Derived gating
@@ -163,12 +196,50 @@ final class ComposerViewModel {
         entitlements.isSubscriber
     }
 
+    /// Why this draft cannot be posted right now, or `nil` if it can.
+    ///
+    /// An edit republishes an existing message rather than posting a new one,
+    /// but the platform gates both the same way, so the same action is asked
+    /// about in either mode.
+    var postDenial: CapabilityDenial? {
+        capabilities.denial(for: .postMessage)
+    }
+
+    /// Why media cannot be attached right now, or `nil` if it can.
+    var attachmentDenial: CapabilityDenial? {
+        capabilities.denial(for: .mediaAttachments)
+    }
+
+    /// The inline, non-modal explanation shown under the composer when posting
+    /// is blocked. Never blocks typing — the draft must survive (GitHub #41).
+    var postBlockedMessage: String? {
+        postDenial?.message
+    }
+
+    /// The next step to offer beside ``postBlockedMessage``, if any.
+    var postBlockedRemedy: CapabilityRemedy? {
+        postDenial?.remedy
+    }
+
     /// Whether the M6 controls should appear at all. Edits don't expose media /
     /// schedule / cross-post — those apply to a fresh message only.
     var showsSubscriberControls: Bool {
         if case .newPost = mode { return true }
         return false
     }
+
+    /// Whether the advanced post options (media / schedule / cross-post) are
+    /// currently revealed, behind the gear affordance.
+    ///
+    /// Seeded from the account's `showAdvancedPostSettings` preference and
+    /// flipped by `toggleAdvancedOptions()`. This is what makes Settings ▸
+    /// Preferences ▸ "Show advanced post options" real: before G35 / issue #43
+    /// the toggle was persisted and read back by the Preferences pane and by
+    /// nothing else, so turning it off changed nothing in the composer.
+    private(set) var showsAdvancedOptions: Bool
+
+    /// True while the gear's write-back to the account is in flight.
+    private(set) var isSavingAdvancedOptionsPreference: Bool = false
 
     /// The primary-action label. Reflects the schedule-vs-send-now affordance
     /// (PLAN.md §6 M6) for a new message; falls back to the mode's label for an
@@ -197,6 +268,41 @@ final class ComposerViewModel {
     /// the user gets an immediate signal instead of a server-side rejection.
     var isOverMessageLimit: Bool { messageCharacterCount > messageCharacterLimit }
 
+    // MARK: - Scheduled destinations (GitHub #55)
+
+    /// The cross-post destinations the draft will fan out to, as the schedule
+    /// dialog names them.
+    ///
+    /// The web's schedule dialog lists the connected networks alongside the
+    /// date so you can see where a queued post is going at the moment you queue
+    /// it. macOS keeps its per-network toggles where they are (they are shared
+    /// with the send-now path) and mirrors the *information* here instead —
+    /// deliberately additive, so the composer's structure is untouched.
+    ///
+    /// Derived from the same toggles `submitNewPost` sends, so the summary
+    /// cannot drift from what is actually posted. Mastodon counts only when a
+    /// provider id was actually entered: the toggle alone sends an empty
+    /// `mastodonProviderIds`, which fans out nowhere.
+    var scheduledDestinationNames: [String] {
+        var names: [String] = []
+        if crossPostToMastodon, !Self.normalise(providerIds: mastodonProviderIdsInput).isEmpty {
+            names.append("Mastodon")
+        }
+        if crossPostToBluesky { names.append("Bluesky") }
+        if crossPostToLinkedIn { names.append("LinkedIn") }
+        if crossPostToTwitter { names.append("X") }
+        return names
+    }
+
+    /// One line naming where the scheduled post will land. Falls back to the
+    /// InterlinedList-only wording so the dialog always states a destination
+    /// rather than showing a blank where the list would be.
+    var scheduledDestinationSummary: String {
+        let names = scheduledDestinationNames
+        guard !names.isEmpty else { return "InterlinedList only" }
+        return names.joined(separator: " \u{00B7} ")
+    }
+
     // MARK: - Validation
 
     /// Whether the current draft would be accepted for submit. Empty body is
@@ -213,6 +319,11 @@ final class ComposerViewModel {
         if showsSubscriberControls, isScheduled, scheduledAt <= Date() {
             return false
         }
+        // Account status / email verification / tier. Asked before the user
+        // clicks Post rather than discovered from a server error afterwards.
+        if postDenial != nil {
+            return false
+        }
         return true
     }
 
@@ -223,23 +334,37 @@ final class ComposerViewModel {
         eventBus: ComposerEventBus,
         mode: ComposerMode = .newPost,
         entitlements: EntitlementsService = EntitlementsService(customerStatus: .free),
+        accountStatus: AccountStatus = .active,
+        isEmailVerified: Bool = true,
         readData: @escaping @Sendable (URL) async throws -> Data = { try Data(contentsOf: $0) },
         onSubscriberLapse: (@MainActor () async -> Void)? = nil,
         userService: UserServicing? = nil,
         contentLimits: ContentLimitsProviding? = nil,
         linkedIn: LinkedInServicing? = nil,
-        initialVisibility: Visibility = .public
+        initialVisibility: Visibility = .public,
+        initialShowsAdvancedOptions: Bool = true,
+        accountMessageCap: Int? = nil
     ) {
         self.messages = messages
         self.eventBus = eventBus
         self.mode = mode
         self.entitlements = entitlements
+        self.capabilities = CapabilityGate(
+            accountStatus: accountStatus,
+            entitlements: entitlements,
+            isEmailVerified: isEmailVerified
+        )
         self.readData = readData
         self.onSubscriberLapse = onSubscriberLapse
         self.userService = userService
         self.contentLimits = contentLimits
+        self.accountMessageCap = accountMessageCap
         self.linkedIn = linkedIn
         self.scheduledAt = Date().addingTimeInterval(3600)
+        // Defaults to `true` so previews and existing tests that don't pass a
+        // preference keep the pre-G35 behaviour (options always revealed).
+        // Production passes the account's real preference.
+        self.showsAdvancedOptions = initialShowsAdvancedOptions
         switch mode {
         case .newPost:
             self.body = ""
@@ -260,13 +385,52 @@ final class ComposerViewModel {
     /// Refreshes `messageCharacterLimit` from the server (work-consolidation.md
     /// G14). No-op when no provider is wired; the provider itself never throws
     /// (it falls back to `ContentLimits.default`), so the limit is always sane.
+    ///
+    /// The budget is the **lower** of the platform ceiling and the account's own
+    /// `maxMessageLength` cap (GitHub #46). This used to read the platform
+    /// ceiling alone, which ignored a cap the user had deliberately set — and
+    /// the numbers make the other direction reachable too: the account field
+    /// accepts up to `10000` while the platform stops at `5000`, so trusting the
+    /// account value alone would let the composer accept a message the server
+    /// then rejects.
     func refreshLimits() async {
         guard let contentLimits else { return }
-        messageCharacterLimit = await contentLimits.limits().messageMaxContentLength
+        let limits = await contentLimits.limits()
+        messageCharacterLimit = limits.effectiveMessageLength(
+            accountCap: accountMessageCap
+        )
     }
 
     func setVisibility(_ visibility: Visibility) {
         self.visibility = visibility
+    }
+
+    /// Reveals or hides the advanced post options and persists the new state to
+    /// the account, mirroring the web gear exactly: its click handler flips the
+    /// panel *and* PATCHes `{ showAdvancedPostSettings }` (verified against the
+    /// live bundle 2026-09-09), so the choice sticks across sessions and
+    /// clients.
+    ///
+    /// The local flip is optimistic and is rolled back if the write fails, so
+    /// the panel never shows a state the account does not hold. A `nil`
+    /// `userService` (previews / tests) still toggles locally — the affordance
+    /// must work without a network seam wired.
+    func toggleAdvancedOptions() async {
+        guard !isSavingAdvancedOptionsPreference else { return }
+        let snapshot = showsAdvancedOptions
+        let desired = !snapshot
+        showsAdvancedOptions = desired
+        guard let userService else { return }
+        isSavingAdvancedOptionsPreference = true
+        defer { isSavingAdvancedOptionsPreference = false }
+        do {
+            let updated = try await userService.setShowAdvancedPostSettings(desired)
+            // Trust the server's answer over the optimistic guess.
+            showsAdvancedOptions = updated.showAdvancedPostSettings
+        } catch {
+            showsAdvancedOptions = snapshot
+            self.error = error
+        }
     }
 
     /// Adds picked / dropped file URLs as attachments. Unsupported file types
@@ -274,8 +438,16 @@ final class ComposerViewModel {
     /// non-subscribers (the affordance is disabled in the view, but this is
     /// defence-in-depth so a programmatic add can't bypass the gate's intent).
     func addAttachments(urls: [URL]) {
-        guard canUseSubscriberFeatures else {
-            error = MessagesError.subscriberRequired(.mediaAttachments)
+        if let denial = attachmentDenial {
+            // A tier denial keeps surfacing as `MessagesError.subscriberRequired`
+            // — the type the rest of the app already treats as "subscription
+            // lapse". Status and verification denials are a different problem
+            // with a different remedy, so they carry the denial itself.
+            if case .subscriberRequired(let feature) = denial {
+                error = MessagesError.subscriberRequired(feature)
+            } else {
+                error = ComposerError.blocked(denial)
+            }
             return
         }
         var rejected = false
@@ -522,10 +694,16 @@ enum ComposerError: Error, LocalizedError, Equatable {
     /// A picked / dropped file isn't a supported image or video type.
     case unsupportedAttachment
 
+    /// The account may not perform this action — because of its status or an
+    /// unverified email, rather than its subscription tier (GitHub #41 / #42).
+    case blocked(CapabilityDenial)
+
     var errorDescription: String? {
         switch self {
         case .unsupportedAttachment:
             return "That file isn't a supported image or video."
+        case .blocked(let denial):
+            return denial.message
         }
     }
 }

@@ -221,10 +221,11 @@ final class OwnedListsViewModel {
             lists_loaded.removeAll { $0.id == id }
             if selectedListID == id { selectedListID = nil }
         case .rowCreated, .rowUpdated, .rowDeleted,
-             .schemaChanged,
+             .schemaChanged, .savedViewsChanged,
              .watcherChanged, .watcherRemoved,
              .connectionAdded, .connectionRemoved:
-            // Sidebar-level view model only tracks list-level events.
+            // Sidebar-level view model only tracks list-level events. Saved
+            // views arrange the rows pane, not the sidebar row.
             break
         }
     }

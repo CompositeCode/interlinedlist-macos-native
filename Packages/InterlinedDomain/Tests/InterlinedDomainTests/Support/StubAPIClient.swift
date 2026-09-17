@@ -1,4 +1,5 @@
 import Foundation
+import XCTest
 import InterlinedKit
 @testable import InterlinedDomain
 
@@ -26,10 +27,39 @@ actor StubAPIClient: APIClientProtocol {
         let method: String
         let path: String
         let query: [String: String]
+        /// The encoded JSON body, when the request carried one.
+        ///
+        /// Recorded so a test can assert the **shape** that goes on the wire,
+        /// not only that a call was made. A wrong body is as breaking as a wrong
+        /// path and far quieter, and two shipped defects prove it: `create(…)`
+        /// sent its schema as a string where the server demands an object
+        /// (GitHub #85), and the app-settings surface sent `{"name":…}` where
+        /// the server demands `{"deviceName":…}` (GitHub #56). Every
+        /// path-and-method assertion passed the whole time, in both cases.
+        let body: Data?
+
+        /// The body decoded for assertions. A computed property, not a stored
+        /// one, because `[String: Any]` is not `Equatable` and would break the
+        /// synthesised conformance this type relies on.
+        var bodyJSON: [String: Any]? {
+            guard let body else { return nil }
+            return (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
+        }
     }
 
     private var outcomes: [Outcome] = []
     private(set) var recorded: [RecordedRequest] = []
+
+    /// The encoded `.json` request bodies, in send order, encoded with the same
+    /// kit encoder production uses.
+    ///
+    /// Added for the G40 saved-views tests: `config` must go out as a JSON
+    /// *object* (the OpenAPI request body wrongly declares it a string), and
+    /// `PUT` replaces the config whole, so "what exactly did we send" is a
+    /// correctness question at the service seam and not only at the transport
+    /// seam. `RecordedRequest` is left untouched so its `Equatable` conformance
+    /// keeps working for the suites that compare whole requests.
+    private(set) var sentBodies: [Data] = []
 
     init() {}
 
@@ -87,8 +117,46 @@ actor StubAPIClient: APIClientProtocol {
         for item in request.query where item.value != nil {
             query[item.name] = item.value
         }
+        // Encoded with the client's own encoder, so what a test inspects is
+        // byte-for-byte what would have gone on the wire — key naming and date
+        // strategy included. A body that fails to encode is recorded as `nil`
+        // rather than failing the recording.
+        var bodyData: Data?
+        if case .json(let payload)? = request.body {
+            bodyData = try? JSONCoders.makeEncoder().encode(payload)
+        } else if case .raw(let data, _)? = request.body {
+            bodyData = data
+        }
         recorded.append(
-            RecordedRequest(method: request.method.rawValue, path: request.path, query: query)
+            RecordedRequest(
+                method: request.method.rawValue,
+                path: request.path,
+                query: query,
+                body: bodyData
+            )
+        )
+        if case .json(let value) = request.body,
+           let encoded = try? JSONCoders.makeEncoder().encode(value) {
+            sentBodies.append(encoded)
+        }
+    }
+
+}
+
+// MARK: - Body assertions
+
+extension XCTestCase {
+    /// The most recent `.json` body the stub encoded, as a dictionary.
+    ///
+    /// Lives on `XCTestCase` rather than on the actor because `[String: Any]`
+    /// is not `Sendable` and so cannot cross an actor boundary under Swift 6 —
+    /// the bytes (`sentBodies`) cross instead, and the parse happens test-side.
+    func lastSentJSON(_ api: StubAPIClient) async throws -> [String: Any] {
+        let bodies = await api.sentBodies
+        let data = try XCTUnwrap(bodies.last, "No JSON request body was recorded")
+        return try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any],
+            "Recorded request body was not a JSON object"
         )
     }
 }

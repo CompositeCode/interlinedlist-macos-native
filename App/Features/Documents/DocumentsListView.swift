@@ -2,16 +2,43 @@
 //
 // Middle column of the M4 Documents three-column split
 // (PLAN.md §6 M4). Lists documents in the currently-selected folder
-// (or the unfiled root) with a per-row context menu for delete.
+// (or the unfiled root) with a per-row context menu for move + delete
+// (work-consolidation.md G24 adds the move half).
 // Pure SwiftUI; no AppKit involvement.
 
 import SwiftUI
 import InterlinedDomain
 
+// `Document` is written as `InterlinedDomain.Document` throughout the SwiftUI
+// files in this feature, and that qualification is load-bearing.
+//
+// The macOS 27 SDK added a `Document` **protocol** to SwiftUI
+// (`protocol Document: ReadableDocument, WritableDocument`), which collides with
+// the domain's `Document` **struct** in any file importing both — which is every
+// documents view. Before Xcode 27 the bare name resolved; after it, the same
+// source stopped compiling with `'Document' is ambiguous for type lookup`
+// (GitHub #98).
+//
+// The domain type is not renamed: `Document` is the right name for it, it is
+// correct across Kit, Domain, Persistence and their tests, and renaming a core
+// model to dodge a collision in one consumer is the tail wagging the dog. A
+// `typealias` would shorten the use sites at the cost of giving one concept two
+// names. Only the SwiftUI-importing files need this; the view models import
+// Foundation and Observation, not SwiftUI, and are unaffected.
+
 struct DocumentsListView: View {
 
     let viewModel: DocumentsListViewModel
-    let onSelect: (Document.ID?) -> Void
+    let onSelect: (InterlinedDomain.Document.ID?) -> Void
+
+    /// Source of the **Move to folder** destinations. Optional so the column
+    /// still renders in isolation (previews, and any future host that has no
+    /// sidebar); the move item is simply absent without it.
+    var folderTree: FolderTreeViewModel? = nil
+
+    /// Called with the document that was moved, so the host can rebind an open
+    /// editor to the server's relocated copy.
+    var onMoved: ((InterlinedDomain.Document) -> Void)? = nil
 
     var body: some View {
         List(selection: Binding(
@@ -51,6 +78,27 @@ struct DocumentsListView: View {
                     DocumentRowView(document: doc)
                         .tag(doc.id)
                         .contextMenu {
+                            if let folderTree {
+                                MoveToFolderMenu(
+                                    folderTree: folderTree,
+                                    currentFolderID: doc.folderId
+                                ) { destination in
+                                    Task {
+                                        if let moved = await viewModel.moveDocument(
+                                            id: doc.id,
+                                            to: destination
+                                        ) {
+                                            onMoved?(moved)
+                                            // The sidebar's per-folder counts
+                                            // came from the tree call, so both
+                                            // the source and destination badges
+                                            // are now stale.
+                                            await folderTree.refresh()
+                                        }
+                                    }
+                                }
+                                Divider()
+                            }
                             Button(role: .destructive) {
                                 Task { await viewModel.deleteDocument(id: doc.id) }
                             } label: {
@@ -72,7 +120,7 @@ struct DocumentsListView: View {
 // MARK: - DocumentRowView
 
 private struct DocumentRowView: View {
-    let document: Document
+    let document: InterlinedDomain.Document
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {

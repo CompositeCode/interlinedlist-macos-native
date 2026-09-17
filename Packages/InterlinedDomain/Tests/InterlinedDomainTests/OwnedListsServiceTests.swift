@@ -11,22 +11,24 @@ import InterlinedKit
 /// floor for every public method.
 final class OwnedListsServiceTests: XCTestCase {
 
-    // MARK: - Subscriber gating (defensive M3 gate)
+    // MARK: - Subscriber gating (create-only — GitHub #40)
 
-    func test_givenEntitlementsBlockManagement_whenCallingMyLists_thenThrowsSubscriberRequiredWithoutHittingAPI() async throws {
-        // Given — a manage-blocking entitlements stub.
+    /// Reading your own lists is free on every tier. The published matrix says
+    /// a lapsed subscriber keeps existing lists "fully usable", so the gate
+    /// must not stand between a free account and its own data.
+    func test_givenEntitlementsBlockCreation_whenCallingMyLists_thenReadIsUngatedAndHitsAPI() async throws {
+        // Given — an entitlement that blocks list *creation*.
         let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.paginatedLists(ids: ["l-1"]))
         let service = ListsService(api: api, entitlements: BlockingEntitlements.shared)
 
-        // When / Then
-        do {
-            _ = try await service.myLists(limit: 20, offset: 0)
-            XCTFail("Expected ListsError.subscriberRequired")
-        } catch let error as ListsError {
-            XCTAssertEqual(error, .subscriberRequired)
-        }
+        // When
+        let page = try await service.myLists(limit: 20, offset: 0)
+
+        // Then — the read went through untouched by the gate.
+        XCTAssertEqual(page.lists.map(\.id), ["l-1"])
         let recorded = await api.recorded
-        XCTAssertTrue(recorded.isEmpty, "Gated calls must not hit the API.")
+        XCTAssertEqual(recorded.first?.path, "/api/lists")
     }
 
     func test_givenEntitlementsBlockManagement_whenCreatingList_thenThrowsSubscriberRequiredWithoutHittingAPI() async throws {
@@ -51,21 +53,22 @@ final class OwnedListsServiceTests: XCTestCase {
         XCTAssertTrue(recorded.isEmpty)
     }
 
-    func test_givenEntitlementsBlockManagement_whenDeletingRow_thenThrowsSubscriberRequiredWithoutHittingAPI() async throws {
-        // Given — covers a void-returning write to confirm the gate fires
-        // on every M3 method, not just the value-returning ones.
+    /// Row writes are explicitly free: *"Adding rows to an existing list is
+    /// free, even without a subscription."* Deleting one is the same class of
+    /// edit, so the creation gate must not fire here either.
+    func test_givenEntitlementsBlockCreation_whenDeletingRow_thenRowWriteIsUngatedAndHitsAPI() async throws {
+        // Given
         let api = StubAPIClient()
+        await api.enqueue(json: "{}")
         let service = ListsService(api: api, entitlements: BlockingEntitlements.shared)
 
-        // When / Then
-        do {
-            try await service.deleteRow(listId: "list-1", rowId: "row-1")
-            XCTFail("Expected ListsError.subscriberRequired")
-        } catch let error as ListsError {
-            XCTAssertEqual(error, .subscriberRequired)
-        }
+        // When
+        try await service.deleteRow(listId: "list-1", rowId: "row-1")
+
+        // Then
         let recorded = await api.recorded
-        XCTAssertTrue(recorded.isEmpty)
+        XCTAssertEqual(recorded.first?.method, "DELETE")
+        XCTAssertEqual(recorded.first?.path, "/api/lists/list-1/data/row-1")
     }
 
     func test_givenPermissiveEntitlements_whenCallingPublicBrowse_thenSubscriberGateDoesNotApply() async throws {
@@ -271,16 +274,19 @@ final class OwnedListsServiceTests: XCTestCase {
 
     // MARK: - detail
 
-    func test_givenOwnedListExists_whenLoadingDetail_thenMapsAllFields() async throws {
-        // Given
+    func test_givenOwnedListExists_whenLoadingDetail_thenUnwrapsTheDataEnvelope() async throws {
+        // Given the real `{ "data": { …, "properties": [...] } }` envelope.
+        // `Lists.get` decoded a bare `ListDTO`, so `detail(listId:)` could never
+        // decode a live response (GitHub #75) — and the test that said otherwise
+        // was asserting against a hand-written bare object.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listObject(
+        await api.enqueue(json: Fixtures.listEnvelope(
             id: "books",
             title: "Books",
             description: "Read pile",
             isPublic: false,
-            schema: "Title:text, Year:number",
-            parentId: "parent-list"
+            parentId: "parent-list",
+            properties: Fixtures.listPropertiesJSON
         ))
         let service = ListsService(api: api)
 
@@ -292,8 +298,11 @@ final class OwnedListsServiceTests: XCTestCase {
         XCTAssertEqual(list.title, "Books")
         XCTAssertEqual(list.description, "Read pile")
         XCTAssertEqual(list.visibility, .private)
-        XCTAssertEqual(list.schemaDescription, "Title:text, Year:number")
         XCTAssertEqual(list.parentID, "parent-list")
+        // The columns come from `properties` — the field the server actually
+        // sends — and keep key and label apart.
+        XCTAssertEqual(list.schema?.fields.map(\.key), ["title", "year"])
+        XCTAssertEqual(list.schema?.fields.map(\.label), ["Title", "Publication Year"])
         let recorded = await api.recorded
         XCTAssertEqual(recorded.first?.path, "/api/lists/books")
     }
@@ -301,7 +310,7 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenIsPublicMissing_whenLoadingDetail_thenDefaultsToPrivate() async throws {
         // Given — boundary: API omits `isPublic`. Authenticated path defaults to private.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listObject(id: "books", isPublic: nil))
+        await api.enqueue(json: Fixtures.listEnvelope(id: "books", isPublic: nil))
         let service = ListsService(api: api)
 
         // When
@@ -328,17 +337,22 @@ final class OwnedListsServiceTests: XCTestCase {
 
     // MARK: - create
 
-    func test_givenTitleAndSchema_whenCreating_thenPOSTsListAndMapsResponse() async throws {
-        // Given
+    func test_givenTitleAndSchema_whenCreating_thenSendsTheSchemaObjectAndUnwrapsTheEnvelope() async throws {
+        // Given — the create answers `{ message, data }` with the stored columns.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listObject(id: "new-list", title: "Films"))
+        await api.enqueue(json: Fixtures.listEnvelope(
+            id: "new-list",
+            title: "Films",
+            properties: Fixtures.listPropertiesJSON,
+            message: "List created successfully"
+        ))
         let service = ListsService(api: api)
 
         // When
         let list = try await service.create(
             title: "Films",
             description: nil,
-            schema: "Title:text, Year:number",
+            schema: try SchemaDSL.parse("Title:text, Year:number"),
             parentId: nil,
             isPublic: false
         )
@@ -349,6 +363,44 @@ final class OwnedListsServiceTests: XCTestCase {
         let recorded = await api.recorded
         XCTAssertEqual(recorded.first?.method, "POST")
         XCTAssertEqual(recorded.first?.path, "/api/lists")
+
+        // And the wire body carries the schema as an **object**. A string here
+        // is a flat 400 from the server — "Invalid schema: DSL must be an
+        // object" — which is why creating a list with columns never worked
+        // (GitHub #85). Asserting the shape is the whole point of this case.
+        let body = try XCTUnwrap(recorded.first?.body)
+        let json = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        )
+        let schema = try XCTUnwrap(json["schema"] as? [String: Any],
+                                   "schema must be an object, not a string")
+        let fields = try XCTUnwrap(schema["fields"] as? [[String: Any]])
+        XCTAssertEqual(fields.map { $0["key"] as? String }, ["Title", "Year"])
+        XCTAssertEqual(fields.map { $0["type"] as? String }, ["text", "number"])
+    }
+
+    func test_givenNoSchema_whenCreating_thenTheSchemaKeyIsOmittedEntirely() async throws {
+        // Boundary. An empty schema is not the same as no schema: sending
+        // `{"fields": []}` asks for an explicitly column-less list, where
+        // omitting the key lets the server apply its own default.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.listEnvelope(id: "bare", title: "Bare"))
+        let service = ListsService(api: api)
+
+        _ = try await service.create(
+            title: "Bare",
+            description: nil,
+            schema: ListSchema.empty,
+            parentId: nil,
+            isPublic: false
+        )
+
+        let recorded = await api.recorded
+        let body = try XCTUnwrap(recorded.first?.body)
+        let json = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        )
+        XCTAssertNil(json["schema"], "an empty schema sends no schema key at all")
     }
 
     func test_givenEmptyTitle_whenCreating_thenAPIRejection() async throws {
@@ -398,7 +450,7 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenChanges_whenUpdating_thenPUTsAndReturnsUpdatedList() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listObject(id: "books", title: "Books v2"))
+        await api.enqueue(json: Fixtures.listEnvelope(id: "books", title: "Books v2", message: "List updated"))
         let service = ListsService(api: api)
 
         // When
@@ -420,7 +472,7 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenAllFieldsNil_whenUpdating_thenStillIssuesPut() async throws {
         // Given — boundary: a no-op update body still hits the endpoint.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listObject(id: "books"))
+        await api.enqueue(json: Fixtures.listEnvelope(id: "books"))
         let service = ListsService(api: api)
 
         // When
@@ -492,38 +544,73 @@ final class OwnedListsServiceTests: XCTestCase {
 
     // MARK: - schema (read)
 
-    func test_givenValidDSL_whenLoadingSchema_thenParsesIntoFields() async throws {
-        // Given
+    func test_givenCapturedSchemaPayload_whenLoading_thenMapsEveryColumnFacet() async throws {
+        // Given the **captured** `GET /api/lists/[id]/schema` payload. The
+        // previous fixture was `{"schema": "Title:text, Year:number"}` — a shape
+        // the server has never sent; the test passed and the feature did not
+        // work (GitHub #85).
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listSchemaEnvelope("Title:text, Year:number"))
+        await api.enqueue(json: Fixtures.listSchemaEnvelope)
         let service = ListsService(api: api)
 
         // When
         let schema = try await service.schema(of: "books")
 
-        // Then
-        XCTAssertEqual(schema.fields.map(\.name), ["Title", "Year"])
-        XCTAssertEqual(schema.fields.map(\.type), [.text, .number])
+        // Then — key and label are separate, and the metadata the server has
+        // always stored finally arrives.
+        XCTAssertEqual(schema.orderedFields.map(\.key), ["title", "year", "status"])
+        XCTAssertEqual(schema.orderedFields.map(\.label), ["Title", "Publication Year", "Status"])
+        XCTAssertEqual(schema.orderedFields.map(\.type), [.text, .number, .select])
+
+        let title = try XCTUnwrap(schema.field(key: "title"))
+        XCTAssertEqual(title.isRequired, true)
+        XCTAssertEqual(title.helpText, "What is it called?")
+        XCTAssertEqual(title.placeholder, "e.g. Dune")
+        XCTAssertEqual(title.validation?.minLength, 2)
+        XCTAssertEqual(title.validation?.maxLength, 80)
+        XCTAssertEqual(title.validation?.pattern, "^[A-Za-z].*$")
+
+        let year = try XCTUnwrap(schema.field(key: "year"))
+        XCTAssertEqual(year.validation?.min, 1000)
+        XCTAssertEqual(year.validation?.max, 2100)
+
+        // The select column's options arrive under both spellings live; either
+        // alone must be enough.
+        let status = try XCTUnwrap(schema.field(key: "status"))
+        XCTAssertEqual(status.enumValues, ["todo", "doing", "done"])
+        XCTAssertEqual(status.defaultValue, .string("todo"))
+
         let recorded = await api.recorded
         XCTAssertEqual(recorded.first?.path, "/api/lists/books/schema")
     }
 
-    func test_givenMalformedDSL_whenLoadingSchema_thenThrowsMalformedSchema() async throws {
-        // Given — invalid-input case at the domain boundary.
+    func test_givenUnknownColumnType_whenLoadingSchema_thenDegradesToTextRatherThanFailing() async throws {
+        // Invalid input from upstream. A column type the client has never heard
+        // of must not take out the whole schema — and with it the row table —
+        // so it maps to `.text`, the editor that can display anything.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listSchemaEnvelope("Bogus without colon"))
+        await api.enqueue(json: Fixtures.listSchemaEnvelope(fields: [
+            (key: "title", type: "text", label: "Title"),
+            (key: "colour", type: "colour-picker-2027", label: "Colour")
+        ]))
         let service = ListsService(api: api)
 
-        // When / Then
-        do {
-            _ = try await service.schema(of: "books")
-            XCTFail("Expected ListsError.malformedSchema")
-        } catch let error as ListsError {
-            guard case .malformedSchema(let raw, _) = error else {
-                return XCTFail("Expected .malformedSchema, got \(error)")
-            }
-            XCTAssertEqual(raw, "Bogus without colon")
-        }
+        let schema = try await service.schema(of: "books")
+
+        XCTAssertEqual(schema.fields.map(\.key), ["title", "colour"])
+        XCTAssertEqual(schema.field(key: "colour")?.type, .text)
+    }
+
+    func test_givenEmptyFieldList_whenLoadingSchema_thenSchemaIsEmptyNotAFailure() async throws {
+        // Boundary: a list with no columns yet. The live route answers
+        // `{"data":{"name":"New list","fields":[]}}` for exactly this.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.listSchemaEnvelope(fields: []))
+        let service = ListsService(api: api)
+
+        let schema = try await service.schema(of: "books")
+
+        XCTAssertEqual(schema, .empty)
     }
 
     func test_givenAPIFailure_whenLoadingSchema_thenThrows() async throws {
@@ -543,10 +630,14 @@ final class OwnedListsServiceTests: XCTestCase {
 
     // MARK: - schema (write)
 
-    func test_givenSchema_whenUpdatingSchema_thenSerializesAndReparsesResult() async throws {
-        // Given
+    func test_givenSchema_whenUpdatingSchema_thenSendsAnObjectAndReadsBackTheStoredColumns() async throws {
+        // Given — the write answers `{ message, data: { …, properties[] } }`.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listSchemaEnvelope("Title:text, Year:number"))
+        await api.enqueue(json: Fixtures.listEnvelope(
+            id: "books",
+            properties: Fixtures.listPropertiesJSON,
+            message: "Schema updated successfully"
+        ))
         let service = ListsService(api: api)
         let schema = ListSchema(fields: [
             SchemaField(name: "Title", type: .text),
@@ -554,30 +645,84 @@ final class OwnedListsServiceTests: XCTestCase {
         ])
 
         // When
-        let reparsed = try await service.updateSchema(of: "books", schema: schema)
+        let saved = try await service.updateSchema(of: "books", schema: schema, force: false)
 
-        // Then
-        XCTAssertEqual(reparsed, schema)
+        // Then — the result comes from `properties`, so key and label are the
+        // server's, not the ones we sent.
+        XCTAssertEqual(saved.fields.map(\.key), ["title", "year"])
+        XCTAssertEqual(saved.fields.map(\.label), ["Title", "Publication Year"])
+
         let recorded = await api.recorded
         XCTAssertEqual(recorded.first?.method, "PUT")
         XCTAssertEqual(recorded.first?.path, "/api/lists/books/schema")
+        XCTAssertNil(recorded.first?.query["force"], "a first save never forces")
+
+        // The body carries a schema **object**, not the DSL string that the
+        // server rejects.
+        let body = try XCTUnwrap(recorded.first?.body)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertNotNil(json["schema"] as? [String: Any], "schema must be an object")
     }
 
-    func test_givenEmptySchema_whenUpdatingSchema_thenServerDSLIsEmpty() async throws {
-        // Given — boundary: serializing an empty schema yields `""`; the
-        // request is still issued, and the server's reply drives the parse.
-        // The parser rejects `""`, so we model the server returning a
-        // single-field schema instead — this confirms the response is what
-        // dictates the returned value.
+    func test_givenDestructiveRejection_whenUpdatingSchema_thenSurfacesTheConfirmationError() async throws {
+        // Upstream failure. The server refuses to drop a column that still holds
+        // row data with a 400 — which is a question, not a malfunction — so it
+        // must not reach the UI as a bare "Bad Request".
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listSchemaEnvelope("Title:text"))
+        await api.enqueue(failure: .badRequest(
+            serverMessage: "Removing these columns would delete existing data."
+        ))
         let service = ListsService(api: api)
 
-        // When
-        let result = try await service.updateSchema(of: "books", schema: ListSchema.empty)
+        do {
+            _ = try await service.updateSchema(
+                of: "books",
+                schema: ListSchema(fields: [SchemaField(name: "Title", type: .text)]),
+                force: false
+            )
+            XCTFail("Expected ListsError.schemaChangeWouldLoseData")
+        } catch let error as ListsError {
+            guard case .schemaChangeWouldLoseData(let message) = error else {
+                return XCTFail("Expected .schemaChangeWouldLoseData, got \(error)")
+            }
+            XCTAssertEqual(message, "Removing these columns would delete existing data.")
+        }
+    }
 
-        // Then
-        XCTAssertEqual(result.fields.map(\.name), ["Title"])
+    func test_givenForceRequested_whenUpdatingSchema_thenTheQueryCarriesIt() async throws {
+        // And with the user's confirmation the same call goes out with `force`,
+        // so a 400 after that is a real failure rather than the same question
+        // asked twice.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.listEnvelope(
+            id: "books",
+            properties: Fixtures.listPropertiesJSON
+        ))
+        let service = ListsService(api: api)
+
+        _ = try await service.updateSchema(
+            of: "books",
+            schema: ListSchema(fields: [SchemaField(name: "Title", type: .text)]),
+            force: true
+        )
+
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.query["force"], "true")
+    }
+
+    func test_givenEmptySchema_whenUpdatingSchema_thenStillIssuesThePut() async throws {
+        // Boundary: clearing every column is a legitimate request. It is also
+        // the maximally destructive one, so it must still go through the
+        // unforced path first.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.listEnvelope(id: "books", properties: "[]"))
+        let service = ListsService(api: api)
+
+        let result = try await service.updateSchema(of: "books", schema: .empty, force: false)
+
+        XCTAssertEqual(result, .empty)
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.method, "PUT")
     }
 
     // MARK: - refresh
@@ -585,7 +730,7 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenGitHubBackedList_whenRefreshing_thenReturnsFreshList() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listObject(id: "gh-list"))
+        await api.enqueue(json: Fixtures.listEnvelope(id: "gh-list"))
         let service = ListsService(api: api)
 
         // When
@@ -865,10 +1010,10 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenListHasWatchers_whenLoadingWatchers_thenMapsRoles() async throws {
         // Given
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.watchersArray([
-            (userId: "u-1", role: "owner"),
-            (userId: "u-2", role: "editor"),
-            (userId: "u-3", role: "viewer")
+        await api.enqueue(json: Fixtures.watchersEnvelope([
+            (userId: "u-1", role: "manager"),
+            (userId: "u-2", role: "collaborator"),
+            (userId: "u-3", role: "watcher")
         ]))
         let service = ListsService(api: api)
 
@@ -885,7 +1030,7 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenListHasNoWatchers_whenLoadingWatchers_thenReturnsEmptyArray() async throws {
         // Given — boundary: a brand-new list nobody has shared with.
         let api = StubAPIClient()
-        await api.enqueue(json: "[]")
+        await api.enqueue(json: Fixtures.watchersEnvelope([]))
         let service = ListsService(api: api)
 
         // When
@@ -913,7 +1058,7 @@ final class OwnedListsServiceTests: XCTestCase {
     func test_givenWatcherWithUnknownRole_whenLoadingWatchers_thenPreservesRoleAsOther() async throws {
         // Given — boundary: an unknown role string preserves under `.other`.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.watchersArray([(userId: "u-1", role: "admin")]))
+        await api.enqueue(json: Fixtures.watchersEnvelope([(userId: "u-1", role: "admin")]))
         let service = ListsService(api: api)
 
         // When
@@ -971,9 +1116,9 @@ final class OwnedListsServiceTests: XCTestCase {
     // MARK: - set / remove watcher
 
     func test_givenUserAndRole_whenSettingWatcher_thenPutsAndMapsResponse() async throws {
-        // Given
+        // Given — the live route answers `{ role }`, not the watcher row.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.watcherObject(userId: "u-9", role: "editor"))
+        await api.enqueue(json: Fixtures.setWatcherRoleEnvelope(role: "collaborator"))
         let service = ListsService(api: api)
 
         // When
@@ -991,10 +1136,31 @@ final class OwnedListsServiceTests: XCTestCase {
         XCTAssertEqual(recorded.first?.path, "/api/lists/books/watchers/u-9")
     }
 
-    func test_givenSetWatcherAPIFailure_whenSettingWatcher_thenThrows() async throws {
-        // Given
+    func test_givenSetWatcherRejectedAsNonSubscriber_whenSettingWatcher_thenThrowsSubscriberRequired() async throws {
+        // Given — role changes are subscriber-gated server-side, so a free
+        // owner's 403 must reach the UI as the upsell case, not a raw HTTP
+        // error (work-consolidation.md G23).
         let api = StubAPIClient()
-        await api.enqueue(failure: .forbidden(serverMessage: "only owners can share"))
+        await api.enqueue(failure: .forbidden(serverMessage: "Subscribe to share lists."))
+        let service = ListsService(api: api)
+
+        // When / Then
+        do {
+            _ = try await service.setWatcher(
+                listId: "books",
+                userId: "u-9",
+                role: .editor
+            )
+            XCTFail("Expected ListsError.subscriberRequired")
+        } catch let error as ListsError {
+            XCTAssertEqual(error, .subscriberRequired)
+        }
+    }
+
+    func test_givenSetWatcherAPIFailure_whenSettingWatcher_thenThrows() async throws {
+        // Given — a non-403 failure still surfaces as the raw `APIError`.
+        let api = StubAPIClient()
+        await api.enqueue(failure: .notFound(serverMessage: "no such list"))
         let service = ListsService(api: api)
 
         // When / Then
@@ -1006,7 +1172,7 @@ final class OwnedListsServiceTests: XCTestCase {
             )
             XCTFail("Expected APIError")
         } catch let error as APIError {
-            XCTAssertEqual(error, .forbidden(serverMessage: "only owners can share"))
+            XCTAssertEqual(error, .notFound(serverMessage: "no such list"))
         }
     }
 
@@ -1211,4 +1377,80 @@ private actor FakeListsStore: ListsStore {
     func cachedRows(of listId: String) async -> [ListRow] { [] }
     func cacheRows(_ rows: [ListRow], of listId: String) async {}
     func clear() async { lists.removeAll() }
+}
+
+// MARK: - Watching a public list (GitHub #44 / G32)
+//
+// The Watch button on someone else's profile. Same route as `addWatcher`, taking
+// its *self-subscribe* branch by omitting `userId` — and that branch is
+// deliberately free: the subscription gates granting someone *else* access, not
+// following a list that is already public to you.
+
+extension OwnedListsServiceTests {
+
+    // Happy path
+
+    func test_givenAPublicList_whenWatching_thenPostsWithoutAUserId() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(json: #"{"watching":true}"#)
+        let service = ListsService(api: api)
+
+        try await service.watch(listId: "L1")
+
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.first?.method, "POST")
+        XCTAssertEqual(recorded.first?.path, "/api/lists/L1/watchers")
+        // The body must carry no `userId` — that is the whole difference between
+        // "subscribe me" and "grant that person access". `StubAPIClient` does not
+        // record request bodies on this branch, so the shape is asserted at the
+        // kit level instead; the empty-id guard below covers the confusion this
+        // could otherwise cause.
+    }
+
+    // Free on every tier
+
+    func test_givenAFreeAccount_whenWatching_thenItIsNotGated() async throws {
+        // Gating this would make the Watch button on a public profile an upsell
+        // for something the web gives away.
+        let api = StubAPIClient()
+        await api.enqueue(json: #"{"watching":true}"#)
+        let service = ListsService(api: api, entitlements: EntitlementsService(customerStatus: .free))
+
+        try await service.watch(listId: "L1")
+
+        let recorded = await api.recorded
+        XCTAssertEqual(recorded.count, 1, "the call is made, not refused")
+    }
+
+    // Upstream failure
+
+    func test_givenTheServerRefuses_whenWatching_thenTheErrorPropagates() async throws {
+        let api = StubAPIClient()
+        await api.enqueue(failure: .httpStatus(code: 500, serverMessage: "boom"))
+        let service = ListsService(api: api)
+
+        do {
+            try await service.watch(listId: "L1")
+            XCTFail("Expected the failure to propagate")
+        } catch let error as APIError {
+            XCTAssertEqual(error, .httpStatus(code: 500, serverMessage: "boom"))
+        }
+    }
+
+    // Boundary — addWatcher's empty-id guard still holds, so the two intents
+    // cannot be confused by accident
+
+    func test_givenAnEmptyUserId_whenAddingAWatcher_thenItIsRefusedRatherThanBecomingASelfSubscribe() async throws {
+        let api = StubAPIClient()
+        let service = ListsService(api: api)
+
+        do {
+            try await service.addWatcher(listId: "L1", userId: "   ", role: .viewer, notify: false)
+            XCTFail("Expected ListsError.invalidWatcher")
+        } catch let error as ListsError {
+            XCTAssertEqual(error, .invalidWatcher)
+        }
+        let recorded = await api.recorded
+        XCTAssertTrue(recorded.isEmpty, "and no round-trip was spent finding out")
+    }
 }

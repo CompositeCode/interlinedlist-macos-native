@@ -139,3 +139,34 @@ public enum GitHub {
         Request(method: .get, path: "/api/github/repos/\(repo)/next-issue-number", auth: .bearer)
     }
 }
+
+// MARK: - Connection status and org access (GitHub #47 / G33)
+
+public extension GitHub {
+
+    /// `GET /api/auth/github/status` — whether GitHub OAuth is configured, and
+    /// the URL that manages this app's org access on github.com.
+    ///
+    /// VERIFIED live 2026-09-15:
+    ///
+    /// ```json
+    /// {"configured":true,"clientId":"Ov23li9eXYK1i6psJW6G",
+    ///  "manageOrgAccessUrl":"https://github.com/settings/connections/applications/Ov23li9eXYK1i6psJW6G"}
+    /// ```
+    ///
+    /// `manageOrgAccessUrl` is the "Update orgs" affordance. It is a github.com
+    /// page — open it in the browser rather than trying to render GitHub's
+    /// org-access UI natively.
+    static func connectionStatus() -> Request<GitHubStatusResponse> {
+        Request(method: .get, path: "/api/auth/github/status", auth: .bearer)
+    }
+
+    /// `GET /api/github/orgs` — the organizations this app can see.
+    ///
+    /// ⚠️ Answers a **bare array**, not the `{message?, <resource>}` envelope
+    /// most single-resource routes on this API use. Verified live 2026-09-15:
+    /// `200 []` on the test account, which belongs to no orgs the app can read.
+    static func orgs() -> Request<[GitHubOrgDTO]> {
+        Request(method: .get, path: "/api/github/orgs", auth: .bearer)
+    }
+}

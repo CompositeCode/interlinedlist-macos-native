@@ -89,11 +89,13 @@ final class ProfileViewModel {
     init(
         social: SocialServicing,
         relationshipReader: FollowRelationshipReading,
-        currentUserID: @MainActor @escaping () -> String?
+        currentUserID: @MainActor @escaping () -> String?,
+        currentUsername: @MainActor @escaping () -> String? = { nil }
     ) {
         self.social = social
         self.relationshipReader = relationshipReader
         self.currentUserIDProvider = currentUserID
+        self.currentUsernameProvider = currentUsername
     }
 
     /// Reads the signed-in user's id when configuring the follow
@@ -101,6 +103,41 @@ final class ProfileViewModel {
     /// always sees the latest session state (the user can sign in /
     /// out while the profile view is open).
     private let currentUserIDProvider: @MainActor () -> String?
+
+    /// Reads the signed-in user's handle, for the self-profile landing.
+    /// A closure for the same reason as `currentUserIDProvider`.
+    private let currentUsernameProvider: @MainActor () -> String?
+
+    /// Normalises a handle the way the site's URLs do (GitHub #44).
+    ///
+    /// Handles are **case-insensitive** (`/user/adron` == `/user/Adron`) and
+    /// `/@username` is a documented shortcut, so a deep link or a typed handle
+    /// in either form has to resolve. Usernames are `[A-Za-z0-9_.-]`; anything
+    /// else typed at signup becomes `_` in the URL while the display name keeps
+    /// what was typed — so stripping a leading `@` and lowercasing is the whole
+    /// job, and the rest of the string is passed through untouched rather than
+    /// sanitised against a charset the client would only get subtly wrong.
+    static func normalizedHandle(_ raw: String) -> String {
+        var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("@") { trimmed.removeFirst() }
+        return trimmed.lowercased()
+    }
+
+    /// True when the loaded profile is the signed-in user's own.
+    ///
+    /// Compared on **id**, not handle: the id is what the session and the
+    /// profile payload agree on, and a handle comparison would go wrong exactly
+    /// where this matters — on a rename.
+    var isOwnProfile: Bool {
+        guard let profile, let current = currentUserIDProvider() else { return false }
+        return profile.id == current
+    }
+
+    /// True when a session exists. The Watch affordance is offered only then.
+    var isSignedIn: Bool { currentUserIDProvider() != nil }
+
+    /// The signed-in user's handle, if any.
+    var ownUsername: String? { currentUsernameProvider() }
 
     /// The relationship reader handed through to the follow button.
     private let relationshipReader: FollowRelationshipReading
@@ -116,7 +153,10 @@ final class ProfileViewModel {
     /// Counts failure is logged and dropped — the profile header is the
     /// load-bearing data and stays rendered.
     func loadProfile(username: String) async {
-        let trimmed = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Normalised here, at the single entry point, so a deep link, a typed
+        // handle and the self-profile landing all agree on what "adron",
+        // "@Adron" and "/user/ADRON" resolve to (GitHub #44).
+        let trimmed = Self.normalizedHandle(username)
         guard !trimmed.isEmpty else { return }
 
         loadedUsername = trimmed
@@ -126,6 +166,10 @@ final class ProfileViewModel {
         error = nil
         isLoading = true
         defer { isLoading = false }
+
+        // Whether this load is for the signed-in user, decided *before* the
+        // request so the failure path can use it too.
+        let isSelf = currentUsernameProvider().map { Self.normalizedHandle($0) == trimmed } ?? false
 
         do {
             let resolved = try await social.profile(username: trimmed)
@@ -168,9 +212,39 @@ final class ProfileViewModel {
                 targetUserID: resolved.id,
                 currentUserID: currentUserIDProvider()
             )
+        } catch let socialError as SocialError {
+            // Decision 0002 / GitHub #44. `profileUnavailable` means "this user
+            // has no public messages, so there is nothing to project a profile
+            // from" — a statement about *other* people's public content. It must
+            // never be shown for your own account: a new user with nothing
+            // posted yet would open Profile and be told their profile does not
+            // exist.
+            //
+            // In practice the rich endpoint answers for the signed-in user
+            // anyway, so this is a guard against the fallback path, not an
+            // everyday branch. It is still worth holding, because the failure it
+            // prevents is the worst first impression the app can make.
+            if case .profileUnavailable = socialError, isSelf {
+                self.error = nil
+            } else {
+                self.error = socialError
+            }
         } catch {
             self.error = error
         }
+    }
+
+    /// Opens the signed-in user's own profile.
+    ///
+    /// The reason this issue exists: `ProfileRootView` landed on an empty
+    /// *"enter a username"* prompt even though the session already knew who the
+    /// user was, so the one profile everybody wants to see took the most typing
+    /// to reach. No-op while signed out, and no-op if a profile is already
+    /// loaded — re-entering the tab should not yank the user off whoever they
+    /// were browsing.
+    func loadOwnProfileIfNeeded() async {
+        guard loadedUsername == nil, let handle = currentUsernameProvider() else { return }
+        await loadProfile(username: handle)
     }
 
     /// Re-runs `loadProfile` for the currently loaded username. Bound to

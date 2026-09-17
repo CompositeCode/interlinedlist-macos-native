@@ -26,6 +26,39 @@ public enum SyncConfiguration {
     /// Fully-qualified access group used in Keychain queries.
     public static let sharedAccessGroup = "\(teamIdentifier).\(sharedAccessGroupSuffix)"
 
+    /// `kSecAttrService` of the app-settings **device id** the main app
+    /// publishes into the same shared group (GitHub issue #104).
+    ///
+    /// Must match the main app's `DeviceIdentity.sharedStore`. The id is not a
+    /// secret; the Keychain is simply the cross-process channel both sandboxes
+    /// are already entitled to — the agent has its own bundle identifier and so
+    /// its own `UserDefaults` domain, which is why the value cannot just be a
+    /// shared preference.
+    public static let deviceIDService = "com.interlinedlist.macos.device-id"
+    /// `kSecAttrAccount` of that item.
+    public static let deviceIDAccount = "default"
+
+    // MARK: - Per-machine app settings (GitHub issue #104)
+
+    /// The app-settings namespace this client's settings live under. **Must not
+    /// change** — it is the key every stored setting is filed under, and a new
+    /// one orphans all of them. Matches the main app's
+    /// `AppEnvironment.appSettingsKey`.
+    public static let appSettingsKey = "interlinedlist-macos"
+
+    /// Version stamped on the settings payload this build writes, so a future
+    /// build can tell what it is reading before it interprets it.
+    public static let settingsSchemaVersion = 1
+
+    /// How stale a published "last synced" timestamp is allowed to get.
+    ///
+    /// The timestamp is status, not configuration: it exists so Settings ▸
+    /// Applications can say what a machine is actually doing rather than only
+    /// that it exists. Writing it on every poll cycle would mean a settings PUT
+    /// every minute per machine, forever, to move a value nobody is watching in
+    /// real time — so it rides an hourly throttle instead.
+    public static let lastSyncPublishInterval: TimeInterval = 3600
+
     // MARK: - Filesystem correlation
 
     /// Extended-attribute key holding the server document id on each `.md` file.

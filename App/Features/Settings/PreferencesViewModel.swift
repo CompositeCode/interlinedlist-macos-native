@@ -21,10 +21,19 @@ final class PreferencesViewModel {
 
     private let userService: UserServicing
 
+    /// App-wide preferences store to write through to, so a toggle takes
+    /// effect on the timeline immediately rather than at the next launch
+    /// (G21). Optional so existing tests construct the view model unchanged.
+    private weak var preferencesStore: UserPreferencesStore?
+
     /// The session-cached account projection. A successful save re-resolves it
     /// so anything reading a preference off `CurrentUser` — today the composer's
     /// default visibility — picks the change up without an app restart. Optional
     /// so existing tests and previews construct the view model unchanged.
+    ///
+    /// Distinct from `preferencesStore` on purpose: this one carries
+    /// `CurrentUser` (composer default visibility), that one carries
+    /// `UserSettings` (link previews). A save has to refresh both.
     private let currentUserStore: CurrentUserStore?
 
     /// The working copy bound directly to the pane's controls. `save()`
@@ -48,8 +57,41 @@ final class PreferencesViewModel {
     /// Drives the Save button's enabled state.
     var hasChanges: Bool { settings != lastSaved }
 
-    init(userService: UserServicing, currentUserStore: CurrentUserStore? = nil) {
+    /// The rows the Viewing picker offers: the four documented values, plus the
+    /// account's current value when the server sent a token this build does not
+    /// recognise.
+    ///
+    /// Without the second half a `.other` token would leave the `Picker` with a
+    /// selection matching no tag, which SwiftUI renders as a blank control —
+    /// and the first edit to any other field would silently rewrite the
+    /// unrecognised preference. Offering it keeps the round-trip honest.
+    var viewingPreferenceOptions: [ViewingPreference] {
+        let selectable = ViewingPreference.selectable
+        guard !selectable.contains(settings.viewingPreference) else { return selectable }
+        return selectable + [settings.viewingPreference]
+    }
+
+    /// The inclusive range the Posts-per-page stepper offers. Mirrors the web
+    /// control exactly (`min=10 max=30`) so no value saved here is
+    /// unrepresentable there.
+    var messagesPerPageRange: ClosedRange<Int> { UserSettings.messagesPerPageRange }
+
+    /// The inclusive range the notification-tray stepper offers
+    /// (`min=10 max=40`, default 20).
+    var notificationTrayLimitRange: ClosedRange<Int> { UserSettings.notificationTrayLimitRange }
+
+    /// Whether the selected viewing preference names a feed the API can serve.
+    /// `false` for Followers Only / Following Only until P1-G lands; the pane
+    /// says so rather than implying the filter is in effect.
+    var selectedViewingPreferenceIsServed: Bool { settings.viewingPreference.hasBackendFeed }
+
+    init(
+        userService: UserServicing,
+        preferencesStore: UserPreferencesStore? = nil,
+        currentUserStore: CurrentUserStore? = nil
+    ) {
         self.userService = userService
+        self.preferencesStore = preferencesStore
         self.currentUserStore = currentUserStore
     }
 
@@ -61,9 +103,18 @@ final class PreferencesViewModel {
         error = nil
         defer { isLoading = false }
         do {
+            // `UserSettings` clamps `messagesPerPage` and `notificationTrayLimit`
+            // in its initializer, so an account that still stores an
+            // out-of-range value — the pane used to offer `5...100`, which the
+            // web's `10...30` control cannot represent — is corrected on the way
+            // in. Both `settings` and `lastSaved` therefore hold the clamped
+            // value: the pane opens clean (no phantom unsaved change), and the
+            // next Save for any reason writes the legal value rather than
+            // re-sending the illegal one.
             let loaded = try await userService.settings()
             settings = loaded
             lastSaved = loaded
+            preferencesStore?.adopt(loaded)
         } catch {
             self.error = error
         }
@@ -81,11 +132,13 @@ final class PreferencesViewModel {
             let updated = try await userService.updateSettings(settings)
             settings = updated
             lastSaved = updated
-            // Re-resolve the cached account so preference-derived UI elsewhere
-            // (the composer's default visibility) reflects the change now rather
-            // than at next launch. Mirrors `AccountViewModel`'s post-mutation
-            // refresh; the error is swallowed because the save itself succeeded
-            // and a failed re-read must not be reported as a failed save.
+            // Two independent caches read preferences, so a save refreshes
+            // both: `UserSettings` for the timeline's link-preview gate (G21)
+            // and `CurrentUser` for the composer's default visibility (#34).
+            preferencesStore?.adopt(updated)
+            // The error is swallowed because the save itself succeeded and a
+            // failed re-read must not be reported as a failed save. Mirrors
+            // `AccountViewModel`'s post-mutation refresh.
             _ = try? await currentUserStore?.restore()
         } catch {
             self.error = error

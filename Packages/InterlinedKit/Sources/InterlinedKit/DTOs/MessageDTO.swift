@@ -32,6 +32,22 @@ public struct MessageDTO: Decodable, Sendable, Equatable {
     public let dugByMe: Bool
     public let crossPosts: [CrossPostResultDTO]?
 
+    /// The cross-post destinations a **queued scheduled post** will fan out to
+    /// when it fires (GitHub #55).
+    ///
+    /// VERIFIED live 2026-09-09: `scheduledCrossPostConfig` is a real key on
+    /// every message the API returns — it is `null` on an already-published
+    /// message and carries the selection on a future-dated one. Its field names
+    /// are taken from the web client's own badge component, which reads
+    /// `mastodonProviderIds`, `crossPostToBluesky` and `crossPostToLinkedIn` off
+    /// this object to render the destination icons on a scheduled row.
+    ///
+    /// Distinct from both sibling cross-post fields: `crossPosts` is the
+    /// write-time fan-out *outcome* and `crossPostUrls` is the durable
+    /// "where it landed" permalink list. This is the *intent*, readable before
+    /// the post has gone anywhere.
+    public let scheduledCrossPostConfig: ScheduledCrossPostConfigDTO?
+
     public init(
         id: String,
         content: String,
@@ -52,7 +68,8 @@ public struct MessageDTO: Decodable, Sendable, Equatable {
         user: UserSummaryDTO,
         pushedMessage: PushedMessageBox? = nil,
         dugByMe: Bool,
-        crossPosts: [CrossPostResultDTO]? = nil
+        crossPosts: [CrossPostResultDTO]? = nil,
+        scheduledCrossPostConfig: ScheduledCrossPostConfigDTO? = nil
     ) {
         self.id = id
         self.content = content
@@ -74,6 +91,52 @@ public struct MessageDTO: Decodable, Sendable, Equatable {
         self.pushedMessage = pushedMessage
         self.dugByMe = dugByMe
         self.crossPosts = crossPosts
+        self.scheduledCrossPostConfig = scheduledCrossPostConfig
+    }
+}
+
+// MARK: - ScheduledCrossPostConfigDTO
+
+/// The cross-post destinations selected for a **scheduled** post, as the API
+/// returns them under `MessageDTO.scheduledCrossPostConfig`.
+///
+/// VERIFIED live 2026-09-09 (GitHub #55 recon):
+///  • `GET /api/messages` returns `scheduledCrossPostConfig` on every message —
+///    `null` for an already-published one.
+///  • The key names below are lifted from the deployed web client's badge
+///    component, which branches on exactly `mastodonProviderIds.length > 0`,
+///    `crossPostToBluesky === true` and `crossPostToLinkedIn === true` to decide
+///    which destination icons to draw on a scheduled row.
+///
+/// `crossPostToTwitter` is modelled **speculatively**: `POST /api/messages`
+/// accepts it when scheduling (confirmed in the web composer's create body), but
+/// the web's badge component does not read it back, so whether the server echoes
+/// it here is unconfirmed. Decoding it optionally costs nothing and means an X
+/// selection is not silently lost if the server does send it — see
+/// `ScheduledDestinations.twitter` in `InterlinedDomain` for how the UI treats it.
+///
+/// Every field is optional: the server omits keys for unselected networks, so a
+/// config object with no destinations at all decodes to all-nil rather than
+/// failing.
+public struct ScheduledCrossPostConfigDTO: Decodable, Sendable, Equatable {
+    /// The Mastodon provider ids the post will publish to. Absent or empty when
+    /// Mastodon is not a destination.
+    public let mastodonProviderIds: [String]?
+    public let crossPostToBluesky: Bool?
+    public let crossPostToLinkedIn: Bool?
+    /// See the type-level note — accepted on create, unconfirmed on read.
+    public let crossPostToTwitter: Bool?
+
+    public init(
+        mastodonProviderIds: [String]? = nil,
+        crossPostToBluesky: Bool? = nil,
+        crossPostToLinkedIn: Bool? = nil,
+        crossPostToTwitter: Bool? = nil
+    ) {
+        self.mastodonProviderIds = mastodonProviderIds
+        self.crossPostToBluesky = crossPostToBluesky
+        self.crossPostToLinkedIn = crossPostToLinkedIn
+        self.crossPostToTwitter = crossPostToTwitter
     }
 }
 
@@ -124,7 +187,11 @@ public struct UserSummaryDTO: Decodable, Sendable, Equatable {
 // MARK: - LinkMetadataDTO
 
 /// Server-rendered link previews attached to a message:
-/// `{ "links": [{ url, platform, fetchStatus }] }`.
+/// `{ "links": [ …LinkPreviewDTO… ] }`.
+///
+/// This is also the **whole body** of `GET /api/messages/[id]/metadata`
+/// (work-consolidation.md G21), which answers the bare `{ "links": [...] }`
+/// object with no envelope key — verified live 2026-09-07.
 public struct LinkMetadataDTO: Decodable, Sendable, Equatable {
     public let links: [LinkPreviewDTO]
 
@@ -134,10 +201,38 @@ public struct LinkMetadataDTO: Decodable, Sendable, Equatable {
 }
 
 /// A single resolved link preview entry.
+///
+/// **Shape corrected 2026-09-07 (G21 live probe).** The server nests the
+/// human-readable fields under a `metadata` object and names the image
+/// `thumbnail` — not the flat `title` / `description` / `imageUrl` this type
+/// previously declared:
+///
+/// ```json
+/// { "url": "https://compositecode.blog/…",
+///   "platform": "other",
+///   "fetchStatus": "success",
+///   "fetchedAt": "2026-09-06T21:34:31.989Z",
+///   "metadata": { "type": "link", "ogType": "article",
+///                 "title": "…", "description": "…", "thumbnail": "https://…" } }
+/// ```
+///
+/// Because every flat field was optional, the old decode **succeeded** while
+/// silently yielding `title`/`description`/`imageUrl` = `nil`; combined with
+/// `fetchStatus: "success"` passing `LinkPreview.isFetchStatusReady`, every
+/// link on the timeline rendered as a bordered card showing only its host. The
+/// decoder below reads the nested shape and still falls back to the flat keys
+/// (fixtures, stubs, and any older server build), mirroring the both-shapes
+/// tolerance `MessageWriteResponse` uses for the create-envelope drift.
+///
+/// `fetchStatus` vocabulary observed live: `"success"` and `"failed"` (a failed
+/// entry carries neither `metadata` nor `fetchedAt`).
+/// `platform` vocabulary observed live: `"other"`, `"youtube"`, `"x"`,
+/// `"bluesky"`, `"instagram"`.
 public struct LinkPreviewDTO: Decodable, Sendable, Equatable {
     public let url: String
     public let platform: String?
     public let fetchStatus: String?
+    public let fetchedAt: String?
     public let title: String?
     public let description: String?
     public let imageUrl: String?
@@ -146,6 +241,7 @@ public struct LinkPreviewDTO: Decodable, Sendable, Equatable {
         url: String,
         platform: String? = nil,
         fetchStatus: String? = nil,
+        fetchedAt: String? = nil,
         title: String? = nil,
         description: String? = nil,
         imageUrl: String? = nil
@@ -153,9 +249,61 @@ public struct LinkPreviewDTO: Decodable, Sendable, Equatable {
         self.url = url
         self.platform = platform
         self.fetchStatus = fetchStatus
+        self.fetchedAt = fetchedAt
         self.title = title
         self.description = description
         self.imageUrl = imageUrl
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case url, platform, fetchStatus, fetchedAt, metadata
+        // Flat fallbacks — the pre-2026-09-07 assumed shape, still emitted by
+        // test fixtures and stubs.
+        case title, description, imageUrl
+    }
+
+    /// The nested `metadata` object. `thumbnail` is the image key; `type` and
+    /// `ogType` are carried for completeness but are not surfaced to the domain
+    /// today.
+    private struct Metadata: Decodable {
+        let title: String?
+        let description: String?
+        let thumbnail: String?
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.url = try container.decode(String.self, forKey: .url)
+        self.platform = try container.decodeIfPresent(String.self, forKey: .platform)
+        self.fetchStatus = try container.decodeIfPresent(String.self, forKey: .fetchStatus)
+        self.fetchedAt = try container.decodeIfPresent(String.self, forKey: .fetchedAt)
+
+        // Live shape first; fall back to the flat keys so fixtures and any
+        // older server build still decode. A `failed` entry has no `metadata`
+        // object at all, which lands on the flat path and yields all-nil.
+        let nested = try container.decodeIfPresent(Metadata.self, forKey: .metadata)
+        let flatTitle = try container.decodeIfPresent(String.self, forKey: .title)
+        let flatDescription = try container.decodeIfPresent(String.self, forKey: .description)
+        let flatImageUrl = try container.decodeIfPresent(String.self, forKey: .imageUrl)
+
+        self.title = nested?.title ?? flatTitle
+        self.description = nested?.description ?? flatDescription
+        self.imageUrl = nested?.thumbnail ?? flatImageUrl
+    }
+}
+
+// MARK: - LinkMetadataResponse
+
+/// Response envelope for `GET /api/link-metadata?url=…` (G21).
+///
+/// Single-resource routes on this API answer `{ message?, <resource> }`; here
+/// the resource key is `link` — verified live 2026-09-07:
+/// `{"link":{"url":"…","platform":"other","metadata":{…},"fetchStatus":"success"}}`.
+public struct LinkMetadataResponse: Decodable, Sendable, Equatable {
+    public let link: LinkPreviewDTO
+
+    public init(link: LinkPreviewDTO) {
+        self.link = link
     }
 }
 
@@ -247,7 +395,8 @@ public extension MessageDTO {
             user: user,
             pushedMessage: pushedMessage,
             dugByMe: dugByMe,
-            crossPosts: crossPosts
+            crossPosts: crossPosts,
+            scheduledCrossPostConfig: scheduledCrossPostConfig
         )
     }
 }

@@ -17,7 +17,7 @@ final class FolderTreeSWRViewModelTests: XCTestCase {
         // Given
         let stub = StubDocumentsService()
         await stub.setCachedFolders([DocumentsFixtures.folder(id: "F1", name: "Cached")])
-        await stub.enqueueFolders(success: [
+        await stub.enqueueTree(foldersOnly: [
             DocumentsFixtures.folder(id: "F1", name: "Fresh"),
             DocumentsFixtures.folder(id: "F2", name: "New")
         ])
@@ -39,7 +39,7 @@ final class FolderTreeSWRViewModelTests: XCTestCase {
     func test_givenEmptyCache_whenInitialLoad_thenUsesBlockingSpinnerThenData() async {
         // Given
         let stub = StubDocumentsService()
-        await stub.enqueueFolders(success: [DocumentsFixtures.folder(id: "F1")])
+        await stub.enqueueTree(foldersOnly: [DocumentsFixtures.folder(id: "F1")])
         let viewModel = FolderTreeViewModel(documents: stub)
 
         // When
@@ -58,7 +58,7 @@ final class FolderTreeSWRViewModelTests: XCTestCase {
         // Given
         let stub = StubDocumentsService()
         await stub.setCachedFolders([DocumentsFixtures.folder(id: "F1", name: "Cached")])
-        await stub.enqueueFolders(failure: TestError.upstream("revalidate down"))
+        await stub.enqueueTree(failure: TestError.upstream("revalidate down"))
         let viewModel = FolderTreeViewModel(documents: stub)
 
         // When
@@ -75,7 +75,7 @@ final class FolderTreeSWRViewModelTests: XCTestCase {
     func test_givenEmptyCacheAndNetworkFails_whenInitialLoad_thenSurfacesBlockingError() async {
         // Given
         let stub = StubDocumentsService()
-        await stub.enqueueFolders(failure: TestError.upstream("boom"))
+        await stub.enqueueTree(failure: TestError.upstream("boom"))
         let viewModel = FolderTreeViewModel(documents: stub)
 
         // When
@@ -91,7 +91,7 @@ final class FolderTreeSWRViewModelTests: XCTestCase {
 
     func test_givenFreshlyRefreshed_whenCheckingShouldRefresh_thenSkipsRevalidation() async {
         let stub = StubDocumentsService()
-        await stub.enqueueFolders(success: [DocumentsFixtures.folder(id: "F1")])
+        await stub.enqueueTree(foldersOnly: [DocumentsFixtures.folder(id: "F1")])
         let viewModel = FolderTreeViewModel(documents: stub)
         await viewModel.initialLoad()
         XCTAssertFalse(viewModel.shouldRefresh)

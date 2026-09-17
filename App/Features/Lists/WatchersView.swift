@@ -33,7 +33,6 @@ struct WatchersView: View {
             if viewModel == nil {
                 let model = WatchersViewModel(
                     lists: environment.lists,
-                    userService: environment.userService,
                     eventBus: environment.listsEventBus,
                     listId: listId
                 )
@@ -105,7 +104,7 @@ struct WatchersView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Add Watcher") {
+            Button("Add Person") {
                 showAddWatcher = true
             }
             .buttonStyle(.bordered)
@@ -122,7 +121,7 @@ struct WatchersView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
-                Text(watcher.username ?? watcher.userId)
+                Text(watcher.displayLabel)
                     .font(.ilBody())
                 if let username = watcher.username {
                     Text("@\(username)")
@@ -131,19 +130,21 @@ struct WatchersView: View {
                 }
             }
             Spacer()
+            // Labels follow the web's vocabulary (Read-only / Edit / Admin);
+            // `WatcherRole.label` is the single source for them.
             Picker("Role", selection: Binding(
                 get: { watcher.role },
                 set: { newRole in
                     Task { await viewModel.setRole(userId: watcher.userId, role: newRole) }
                 }
             )) {
-                Text("Owner").tag(WatcherRole.owner)
-                Text("Editor").tag(WatcherRole.editor)
-                Text("Viewer").tag(WatcherRole.viewer)
+                ForEach(WatcherRole.allCases, id: \.self) { role in
+                    Text(role.label).tag(role)
+                }
             }
             .pickerStyle(.menu)
-            .frame(width: 100)
-            .accessibilityLabel("Role for \(watcher.username ?? watcher.userId)")
+            .frame(width: 120)
+            .accessibilityLabel("Role for \(watcher.displayLabel)")
 
             Button {
                 userIDPendingRemove = watcher.userId
@@ -152,7 +153,7 @@ struct WatchersView: View {
                     .foregroundStyle(.red)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Remove \(watcher.username ?? watcher.userId)")
+            .accessibilityLabel("Remove \(watcher.displayLabel)")
         }
         .padding(.vertical, 2)
     }

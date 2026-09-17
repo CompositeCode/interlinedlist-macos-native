@@ -14,29 +14,46 @@ import InterlinedDomain
 struct RecordedListsCall: Sendable, Equatable {
     enum Kind: Sendable, Equatable {
         case publicLists(username: String, limit: Int, offset: Int)
+        case watch(listId: String)
         case publicList(username: String, slug: String)
         case publicRows(username: String, slug: String, limit: Int, offset: Int)
         case myLists(limit: Int, offset: Int)
         case detail(listId: String)
-        case create(title: String, description: String?, schema: String?, parentId: String?, isPublic: Bool)
+        // `schema` is the parsed columns, not a DSL string — the string form
+        // is rejected by the server (GitHub #85), and recording it lets a test
+        // assert the DSL was parsed before the call rather than after.
+        case create(title: String, description: String?, schema: ListSchema?, parentId: String?, isPublic: Bool)
         case update(listId: String, title: String?, description: String?, isPublic: Bool?, parentId: String?)
         case delete(listId: String)
         case schema(listId: String)
-        case updateSchema(listId: String, fieldsCount: Int)
+        case updateSchema(listId: String, fieldsCount: Int, force: Bool)
         case refresh(listId: String)
         case rows(listId: String, limit: Int, offset: Int)
         case row(listId: String, rowId: String)
-        case createRow(listId: String, fieldsCount: Int)
+        /// Records the actual cell keys, not just how many. The Add Row form
+        /// has to be able to prove that a blank optional column was *omitted*
+        /// rather than sent as null — those are different requests to the
+        /// server (GitHub #50).
+        case createRow(listId: String, data: [String: ListCellValue])
         case updateRow(listId: String, rowId: String, fieldsCount: Int)
         case deleteRow(listId: String, rowId: String)
         case watchers(listId: String)
         case myWatcherStatus(listId: String)
-        case watcherUsers(listId: String)
+        case watcherCandidates(listId: String, search: String?, limit: Int)
         case setWatcher(listId: String, userId: String, role: WatcherRole)
+        case addWatcher(listId: String, userId: String, role: WatcherRole, notify: Bool)
         case removeWatcher(listId: String, userId: String)
+        case watching(limit: Int, offset: Int)
+        case contributors(listId: String)
         case connections(listId: String?)
         case addConnection(from: String, to: String, label: String?)
         case removeConnection(id: String)
+        // G40 saved views (issue #81)
+        case savedViews(listId: String)
+        case createSavedView(listId: String, name: String, scope: SavedListViewScope, isDefault: Bool)
+        case updateSavedView(listId: String, viewId: String, name: String?, hasConfig: Bool, isDefault: Bool?)
+        case deleteSavedView(listId: String, viewId: String)
+        case forkSavedView(listId: String, viewId: String, name: String?)
     }
     let kind: Kind
 }
@@ -50,6 +67,8 @@ actor StubListsService: ListsServicing {
     private var deleteOutcomes: [Result<Void, Error>] = []
     private var detailOutcomes: [Result<OwnedList, Error>] = []
     private var schemaOutcomes: [Result<ListSchema, Error>] = []
+    private var publicListsOutcomes: [Result<ListsPage, Error>] = []
+    private var watchOutcomes: [Result<Void, Error>] = []
     private var updateSchemaOutcomes: [Result<ListSchema, Error>] = []
     private var refreshOutcomes: [Result<OwnedList, Error>] = []
     private var rowsOutcomes: [Result<RowsPage, Error>] = []
@@ -58,7 +77,10 @@ actor StubListsService: ListsServicing {
     private var updateRowOutcomes: [Result<ListRow, Error>] = []
     private var deleteRowOutcomes: [Result<Void, Error>] = []
     private var watchersOutcomes: [Result<[ListWatcher], Error>] = []
-    private var watcherUsersOutcomes: [Result<[ListWatcher], Error>] = []
+    private var watcherCandidatesOutcomes: [Result<[CollaboratorCandidate], Error>] = []
+    private var addWatcherOutcomes: [Result<Void, Error>] = []
+    private var watchingOutcomes: [Result<WatchedListsPage, Error>] = []
+    private var contributorsOutcomes: [Result<[ListContributor], Error>] = []
     private var myWatcherStatusOutcomes: [Result<WatcherStatus, Error>] = []
     private var setWatcherOutcomes: [Result<ListWatcher, Error>] = []
     private var removeWatcherOutcomes: [Result<Void, Error>] = []
@@ -67,6 +89,19 @@ actor StubListsService: ListsServicing {
     private var removeConnectionOutcomes: [Result<Void, Error>] = []
     private var publicListOutcomes: [Result<ListDetail, Error>] = []
     private var publicRowsOutcomes: [Result<RowsPage, Error>] = []
+    private var savedViewsOutcomes: [Result<[SavedListView], Error>] = []
+    private var createSavedViewOutcomes: [Result<SavedListView, Error>] = []
+    private var updateSavedViewOutcomes: [Result<SavedListView, Error>] = []
+    private var deleteSavedViewOutcomes: [Result<Void, Error>] = []
+    private var forkSavedViewOutcomes: [Result<SavedListView, Error>] = []
+
+    /// The full `SavedListViewConfig` passed to the most recent
+    /// `updateSavedView`. The recorded-call log only captures *whether* a
+    /// config was sent; tests asserting that a density change carried the
+    /// unconfirmed `filters` / `search` through untouched read this instead —
+    /// `PUT` replaces the config whole, so what exactly was sent is the
+    /// correctness question.
+    private(set) var lastUpdatedSavedViewConfig: SavedListViewConfig?
 
     /// Cache-first read surface (PLAN.md §5 SWR). Default `[]` so unprepared
     /// paths behave like a cold cache; set a value to prime a paint-first test
@@ -101,6 +136,12 @@ actor StubListsService: ListsServicing {
     func enqueueSchema(success schema: ListSchema) { schemaOutcomes.append(.success(schema)) }
     func enqueueSchema(failure error: Error) { schemaOutcomes.append(.failure(error)) }
 
+    func enqueuePublicLists(success page: ListsPage) { publicListsOutcomes.append(.success(page)) }
+    func enqueuePublicLists(failure error: Error) { publicListsOutcomes.append(.failure(error)) }
+
+    func enqueueWatch(success: Void = ()) { watchOutcomes.append(.success(())) }
+    func enqueueWatch(failure error: Error) { watchOutcomes.append(.failure(error)) }
+
     func enqueueUpdateSchema(success schema: ListSchema) { updateSchemaOutcomes.append(.success(schema)) }
     func enqueueUpdateSchema(failure error: Error) { updateSchemaOutcomes.append(.failure(error)) }
 
@@ -122,8 +163,15 @@ actor StubListsService: ListsServicing {
     func enqueueDeleteRow(failure error: Error) { deleteRowOutcomes.append(.failure(error)) }
 
     func enqueueWatchers(success watchers: [ListWatcher]) { watchersOutcomes.append(.success(watchers)) }
-    func enqueueWatcherUsers(success watchers: [ListWatcher]) { watcherUsersOutcomes.append(.success(watchers)) }
-    func enqueueWatcherUsers(failure error: Error) { watcherUsersOutcomes.append(.failure(error)) }
+    func enqueueWatchers(failure error: Error) { watchersOutcomes.append(.failure(error)) }
+    func enqueueWatcherCandidates(success candidates: [CollaboratorCandidate]) { watcherCandidatesOutcomes.append(.success(candidates)) }
+    func enqueueWatcherCandidates(failure error: Error) { watcherCandidatesOutcomes.append(.failure(error)) }
+    func enqueueAddWatcherSuccess() { addWatcherOutcomes.append(.success(())) }
+    func enqueueAddWatcher(failure error: Error) { addWatcherOutcomes.append(.failure(error)) }
+    func enqueueWatching(success page: WatchedListsPage) { watchingOutcomes.append(.success(page)) }
+    func enqueueWatching(failure error: Error) { watchingOutcomes.append(.failure(error)) }
+    func enqueueContributors(success contributors: [ListContributor]) { contributorsOutcomes.append(.success(contributors)) }
+    func enqueueContributors(failure error: Error) { contributorsOutcomes.append(.failure(error)) }
     func enqueueMyWatcherStatus(success status: WatcherStatus) { myWatcherStatusOutcomes.append(.success(status)) }
 
     func enqueueSetWatcher(success watcher: ListWatcher) { setWatcherOutcomes.append(.success(watcher)) }
@@ -143,11 +191,27 @@ actor StubListsService: ListsServicing {
     func enqueuePublicRows(success page: RowsPage) { publicRowsOutcomes.append(.success(page)) }
     func enqueuePublicRows(failure error: Error) { publicRowsOutcomes.append(.failure(error)) }
 
+    func enqueueSavedViews(success views: [SavedListView]) { savedViewsOutcomes.append(.success(views)) }
+    func enqueueSavedViews(failure error: Error) { savedViewsOutcomes.append(.failure(error)) }
+    func enqueueCreateSavedView(success view: SavedListView) { createSavedViewOutcomes.append(.success(view)) }
+    func enqueueCreateSavedView(failure error: Error) { createSavedViewOutcomes.append(.failure(error)) }
+    func enqueueUpdateSavedView(success view: SavedListView) { updateSavedViewOutcomes.append(.success(view)) }
+    func enqueueUpdateSavedView(failure error: Error) { updateSavedViewOutcomes.append(.failure(error)) }
+    func enqueueDeleteSavedViewSuccess() { deleteSavedViewOutcomes.append(.success(())) }
+    func enqueueDeleteSavedView(failure error: Error) { deleteSavedViewOutcomes.append(.failure(error)) }
+    func enqueueForkSavedView(success view: SavedListView) { forkSavedViewOutcomes.append(.success(view)) }
+    func enqueueForkSavedView(failure error: Error) { forkSavedViewOutcomes.append(.failure(error)) }
+
     // MARK: ListsServicing — public browse
 
     func publicLists(username: String, limit: Int, offset: Int) async throws -> ListsPage {
         recorded.append(.init(kind: .publicLists(username: username, limit: limit, offset: offset)))
-        throw StubError.notProgrammed("publicLists")
+        return try take(&publicListsOutcomes, label: "publicLists")
+    }
+
+    func watch(listId: String) async throws {
+        recorded.append(.init(kind: .watch(listId: listId)))
+        let _: Void = try take(&watchOutcomes, label: "watch")
     }
 
     func publicList(username: String, slug: String) async throws -> ListDetail {
@@ -174,7 +238,7 @@ actor StubListsService: ListsServicing {
         return try take(&detailOutcomes, label: "detail")
     }
 
-    func create(title: String, description: String?, schema: String?, parentId: String?, isPublic: Bool) async throws -> OwnedList {
+    func create(title: String, description: String?, schema: ListSchema?, parentId: String?, isPublic: Bool) async throws -> OwnedList {
         recorded.append(.init(kind: .create(title: title, description: description, schema: schema, parentId: parentId, isPublic: isPublic)))
         return try take(&createOutcomes, label: "create")
     }
@@ -196,8 +260,8 @@ actor StubListsService: ListsServicing {
         return try take(&schemaOutcomes, label: "schema")
     }
 
-    func updateSchema(of listId: String, schema: ListSchema) async throws -> ListSchema {
-        recorded.append(.init(kind: .updateSchema(listId: listId, fieldsCount: schema.fields.count)))
+    func updateSchema(of listId: String, schema: ListSchema, force: Bool) async throws -> ListSchema {
+        recorded.append(.init(kind: .updateSchema(listId: listId, fieldsCount: schema.fields.count, force: force)))
         lastUpdatedSchema = schema
         return try take(&updateSchemaOutcomes, label: "updateSchema")
     }
@@ -222,7 +286,7 @@ actor StubListsService: ListsServicing {
     }
 
     func createRow(listId: String, data: [String: ListCellValue]) async throws -> ListRow {
-        recorded.append(.init(kind: .createRow(listId: listId, fieldsCount: data.count)))
+        recorded.append(.init(kind: .createRow(listId: listId, data: data)))
         return try take(&createRowOutcomes, label: "createRow")
     }
 
@@ -248,9 +312,26 @@ actor StubListsService: ListsServicing {
         return try take(&myWatcherStatusOutcomes, label: "myWatcherStatus")
     }
 
-    func watcherUsers(of listId: String) async throws -> [ListWatcher] {
-        recorded.append(.init(kind: .watcherUsers(listId: listId)))
-        return try take(&watcherUsersOutcomes, label: "watcherUsers")
+    func watcherCandidates(of listId: String, search: String?, limit: Int) async throws -> [CollaboratorCandidate] {
+        recorded.append(.init(kind: .watcherCandidates(listId: listId, search: search, limit: limit)))
+        return try take(&watcherCandidatesOutcomes, label: "watcherCandidates")
+    }
+
+    func addWatcher(listId: String, userId: String, role: WatcherRole, notify: Bool) async throws {
+        recorded.append(.init(kind: .addWatcher(listId: listId, userId: userId, role: role, notify: notify)))
+        let _: Void = try take(&addWatcherOutcomes, label: "addWatcher")
+    }
+
+    // MARK: ListsServicing — shared with me (G23)
+
+    func watching(limit: Int, offset: Int) async throws -> WatchedListsPage {
+        recorded.append(.init(kind: .watching(limit: limit, offset: offset)))
+        return try take(&watchingOutcomes, label: "watching")
+    }
+
+    func contributors(of listId: String) async throws -> [ListContributor] {
+        recorded.append(.init(kind: .contributors(listId: listId)))
+        return try take(&contributorsOutcomes, label: "contributors")
     }
 
     func setWatcher(listId: String, userId: String, role: WatcherRole) async throws -> ListWatcher {
@@ -278,6 +359,52 @@ actor StubListsService: ListsServicing {
     func removeConnection(connectionId: String) async throws {
         recorded.append(.init(kind: .removeConnection(id: connectionId)))
         let _: Void = try take(&removeConnectionOutcomes, label: "removeConnection")
+    }
+
+    // MARK: ListsServicing — saved views (G40)
+
+    func savedViews(of listId: String) async throws -> [SavedListView] {
+        recorded.append(.init(kind: .savedViews(listId: listId)))
+        return try take(&savedViewsOutcomes, label: "savedViews")
+    }
+
+    func createSavedView(
+        listId: String,
+        name: String,
+        scope: SavedListViewScope,
+        config: SavedListViewConfig,
+        isDefault: Bool
+    ) async throws -> SavedListView {
+        recorded.append(.init(kind: .createSavedView(listId: listId, name: name, scope: scope, isDefault: isDefault)))
+        return try take(&createSavedViewOutcomes, label: "createSavedView")
+    }
+
+    func updateSavedView(
+        listId: String,
+        viewId: String,
+        name: String?,
+        config: SavedListViewConfig?,
+        isDefault: Bool?
+    ) async throws -> SavedListView {
+        recorded.append(.init(kind: .updateSavedView(
+            listId: listId,
+            viewId: viewId,
+            name: name,
+            hasConfig: config != nil,
+            isDefault: isDefault
+        )))
+        lastUpdatedSavedViewConfig = config
+        return try take(&updateSavedViewOutcomes, label: "updateSavedView")
+    }
+
+    func deleteSavedView(listId: String, viewId: String) async throws {
+        recorded.append(.init(kind: .deleteSavedView(listId: listId, viewId: viewId)))
+        let _: Void = try take(&deleteSavedViewOutcomes, label: "deleteSavedView")
+    }
+
+    func forkSavedView(listId: String, viewId: String, name: String?) async throws -> SavedListView {
+        recorded.append(.init(kind: .forkSavedView(listId: listId, viewId: viewId, name: name)))
+        return try take(&forkSavedViewOutcomes, label: "forkSavedView")
     }
 
     // MARK: - Internals
@@ -365,6 +492,62 @@ enum ListsFixtures {
         ListWatcher(userId: userId, username: username, role: role)
     }
 
+    // MARK: - G23 shared-with-me fixtures
+
+    static func watchedList(
+        id: String,
+        title: String = "Shared List",
+        ownerUsername: String? = "adron",
+        ownerDisplayName: String? = "Adron Hall",
+        role: ShareRole = .collaborator,
+        parentTitle: String? = nil
+    ) -> WatchedList {
+        WatchedList(
+            list: ownedList(id: id, title: title),
+            owner: ListOwner(
+                id: "owner-\(id)",
+                username: ownerUsername,
+                displayName: ownerDisplayName
+            ),
+            role: role,
+            parentTitle: parentTitle
+        )
+    }
+
+    static func watchedListsPage(
+        _ lists: [WatchedList],
+        hasMore: Bool = false,
+        nextOffset: Int? = nil
+    ) -> WatchedListsPage {
+        WatchedListsPage(lists: lists, hasMore: hasMore, nextOffset: nextOffset)
+    }
+
+    static func contributor(
+        id: String,
+        username: String? = "adron",
+        displayName: String? = "Adron Hall",
+        addedCount: Int = 0,
+        editedCount: Int = 0,
+        score: Int = 0
+    ) -> ListContributor {
+        ListContributor(
+            id: id,
+            username: username,
+            displayName: displayName,
+            addedCount: addedCount,
+            editedCount: editedCount,
+            score: score
+        )
+    }
+
+    static func candidate(
+        id: String,
+        username: String? = "ada",
+        displayName: String? = "Ada Lovelace"
+    ) -> CollaboratorCandidate {
+        CollaboratorCandidate(id: id, username: username, displayName: displayName)
+    }
+
     static func connection(
         id: String,
         from: String,
@@ -372,5 +555,39 @@ enum ListsFixtures {
         label: String? = nil
     ) -> ListConnection {
         ListConnection(id: id, fromListId: from, toListId: to, label: label)
+    }
+
+    // MARK: - G40 saved-view fixtures
+
+    /// A saved view in the live eight-field shape. Defaults mirror the server's
+    /// own create default (`records` / `comfortable` / no filters), so a test
+    /// that does not care about the arrangement gets a realistic one.
+    static func savedView(
+        id: String,
+        listID: String = "L1",
+        ownerID: String = "u-owner",
+        name: String = "View",
+        scope: SavedListViewScope = .personal,
+        density: SavedListViewDensity = .comfortable,
+        filters: [ListCellValue] = [],
+        search: String? = nil,
+        isDefault: Bool = false,
+        position: Int = 0
+    ) -> SavedListView {
+        SavedListView(
+            id: id,
+            listID: listID,
+            ownerID: ownerID,
+            name: name,
+            scope: scope,
+            config: SavedListViewConfig(
+                mode: .records,
+                density: density,
+                filters: filters,
+                search: search
+            ),
+            isDefault: isDefault,
+            position: position
+        )
     }
 }

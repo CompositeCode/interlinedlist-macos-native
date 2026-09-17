@@ -2,9 +2,12 @@ import Foundation
 
 /// Request builders for the **User** (account) endpoint group.
 ///
-/// Auth follows decision 0001: `.bearer` everywhere except the two confirmed
+/// Auth follows decision 0001: `.bearer` everywhere except the confirmed
 /// session-only reads — `GET /api/user/identities` and
-/// `GET /api/user/organizations` — which are `.session`.
+/// `GET /api/user/engagement` — which are `.session`.
+///
+/// `GET /api/user/organizations` used to be listed here as session-only. It is
+/// not; see the builder below for the 2026-09-09 verification.
 public enum User {
 
     // MARK: - Read
@@ -19,15 +22,93 @@ public enum User {
     }
 
     /// `GET /api/user/identities` — linked OAuth identities.
-    /// **Session-only** per decision 0001 (Bearer is rejected here).
+    ///
+    /// **Corrected 2026-09-15 (GitHub #47): this route accepts Bearer.** A live
+    /// probe with a valid sync-token returns `200` with the full identity list,
+    /// so the `.session` annotation was wrong. It was not a hard failure — the
+    /// kit has a cookie-session transport that lazily logs in — but it cost an
+    /// extra credentialed round-trip on every load of the Identities pane and
+    /// authenticated the same request a second way for no reason.
+    ///
+    /// This is the same class of error as the `send-verification-email`
+    /// correction in PR #83, in the opposite direction: an annotation inferred
+    /// from one observation rather than from a probe under the transport in
+    /// question.
     public static func identities() -> Request<IdentitiesResponse> {
-        Request(method: .get, path: "/api/user/identities", auth: .session)
+        Request(method: .get, path: "/api/user/identities", auth: .bearer)
     }
 
-    /// `GET /api/user/organizations` — organizations the user belongs to.
-    /// **Session-only** per decision 0001 (Bearer is rejected here).
-    public static func organizations() -> Request<UserOrganizationsResponse> {
-        Request(method: .get, path: "/api/user/organizations", auth: .session)
+    /// `DELETE /api/user/identities` — unlink a provider.
+    ///
+    /// The provider token is instance-qualified for Mastodon
+    /// (`"mastodon:techhub.social"`), because an account can link several
+    /// instances and a bare `"mastodon"` would be ambiguous — the server could
+    /// disconnect the wrong one. Callers should pass
+    /// `LinkedIdentity.providerWireToken`, which is exactly that value.
+    public static func unlinkIdentity(provider: String) -> Request<MessageResponse> {
+        Request(
+            method: .delete,
+            path: "/api/user/identities",
+            query: [.string("provider", provider)],
+            auth: .bearer
+        )
+    }
+
+    /// `POST /api/user/identities/verify` — re-check a connection is still live.
+    ///
+    /// The web's Verify action. Same instance-qualified token as unlink.
+    public static func verifyIdentity(provider: String) -> Request<VerifyIdentityResponse> {
+        Request(
+            method: .post,
+            path: "/api/user/identities/verify",
+            body: .json(VerifyIdentityRequest(provider: provider)),
+            auth: .bearer
+        )
+    }
+
+    /// `GET /api/user/organizations` — organizations the user belongs to, with
+    /// the caller's own role, joined-at, and the org's member count.
+    ///
+    /// **CORRECTED 2026-09-09 — this is a Bearer route, not a session route.**
+    /// Decision 0001 recorded it as session-only, and it shipped as
+    /// `auth: .session`. A raw `curl` carrying nothing but
+    /// `Authorization: Bearer <sync token>` — no cookie jar at all — returns
+    /// HTTP 200 with the full membership list, and `GET /api/openapi.json`
+    /// marks the operation `x-auth-type: sync-token`. The same spec correctly
+    /// reports `x-auth-type: session` for `/api/user/engagement`, which this
+    /// repo independently confirmed is session-only, so the field is
+    /// trustworthy on both sides.
+    ///
+    /// `role` narrows the result server-side (e.g. `"owner"`); `nil` returns
+    /// every membership.
+    public static func organizations(role: String? = nil) -> Request<UserOrganizationsResponse> {
+        Request(
+            method: .get,
+            path: "/api/user/organizations",
+            query: [.string("role", role)],
+            auth: .bearer
+        )
+    }
+
+    /// `POST /api/user/organizations` — **join** an organization.
+    ///
+    /// The join path. There is no `/api/organizations/{id}/join` route (it
+    /// 404s); joining is a write against the caller's own membership
+    /// collection. Confirmed 2026-09-09 without issuing a write, from the
+    /// shipped web client (which posts `{ organizationId }` to this exact
+    /// path) and from `GET /api/openapi.json` (`postUserOrganizations`,
+    /// one body property `organizationId`, 201 response).
+    ///
+    /// The 201 body is unmodelled and was not observed, so this is typed
+    /// `EmptyResponse` — callers `sendVoid` it and re-read the membership
+    /// list rather than risking a decode failure on an unseen shape.
+    public static func joinOrganization(organizationId: String) -> Request<EmptyResponse> {
+        Request(
+            method: .post,
+            path: "/api/user/organizations",
+            body: .json(JoinOrganizationRequest(organizationId: organizationId)),
+            auth: .bearer
+        )
     }
 
     /// `GET /api/user/engagement` — lifetime dig/push totals on your own

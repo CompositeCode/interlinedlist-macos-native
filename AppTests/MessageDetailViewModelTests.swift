@@ -345,4 +345,81 @@ final class MessageDetailViewModelTests: XCTestCase {
 
         XCTAssertNil(viewModel.pendingMarkdownExport)
     }
+
+    // MARK: - Reply visibility (account preference)
+    //
+    // The inline reply composer has no visibility control, so the account
+    // preference is the only thing keeping a private-by-default account from
+    // replying publicly. Quartet: happy, absent account, explicit override,
+    // and the invalid-input guard.
+
+    func test_givenPrivateAccountDefault_whenPostingReply_thenRepliesPrivately() async {
+        let stub = StubMessagesService()
+        await stub.enqueueReply(success: MessageFixtures.message(id: "r-1", text: "hi"))
+        let viewModel = MessageDetailViewModel(
+            messages: stub,
+            messageID: "m-1",
+            defaultVisibility: .private
+        )
+
+        // The view calls `postReply(body:)` with no visibility — exactly this.
+        _ = await viewModel.postReply(body: "hi")
+
+        let recorded = await stub.recorded
+        guard case .reply(_, _, _, let visibility) = recorded.first?.kind else {
+            return XCTFail("Expected a `reply` call, got \(String(describing: recorded.first))")
+        }
+        XCTAssertEqual(visibility, .private)
+    }
+
+    func test_givenNoResolvedAccount_whenPostingReply_thenFallsBackToPublic() async {
+        // Absent input: signed out / unresolved session.
+        let stub = StubMessagesService()
+        await stub.enqueueReply(success: MessageFixtures.message(id: "r-2", text: "hi"))
+        let viewModel = MessageDetailViewModel(messages: stub, messageID: "m-1")
+
+        _ = await viewModel.postReply(body: "hi")
+
+        let recorded = await stub.recorded
+        guard case .reply(_, _, _, let visibility) = recorded.first?.kind else {
+            return XCTFail("Expected a `reply` call, got \(String(describing: recorded.first))")
+        }
+        XCTAssertEqual(visibility, .public)
+    }
+
+    func test_givenPrivateAccountDefault_whenCallerPassesExplicitVisibility_thenExplicitWins() async {
+        // Boundary: an explicit argument still overrides the account default.
+        let stub = StubMessagesService()
+        await stub.enqueueReply(success: MessageFixtures.message(id: "r-3", text: "hi"))
+        let viewModel = MessageDetailViewModel(
+            messages: stub,
+            messageID: "m-1",
+            defaultVisibility: .private
+        )
+
+        _ = await viewModel.postReply(body: "hi", visibility: .public)
+
+        let recorded = await stub.recorded
+        guard case .reply(_, _, _, let visibility) = recorded.first?.kind else {
+            return XCTFail("Expected a `reply` call, got \(String(describing: recorded.first))")
+        }
+        XCTAssertEqual(visibility, .public)
+    }
+
+    func test_givenPrivateAccountDefaultAndEmptyBody_whenPostingReply_thenNoCallIsMade() async {
+        // Invalid input: the empty-body guard still short-circuits before the
+        // preference is ever consulted.
+        let stub = StubMessagesService()
+        let viewModel = MessageDetailViewModel(
+            messages: stub,
+            messageID: "m-1",
+            defaultVisibility: .private
+        )
+
+        let posted = await viewModel.postReply(body: "   ")
+
+        XCTAssertNil(posted)
+        let recorded = await stub.recorded
+        XCTAssertTrue(recorded.isEmpty)
+    }
 }

@@ -28,6 +28,25 @@ public protocol APIClientProtocol: Sendable {
     /// Used for CSV export endpoints (`/api/exports/*`).
     func sendRaw<Response>(_ request: Request<Response>) async throws -> (Data, String?)
 
+    /// Executes a request and, on an HTTP failure, throws an ``APIFailure``
+    /// **carrying the response body** instead of discarding it (GitHub #103).
+    ///
+    /// Opt-in on purpose. `APIError` keeps only the decoded `{error}` string,
+    /// which is all the UI needs for almost every failure — and not enough for
+    /// the few where the server answers a *question*: the list-schema
+    /// destructive-change guard names the columns that still hold data, and the
+    /// app-settings compare-and-set returns the current document on a conflict.
+    ///
+    /// Only callers that need the body use this. Everything else keeps throwing
+    /// plain `APIError`, so the 420 existing pattern-match sites are untouched.
+    ///
+    /// - Important: this throws `APIFailure`, **not** `APIError`. A caller that
+    ///   opts in must catch accordingly; `APIFailure.underlyingError` carries the
+    ///   `APIError` for anything that only wants the status or the message.
+    func sendCapturingFailure<Response: Decodable & Sendable>(
+        _ request: Request<Response>
+    ) async throws -> Response
+
     /// Executes a request, decodes its JSON body into `Response`, and returns
     /// any rate-limit metadata extracted from the response headers.
     ///
@@ -47,6 +66,29 @@ public protocol APIClientProtocol: Sendable {
 // MARK: - Default implementation
 
 extension APIClientProtocol {
+
+    /// Default for conformers that cannot capture a response body — primarily
+    /// stubs and fakes.
+    ///
+    /// It wraps whatever `send(_:)` threw with `body: nil`, so an opted-in
+    /// caller still sees an `APIFailure` and its `details(as:)` simply answers
+    /// `nil`. That is the correct degradation: "no details available" is a real
+    /// state (a transport failure has no body either), so a stub that cannot
+    /// supply one is not lying.
+    ///
+    /// A non-`APIError` failure is rethrown untouched rather than wrapped —
+    /// a `CancellationError` is not an HTTP failure and must not start looking
+    /// like one.
+    public func sendCapturingFailure<Response: Decodable & Sendable>(
+        _ request: Request<Response>
+    ) async throws -> Response {
+        do {
+            return try await send(request)
+        } catch let error as APIError {
+            throw APIFailure(underlyingError: error, body: nil)
+        }
+    }
+
     /// Conformers that do not need real rate-limit header extraction — primarily
     /// stubs and fakes — get this default which calls `send(_:)` and returns
     /// `nil`, correctly signalling "no limit enforced".
@@ -106,7 +148,7 @@ public final class APIClient: APIClientProtocol {
     public func send<Response: Decodable & Sendable>(
         _ request: Request<Response>
     ) async throws -> Response {
-        let (data, _) = try await performWithSafetyNet(request)
+        let (data, _) = try await unwrappingFailure { try await performWithSafetyNet(request) }
         do {
             return try decoder.decode(Response.self, from: data)
         } catch {
@@ -122,11 +164,48 @@ public final class APIClient: APIClientProtocol {
     }
 
     public func sendVoid<Response>(_ request: Request<Response>) async throws {
-        _ = try await performWithSafetyNet(request)
+        _ = try await unwrappingFailure { try await performWithSafetyNet(request) }
+    }
+
+    public func sendCapturingFailure<Response: Decodable & Sendable>(
+        _ request: Request<Response>
+    ) async throws -> Response {
+        // Deliberately does NOT unwrap: this is the one entry point whose
+        // caller asked for the body.
+        let (data, _) = try await performWithSafetyNet(request)
+        do {
+            return try decoder.decode(Response.self, from: data)
+        } catch {
+            let detail = String(reflecting: error)
+            appLog.error("Decode failed [\(request.path)] type=\(String(describing: Response.self)): \(detail)")
+            // A *decode* failure is not an HTTP failure and has no server body
+            // to offer, so it surfaces as the plain `APIError` it has always
+            // been rather than an `APIFailure` with nothing in it.
+            throw APIError.decoding(
+                type: String(describing: Response.self),
+                message: detail
+            )
+        }
+    }
+
+    /// Runs `work` and flattens any `APIFailure` back to its `APIError`.
+    ///
+    /// The transport now raises the richer error so one code path serves both
+    /// entry points. Every caller that did not opt in must still see exactly
+    /// what it saw before — `catch let error as APIError` has to keep matching —
+    /// so the unwrap happens here rather than at 420 call sites.
+    private func unwrappingFailure<T>(
+        _ work: () async throws -> T
+    ) async throws -> T {
+        do {
+            return try await work()
+        } catch let failure as APIFailure {
+            throw failure.underlyingError
+        }
     }
 
     public func sendRaw<Response>(_ request: Request<Response>) async throws -> (Data, String?) {
-        let (data, response) = try await performWithSafetyNet(request)
+        let (data, response) = try await unwrappingFailure { try await performWithSafetyNet(request) }
         let contentType = response.value(forHTTPHeaderField: "Content-Type")
         return (data, contentType)
     }
@@ -134,7 +213,7 @@ public final class APIClient: APIClientProtocol {
     public func sendWithRateLimitInfo<Response: Decodable & Sendable>(
         _ request: Request<Response>
     ) async throws -> (Response, RateLimitInfo?) {
-        let (data, response) = try await performWithSafetyNet(request)
+        let (data, response) = try await unwrappingFailure { try await performWithSafetyNet(request) }
         do {
             let decoded = try decoder.decode(Response.self, from: data)
             // RateLimitInfo.parse returns nil when headers are absent —
@@ -165,15 +244,22 @@ public final class APIClient: APIClientProtocol {
     ) async throws -> (Data, HTTPURLResponse) {
         do {
             return try await performWithRetry(request, forceSession: false)
-        } catch let error as APIError {
+        } catch let failure as APIFailure {
             // Safety net: a Bearer request that comes back 401 should
             // transparently try once via the session transport before we
             // give up. This catches future API drift in either direction.
-            if case .unauthorized = error, request.auth == .bearer {
+            //
+            // Matched on `underlyingError`, because the transport now raises
+            // `APIFailure` so the response body survives to a caller that asked
+            // for it (GitHub #103). The `APIFailure` is rethrown intact rather
+            // than flattened — flattening here would drop the body before
+            // `sendCapturingFailure` ever saw it, which is the entire point of
+            // the type.
+            if case .unauthorized = failure.underlyingError, request.auth == .bearer {
                 appLog.warning("Bearer request returned 401 [\(request.path)] — retrying via session transport")
                 return try await performWithRetry(request, forceSession: true)
             }
-            throw error
+            throw failure
         }
     }
 
@@ -185,13 +271,16 @@ public final class APIClient: APIClientProtocol {
         while true {
             do {
                 return try await performOnce(request, forceSession: forceSession)
-            } catch let error as APIError {
-                if let delay = retryPolicy.delay(error, attempt) {
+            } catch let failure as APIFailure {
+                // Same reasoning as the safety net above: the retry policy asks
+                // about the `APIError`, and the `APIFailure` is rethrown whole so
+                // the body reaches whoever asked for it.
+                if let delay = retryPolicy.delay(failure.underlyingError, attempt) {
                     attempt += 1
                     try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
                     continue
                 }
-                throw error
+                throw failure
             }
         }
     }
@@ -231,11 +320,17 @@ public final class APIClient: APIClientProtocol {
         guard (200..<300).contains(response.statusCode) else {
             let serverMessage = decodeServerMessage(from: data)
             appLog.notice("HTTP \(response.statusCode) [\(request.path)]: \(serverMessage ?? "no server message")")
-            throw APIError.from(
+            let apiError = APIError.from(
                 statusCode: response.statusCode,
                 serverMessage: serverMessage,
                 retryAfter: parseRetryAfter(response.value(forHTTPHeaderField: "Retry-After"))
             )
+            // The body is kept alongside the error so `sendCapturingFailure`
+            // can hand it to a caller that asked for it (GitHub #103).
+            // `send(_:)` unwraps this back to a plain `APIError`, so every
+            // existing caller is unaffected — the richer error never leaks into
+            // a code path that did not opt in.
+            throw APIFailure(underlyingError: apiError, body: data)
         }
         return (data, response)
     }

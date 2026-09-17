@@ -44,6 +44,12 @@ final class LaunchPrefetchCoordinator {
     let scheduledVM: ScheduledPostsViewModel
     let organizationsVM: OrganizationsListViewModel
 
+    /// App-wide reading preferences, warmed alongside the sections so the
+    /// timeline's first paint already honours "Show link previews" (G21).
+    /// Optional so the protocol-only initializer stays usable from tests that
+    /// do not care about preferences.
+    private let userPreferences: UserPreferencesStore?
+
     /// Guards against a double `warm()` if the window's `.task` re-fires.
     private var didWarm = false
 
@@ -57,8 +63,10 @@ final class LaunchPrefetchCoordinator {
         documents: DocumentsServicing,
         messages: MessagesServicing,
         orgService: OrgServicing,
-        userService: UserServicing
+        userService: UserServicing,
+        userPreferences: UserPreferencesStore? = nil
     ) {
+        self.userPreferences = userPreferences
         self.listsVM = OwnedListsViewModel(lists: lists)
         self.folderTreeVM = FolderTreeViewModel(documents: documents)
         self.documentsListVM = DocumentsListViewModel(documents: documents)
@@ -76,7 +84,8 @@ final class LaunchPrefetchCoordinator {
             documents: environment.documentsService,
             messages: environment.messages,
             orgService: environment.orgService,
-            userService: environment.userService
+            userService: environment.userService,
+            userPreferences: environment.userPreferences
         )
     }
 
@@ -102,6 +111,13 @@ final class LaunchPrefetchCoordinator {
         async let docs: Void = documentsListVM.reload(in: nil)
         async let scheduled: Void = scheduledVM.load()
         async let orgs: Void = organizationsVM.load()
-        _ = await (lists, folders, docs, scheduled, orgs)
+        // Preferences are display-only and swallow their own errors, so this
+        // can never fail the warm pass.
+        async let preferences: Void = refreshPreferences()
+        _ = await (lists, folders, docs, scheduled, orgs, preferences)
+    }
+
+    private func refreshPreferences() async {
+        await userPreferences?.refresh()
     }
 }

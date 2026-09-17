@@ -36,9 +36,11 @@ final class RepostSheetViewModel {
     /// `repost` convenience.
     var commentary: String = ""
 
-    /// Visibility of the *repost*, not the original. Defaults to
-    /// public — a bare-repost is implicitly a share.
-    var visibility: Visibility = .public
+    /// Visibility of the *repost*, not the original. Seeded from the account's
+    /// "new posts are public by default" preference, like the composer — a
+    /// repost is a post, so an account that defaults to private must not have
+    /// its reposts silently go public.
+    var visibility: Visibility
 
     // MARK: - Read-only state
 
@@ -54,11 +56,15 @@ final class RepostSheetViewModel {
     init(
         messages: MessagesServicing,
         eventBus: ComposerEventBus,
-        originalMessageID: String
+        originalMessageID: String,
+        initialVisibility: Visibility = .public
     ) {
         self.messages = messages
         self.eventBus = eventBus
         self.originalMessageID = originalMessageID
+        // Falls back to `.public` when no account has resolved, matching
+        // `UserSettings.default`.
+        self.visibility = initialVisibility
     }
 
     /// Submits the repost. `nil` commentary when the field is empty so

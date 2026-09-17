@@ -272,6 +272,80 @@ final class MessagesEndpointTests: XCTestCase {
         XCTAssertNil(dto.crossPosts)
     }
 
+    // MARK: - scheduledCrossPostConfig (GitHub #55)
+
+    func test_givenScheduledConfig_whenDecoded_thenEveryDestinationKeyIsRead() throws {
+        // Happy path: the live shape, whose key names come from the web
+        // client's own scheduled-destination badge component.
+        let json = #"""
+        {
+          "id": "m-1", "content": "queued", "publiclyVisible": true,
+          "userId": "u-1", "createdAt": "2026-06-16T12:00:00Z",
+          "updatedAt": "2026-06-16T12:00:00Z",
+          "scheduledAt": "2027-01-15T09:00:00Z",
+          "digCount": 0, "pushCount": 0,
+          "user": {"id": "u-1", "username": "ada"},
+          "pushedMessage": null, "dugByMe": false,
+          "scheduledCrossPostConfig": {
+            "mastodonProviderIds": ["prov-1", "prov-2"],
+            "crossPostToBluesky": true,
+            "crossPostToLinkedIn": true
+          }
+        }
+        """#
+        let dto = try JSONCoders.makeDecoder().decode(MessageDTO.self, from: Data(json.utf8))
+        XCTAssertEqual(dto.scheduledCrossPostConfig?.mastodonProviderIds, ["prov-1", "prov-2"])
+        XCTAssertEqual(dto.scheduledCrossPostConfig?.crossPostToBluesky, true)
+        XCTAssertEqual(dto.scheduledCrossPostConfig?.crossPostToLinkedIn, true)
+        // Not sent by the server here — must stay nil rather than defaulting.
+        XCTAssertNil(dto.scheduledCrossPostConfig?.crossPostToTwitter)
+    }
+
+    func test_givenPartialScheduledConfig_whenDecoded_thenOmittedKeysStayNil() throws {
+        // Invalid/partial input: the server omits keys for networks that were
+        // not selected, so a config with one key must still decode.
+        let json = #"""
+        {
+          "id": "m-1", "content": "queued", "publiclyVisible": true,
+          "userId": "u-1", "createdAt": "2026-06-16T12:00:00Z",
+          "updatedAt": "2026-06-16T12:00:00Z",
+          "digCount": 0, "pushCount": 0,
+          "user": {"id": "u-1", "username": "ada"},
+          "pushedMessage": null, "dugByMe": false,
+          "scheduledCrossPostConfig": {"crossPostToBluesky": true}
+        }
+        """#
+        let dto = try JSONCoders.makeDecoder().decode(MessageDTO.self, from: Data(json.utf8))
+        XCTAssertEqual(dto.scheduledCrossPostConfig?.crossPostToBluesky, true)
+        XCTAssertNil(dto.scheduledCrossPostConfig?.mastodonProviderIds)
+        XCTAssertNil(dto.scheduledCrossPostConfig?.crossPostToLinkedIn)
+    }
+
+    func test_givenNullScheduledConfig_whenDecoded_thenConfigIsNil() throws {
+        // Upstream shape for an already-published message: the key is present
+        // and null on every message the live API returns.
+        let json = #"""
+        {
+          "id": "m-1", "content": "published", "publiclyVisible": true,
+          "userId": "u-1", "createdAt": "2026-06-16T12:00:00Z",
+          "updatedAt": "2026-06-16T12:00:00Z",
+          "digCount": 0, "pushCount": 0,
+          "user": {"id": "u-1", "username": "ada"},
+          "pushedMessage": null, "dugByMe": false,
+          "scheduledCrossPostConfig": null
+        }
+        """#
+        let dto = try JSONCoders.makeDecoder().decode(MessageDTO.self, from: Data(json.utf8))
+        XCTAssertNil(dto.scheduledCrossPostConfig)
+    }
+
+    func test_givenMessageMissingScheduledConfigKey_whenDecoded_thenConfigIsNil() throws {
+        // Boundary: the key absent entirely (older responses, and every stub
+        // fixture written before #55) must not break the decode.
+        let dto = try JSONCoders.makeDecoder().decode(MessageDTO.self, from: Data(messageJSON.utf8))
+        XCTAssertNil(dto.scheduledCrossPostConfig)
+    }
+
     // MARK: - create
 
     func test_givenPlainPost_whenCreateBuilt_thenPostsContentOnly() throws {

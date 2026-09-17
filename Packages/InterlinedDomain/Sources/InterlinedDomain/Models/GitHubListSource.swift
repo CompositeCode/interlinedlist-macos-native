@@ -33,17 +33,41 @@ public struct GitHubListSource: Sendable, Equatable, Hashable {
     /// Open string by design — the upstream taxonomy is undocumented.
     public let refreshStatus: String?
 
+    /// Whether the backing repository is private.
+    ///
+    /// `githubRepoPrivate` has been on the wire since the list routes shipped
+    /// and the client never read it (GitHub #50). It matters for one specific
+    /// reason the help page names: a repository link a visitor cannot open
+    /// sends them to a GitHub sign-in or a "not found" page, and the list has to
+    /// warn them before they follow it.
+    ///
+    /// `nil` when the route did not say — which is not the same as "public",
+    /// and the UI shows no tag rather than claiming either way.
+    public let isRepositoryPrivate: Bool?
+
     public init(
         repository: String? = nil,
         path: String? = nil,
         branch: String? = nil,
         lastRefreshedAt: Date? = nil,
-        refreshStatus: String? = nil
+        refreshStatus: String? = nil,
+        isRepositoryPrivate: Bool? = nil
     ) {
         self.repository = repository
         self.path = path
         self.branch = branch
         self.lastRefreshedAt = lastRefreshedAt
         self.refreshStatus = refreshStatus
+        self.isRepositoryPrivate = isRepositoryPrivate
+    }
+
+    /// The `owner/repo` slug's URL on github.com, when the repository is named.
+    ///
+    /// Built here rather than in the view so there is one place that knows the
+    /// slug is a github.com path — and one place to change if a list ever points
+    /// at an enterprise host.
+    public var repositoryURL: URL? {
+        guard let repository, !repository.isEmpty else { return nil }
+        return URL(string: "https://github.com/\(repository)")
     }
 }

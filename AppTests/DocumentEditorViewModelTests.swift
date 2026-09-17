@@ -210,10 +210,18 @@ final class DocumentEditorViewModelTests: XCTestCase {
     /// Yields the runloop several times so the debounce task + the
     /// service round-trip both have a chance to complete. With
     /// `debounce: .zero`, two-three turns is enough.
+    /// Waits for the debounced save to complete.
+    ///
+    /// This was eight `Task.yield()`s that then **fell through silently**, so a
+    /// save that had not finished failed the caller's `XCTAssertFalse` rather
+    /// than reporting that the wait expired. It is the flake that a 20-iteration
+    /// run of the App target reproduced (GitHub #82): the save suspends on
+    /// `Task.sleep(for: debounce)`, which goes through the clock even at
+    /// `.zero`, and a fixed yield count is not a barrier for that.
     private func waitForSaveCompletion(viewModel: DocumentEditorViewModel) async {
-        for _ in 0..<8 {
-            await Task.yield()
-            if !viewModel.hasUnsavedChanges { return }
-        }
+        await settle(
+            until: { !viewModel.hasUnsavedChanges },
+            "The debounced save never completed"
+        )
     }
 }

@@ -2,7 +2,7 @@
 
 **Audience:** application end users.
 
-This page summarizes what the InterlinedList macOS app can do today and what is still on the way. Milestones come from [PLAN.md §6](../../PLAN.md); ship status is drawn from [progress.md](../progress.md). When you see "Coming in a future update" inside the app, the table below tells you which milestone unlocks the feature.
+This page summarizes what the InterlinedList macOS app can do today and what is still on the way. Milestones come from [work-consolidation.md](../../work-consolidation.md); ship status is drawn from [work-consolidation.md](../../work-consolidation.md). When you see "Coming in a future update" inside the app, the table below tells you which milestone unlocks the feature.
 
 | Milestone | What it covers | Status |
 | --- | --- | --- |

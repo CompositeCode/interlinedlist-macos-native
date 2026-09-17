@@ -9,11 +9,28 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let logger = Logger(subsystem: SyncConfiguration.logSubsystem, category: "AppDelegate")
 
-    private let prefs = PreferencesManager()
     private let state = SyncStateModel()
     private let notifications = NotificationManager()
     private let loginItems: any LoginItemManaging = LoginItemManager()
     private let tokenStore = SharedTokenStore()
+
+    /// The agent's configuration lives in per-machine app settings
+    /// (GitHub issue #104); `UserDefaults` is the mirror it falls back to until
+    /// a write is confirmed.
+    ///
+    /// Its own `SharedTokenStore` and `SyncAPIClient`, not the engine's: a
+    /// property initialiser cannot reach `self`, and the two have different
+    /// lifetimes anyway — the engine's client is torn down and rebuilt whenever
+    /// the sync folder changes, while settings must stay writable throughout.
+    /// Both token stores are stateless readers of the same shared Keychain item,
+    /// so a mid-run sign-in or sign-out is still picked up by both.
+    private let prefs = PreferencesManager(
+        remote: RemoteConfigurationStore(
+            api: SyncAPIClient(tokenProvider: SharedTokenStore()),
+            identity: SharedDeviceIdentity(),
+            deviceName: DeviceNaming.suggestedName
+        )
+    )
 
     private var engine: SyncEngine?
     private var statusItem: StatusItemController?
@@ -27,8 +44,29 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         statusItem = StatusItemController(state: state, actions: makeActions())
 
+        // Reconcile with per-machine app settings *before* deciding whether this
+        // machine is configured (GitHub issue #104). The stored configuration
+        // can name a sync folder the local mirror has never heard of — a
+        // reinstall is exactly that case — so asking `hasSyncFolder` first would
+        // prompt the user to choose a folder they already chose.
+        //
+        // Signed out there is nothing to read, so the old local-only path runs
+        // unchanged rather than waiting on a request that cannot succeed.
+        if tokenStore.hasToken {
+            Task { [weak self] in
+                await self?.prefs.synchronize()
+                self?.startOrPrompt()
+            }
+        } else {
+            startOrPrompt()
+        }
+    }
+
+    /// Starts the engine, or asks for a sync folder when this machine has none.
+    private func startOrPrompt() {
         if !prefs.hasSyncFolder {
-            // First run without a folder: let the user pick one.
+            // No folder here — either a genuine first run, or a configuration
+            // whose bookmark belongs to another Mac and was therefore refused.
             openPreferences()
         } else if tokenStore.hasToken {
             startEngine()
@@ -90,6 +128,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         state.apply(event)
         switch event {
         case .cycleCompleted(let summary):
+            // Report the cycle to per-machine app settings so Settings ▸
+            // Applications can say what this machine is doing, not just that it
+            // exists. Throttled inside `recordSync`.
+            prefs.recordSync(at: summary.finishedAt)
             if prefs.notificationsEnabled && prefs.notifyOnCompletion {
                 notifications.notifySyncCompleted(summary)
             }
