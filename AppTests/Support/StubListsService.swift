@@ -14,19 +14,27 @@ import InterlinedDomain
 struct RecordedListsCall: Sendable, Equatable {
     enum Kind: Sendable, Equatable {
         case publicLists(username: String, limit: Int, offset: Int)
+        case watch(listId: String)
         case publicList(username: String, slug: String)
         case publicRows(username: String, slug: String, limit: Int, offset: Int)
         case myLists(limit: Int, offset: Int)
         case detail(listId: String)
-        case create(title: String, description: String?, schema: String?, parentId: String?, isPublic: Bool)
+        // `schema` is the parsed columns, not a DSL string — the string form
+        // is rejected by the server (GitHub #85), and recording it lets a test
+        // assert the DSL was parsed before the call rather than after.
+        case create(title: String, description: String?, schema: ListSchema?, parentId: String?, isPublic: Bool)
         case update(listId: String, title: String?, description: String?, isPublic: Bool?, parentId: String?)
         case delete(listId: String)
         case schema(listId: String)
-        case updateSchema(listId: String, fieldsCount: Int)
+        case updateSchema(listId: String, fieldsCount: Int, force: Bool)
         case refresh(listId: String)
         case rows(listId: String, limit: Int, offset: Int)
         case row(listId: String, rowId: String)
-        case createRow(listId: String, fieldsCount: Int)
+        /// Records the actual cell keys, not just how many. The Add Row form
+        /// has to be able to prove that a blank optional column was *omitted*
+        /// rather than sent as null — those are different requests to the
+        /// server (GitHub #50).
+        case createRow(listId: String, data: [String: ListCellValue])
         case updateRow(listId: String, rowId: String, fieldsCount: Int)
         case deleteRow(listId: String, rowId: String)
         case watchers(listId: String)
@@ -53,6 +61,8 @@ actor StubListsService: ListsServicing {
     private var deleteOutcomes: [Result<Void, Error>] = []
     private var detailOutcomes: [Result<OwnedList, Error>] = []
     private var schemaOutcomes: [Result<ListSchema, Error>] = []
+    private var publicListsOutcomes: [Result<ListsPage, Error>] = []
+    private var watchOutcomes: [Result<Void, Error>] = []
     private var updateSchemaOutcomes: [Result<ListSchema, Error>] = []
     private var refreshOutcomes: [Result<OwnedList, Error>] = []
     private var rowsOutcomes: [Result<RowsPage, Error>] = []
@@ -107,6 +117,12 @@ actor StubListsService: ListsServicing {
     func enqueueSchema(success schema: ListSchema) { schemaOutcomes.append(.success(schema)) }
     func enqueueSchema(failure error: Error) { schemaOutcomes.append(.failure(error)) }
 
+    func enqueuePublicLists(success page: ListsPage) { publicListsOutcomes.append(.success(page)) }
+    func enqueuePublicLists(failure error: Error) { publicListsOutcomes.append(.failure(error)) }
+
+    func enqueueWatch(success: Void = ()) { watchOutcomes.append(.success(())) }
+    func enqueueWatch(failure error: Error) { watchOutcomes.append(.failure(error)) }
+
     func enqueueUpdateSchema(success schema: ListSchema) { updateSchemaOutcomes.append(.success(schema)) }
     func enqueueUpdateSchema(failure error: Error) { updateSchemaOutcomes.append(.failure(error)) }
 
@@ -160,7 +176,12 @@ actor StubListsService: ListsServicing {
 
     func publicLists(username: String, limit: Int, offset: Int) async throws -> ListsPage {
         recorded.append(.init(kind: .publicLists(username: username, limit: limit, offset: offset)))
-        throw StubError.notProgrammed("publicLists")
+        return try take(&publicListsOutcomes, label: "publicLists")
+    }
+
+    func watch(listId: String) async throws {
+        recorded.append(.init(kind: .watch(listId: listId)))
+        let _: Void = try take(&watchOutcomes, label: "watch")
     }
 
     func publicList(username: String, slug: String) async throws -> ListDetail {
@@ -187,7 +208,7 @@ actor StubListsService: ListsServicing {
         return try take(&detailOutcomes, label: "detail")
     }
 
-    func create(title: String, description: String?, schema: String?, parentId: String?, isPublic: Bool) async throws -> OwnedList {
+    func create(title: String, description: String?, schema: ListSchema?, parentId: String?, isPublic: Bool) async throws -> OwnedList {
         recorded.append(.init(kind: .create(title: title, description: description, schema: schema, parentId: parentId, isPublic: isPublic)))
         return try take(&createOutcomes, label: "create")
     }
@@ -209,8 +230,8 @@ actor StubListsService: ListsServicing {
         return try take(&schemaOutcomes, label: "schema")
     }
 
-    func updateSchema(of listId: String, schema: ListSchema) async throws -> ListSchema {
-        recorded.append(.init(kind: .updateSchema(listId: listId, fieldsCount: schema.fields.count)))
+    func updateSchema(of listId: String, schema: ListSchema, force: Bool) async throws -> ListSchema {
+        recorded.append(.init(kind: .updateSchema(listId: listId, fieldsCount: schema.fields.count, force: force)))
         lastUpdatedSchema = schema
         return try take(&updateSchemaOutcomes, label: "updateSchema")
     }
@@ -235,7 +256,7 @@ actor StubListsService: ListsServicing {
     }
 
     func createRow(listId: String, data: [String: ListCellValue]) async throws -> ListRow {
-        recorded.append(.init(kind: .createRow(listId: listId, fieldsCount: data.count)))
+        recorded.append(.init(kind: .createRow(listId: listId, data: data)))
         return try take(&createRowOutcomes, label: "createRow")
     }
 

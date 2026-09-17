@@ -39,7 +39,20 @@ final class ListsEndpointTests: XCTestCase {
         XCTAssertEqual(Lists.delete(id: "7").method, .delete)
 
         XCTAssertEqual(Lists.schema(id: "7").path, "/api/lists/7/schema")
-        XCTAssertEqual(Lists.updateSchema(id: "7", UpdateListSchemaRequest(schema: "A:text")).method, .put)
+        let schemaBody = UpdateListSchemaRequest(
+            schema: ListSchemaDSLDTO(
+                name: "A",
+                fields: [ListSchemaFieldDTO(key: "a", type: "text", label: "A")]
+            )
+        )
+        XCTAssertEqual(Lists.updateSchema(id: "7", schemaBody).method, .put)
+        // `force` is opt-in and absent by default, so a routine save can never
+        // silently confirm a destructive change (GitHub #85).
+        XCTAssertTrue(Lists.updateSchema(id: "7", schemaBody).query.isEmpty)
+        XCTAssertEqual(
+            Lists.updateSchema(id: "7", schemaBody, force: true).query.first?.value,
+            "true"
+        )
         XCTAssertEqual(Lists.refresh(id: "7").method, .post)
         XCTAssertEqual(Lists.refresh(id: "7").path, "/api/lists/7/refresh")
 

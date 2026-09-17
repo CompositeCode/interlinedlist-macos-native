@@ -38,17 +38,32 @@ public enum Lists {
     }
 
     /// `POST /api/lists`
-    public static func create(_ body: CreateListRequest) -> Request<ListDTO> {
+    ///
+    /// VERIFIED live 2026-09-15: answers `201 { message, data, refreshStatus? }`,
+    /// not a bare `ListDTO`, and `data.properties` carries the created columns.
+    /// The request's `schema` is an **object**; a string is rejected outright
+    /// (`400 "Invalid schema: DSL must be an object"`), so creating a
+    /// schema-bearing list from macOS never worked (GitHub #85).
+    public static func create(_ body: CreateListRequest) -> Request<ListResponse> {
         Request(method: .post, path: "/api/lists", body: .json(body), auth: .bearer)
     }
 
     /// `GET /api/lists/[id]`
-    public static func get(id: String) -> Request<ListDTO> {
+    ///
+    /// VERIFIED live 2026-09-15: answers `{ "data": { …list…, "properties": […] } }`.
+    /// This decoded a **bare** `ListDTO`, so `ListsService.detail(listId:)` could
+    /// never decode a real response (GitHub #75). No shipped path called it, and
+    /// its test passed against a fabricated bare fixture — the same combination
+    /// that produced the G21 link-metadata and G25 org-member defects.
+    public static func get(id: String) -> Request<ListResponse> {
         Request(method: .get, path: "/api/lists/\(id)", auth: .bearer)
     }
 
     /// `PUT /api/lists/[id]`
-    public static func update(id: String, _ body: UpdateListRequest) -> Request<ListDTO> {
+    ///
+    /// Answers the same `{ message, data }` envelope as create. Was decoding a
+    /// bare `ListDTO` (GitHub #85).
+    public static func update(id: String, _ body: UpdateListRequest) -> Request<ListResponse> {
         Request(method: .put, path: "/api/lists/\(id)", body: .json(body), auth: .bearer)
     }
 
@@ -60,19 +75,53 @@ public enum Lists {
     // MARK: - Schema
 
     /// `GET /api/lists/[id]/schema`
-    public static func schema(id: String) -> Request<ListSchemaDTO> {
+    ///
+    /// VERIFIED live 2026-09-15: answers
+    /// `{ "data": { name, description?, fields: [ { key, type, label, displayOrder,
+    /// required, visible, helpText?, placeholder?, defaultValue?, validation?,
+    /// options? } ] } }` — an object, under `data`.
+    ///
+    /// This decoded `{ schema: String }`, so the route failed on every real
+    /// response. Unlike `get(id:)` it is **not** dead code: `ListRowsViewModel`
+    /// and `SchemaEditorView` both call it, so the row table and the schema
+    /// editor could not load a schema at all (GitHub #85).
+    public static func schema(id: String) -> Request<ListSchemaResponse> {
         Request(method: .get, path: "/api/lists/\(id)/schema", auth: .bearer)
     }
 
-    /// `PUT /api/lists/[id]/schema`
-    public static func updateSchema(id: String, _ body: UpdateListSchemaRequest) -> Request<ListSchemaDTO> {
-        Request(method: .put, path: "/api/lists/\(id)/schema", body: .json(body), auth: .bearer)
+    /// `PUT /api/lists/[id]/schema` — rebuild the schema from a DSL object.
+    ///
+    /// VERIFIED live 2026-09-15: the body is `{ schema: { name, description?,
+    /// fields[] } }` and the response is `{ message, data: { …list…, properties[] } }`.
+    /// Note the response **contradicts the OpenAPI 200 example**, which shows a
+    /// bare `{ properties: […] }`; the capture wins.
+    ///
+    /// `force` confirms a destructive change. Without it, dropping a column that
+    /// still holds row data is rejected with `400` and a `propertiesWithData`
+    /// array — see `ListSchemaConflictDTO`.
+    public static func updateSchema(
+        id: String,
+        _ body: UpdateListSchemaRequest,
+        force: Bool = false
+    ) -> Request<ListResponse> {
+        Request(
+            method: .put,
+            path: "/api/lists/\(id)/schema",
+            query: force ? [.bool("force", true)] : [],
+            body: .json(body),
+            auth: .bearer
+        )
     }
 
     // MARK: - Refresh (GitHub-backed)
 
     /// `POST /api/lists/[id]/refresh`
-    public static func refresh(id: String) -> Request<ListDTO> {
+    ///
+    /// Shares the `{ message, data }` envelope with the other single-list
+    /// writes. Not exercised live — the test account has no accessible GitHub
+    /// repositories (GitHub #51) — so this follows the family rather than a
+    /// capture, and is flagged as such rather than claimed as verified.
+    public static func refresh(id: String) -> Request<ListResponse> {
         Request(method: .post, path: "/api/lists/\(id)/refresh", auth: .bearer)
     }
 
@@ -318,7 +367,17 @@ public enum Lists {
     }
 
     /// `GET /api/users/[username]/lists/[id]` — public, no auth.
-    public static func publicList(username: String, id: String) -> Request<ListDTO> {
+    ///
+    /// VERIFIED live 2026-09-15 against a list made public for the probe:
+    /// answers `{ "list": { id, title, description, parentId, children[] }, "ancestors": [] }`
+    /// — a **named envelope with a breadcrumb trail**, not a bare `ListDTO`. So
+    /// the public list detail view could not decode either (GitHub #85).
+    ///
+    /// Note the projection is far lighter than the authenticated one: no
+    /// `isPublic`, no `createdAt`, and **no columns**. `ListDetail.schemaDescription`
+    /// has therefore always been `nil` on this path — there is no schema to show
+    /// for someone else's public list without a second call.
+    public static func publicList(username: String, id: String) -> Request<PublicListResponse> {
         Request(method: .get, path: "/api/users/\(username)/lists/\(id)", auth: .none)
     }
 

@@ -104,9 +104,10 @@ final class SchemaEditorViewModelTests: XCTestCase {
         XCTAssertTrue(viewModel.didFinish)
         XCTAssertNil(viewModel.error)
         let recorded = await stub.recorded
-        if case .updateSchema(let listId, let count) = recorded.first?.kind {
+        if case .updateSchema(let listId, let count, let force) = recorded.first?.kind {
             XCTAssertEqual(listId, "L1")
             XCTAssertEqual(count, 1)
+            XCTAssertFalse(force, "a routine save never confirms a destructive change up front")
         } else {
             XCTFail("expected updateSchema, got \(String(describing: recorded.first))")
         }
@@ -320,5 +321,110 @@ final class SchemaEditorViewModelTests: XCTestCase {
             role: role,
             initialSchema: initial
         )
+    }
+}
+
+// MARK: - The destructive-change confirmation (GitHub #85)
+//
+// The server refuses a schema rebuild that would drop a column still holding row
+// data, answering `400` with the affected column keys. That is a question, not a
+// malfunction — so the editor has to ask it rather than showing a bare "Bad
+// Request", and must never pre-answer it by forcing on the first attempt.
+
+extension SchemaEditorViewModelTests {
+
+    // Upstream failure → the confirmation is offered
+
+    func test_givenServerRefusesADestructiveChange_whenSaving_thenTheConfirmationIsOffered() async {
+        let stub = StubListsService()
+        await stub.enqueueUpdateSchema(
+            failure: ListsError.schemaChangeWouldLoseData(
+                serverMessage: "Removing these columns would delete existing data."
+            )
+        )
+        let viewModel = SchemaEditorViewModel(
+            lists: stub,
+            eventBus: ListsEventBus(),
+            listId: "L1",
+            role: .owner,
+            initialSchema: ListSchema(fields: [SchemaField(name: "Title", type: .text)])
+        )
+
+        await viewModel.save()
+
+        XCTAssertFalse(viewModel.didFinish, "nothing was saved")
+        XCTAssertNotNil(viewModel.pendingDestructiveSave, "the editor holds the schema to re-submit")
+        XCTAssertEqual(
+            (viewModel.error as? ListsError)?.localizedDescription,
+            "Removing these columns would delete existing data.",
+            "the server's own sentence is shown, not a client-written paraphrase"
+        )
+    }
+
+    // Happy path → confirming re-sends with force
+
+    func test_givenTheUserConfirms_whenReSaving_thenTheCallCarriesForce() async {
+        let stub = StubListsService()
+        await stub.enqueueUpdateSchema(
+            failure: ListsError.schemaChangeWouldLoseData(serverMessage: "would delete data")
+        )
+        let saved = ListSchema(fields: [SchemaField(name: "Title", type: .text)])
+        await stub.enqueueUpdateSchema(success: saved)
+        let viewModel = SchemaEditorViewModel(
+            lists: stub,
+            eventBus: ListsEventBus(),
+            listId: "L1",
+            role: .owner,
+            initialSchema: saved
+        )
+
+        await viewModel.save()
+        await viewModel.confirmDestructiveSave()
+
+        XCTAssertTrue(viewModel.didFinish)
+        XCTAssertNil(viewModel.pendingDestructiveSave, "the confirmation is consumed, not sticky")
+        let recorded = await stub.recorded
+        let forces = recorded.compactMap { record -> Bool? in
+            if case .updateSchema(_, _, let force) = record.kind { return force }
+            return nil
+        }
+        XCTAssertEqual(forces, [false, true], "asked first, then confirmed — never forced up front")
+    }
+
+    // Invalid — confirming without having been asked is a no-op
+
+    func test_givenNoPendingConfirmation_whenConfirming_thenNoCallIsMade() async {
+        let stub = StubListsService()
+        let viewModel = SchemaEditorViewModel(
+            lists: stub,
+            eventBus: ListsEventBus(),
+            listId: "L1",
+            role: .owner,
+            initialSchema: ListSchema(fields: [SchemaField(name: "Title", type: .text)])
+        )
+
+        await viewModel.confirmDestructiveSave()
+
+        let recorded = await stub.recorded
+        XCTAssertTrue(recorded.isEmpty, "there is no path to a forced write the server did not ask for")
+    }
+
+    // Boundary — an ordinary bad request is not mistaken for the confirmation
+
+    func test_givenAnOrdinaryFailure_whenSaving_thenNoConfirmationIsOffered() async {
+        let stub = StubListsService()
+        await stub.enqueueUpdateSchema(failure: TestError.upstream("boom"))
+        let viewModel = SchemaEditorViewModel(
+            lists: stub,
+            eventBus: ListsEventBus(),
+            listId: "L1",
+            role: .owner,
+            initialSchema: ListSchema(fields: [SchemaField(name: "Title", type: .text)])
+        )
+
+        await viewModel.save()
+
+        XCTAssertNotNil(viewModel.error)
+        XCTAssertNil(viewModel.pendingDestructiveSave, "a 500 is not a question to answer")
     }
 }

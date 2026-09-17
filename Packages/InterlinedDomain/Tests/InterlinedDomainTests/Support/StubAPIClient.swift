@@ -26,16 +26,20 @@ actor StubAPIClient: APIClientProtocol {
         let method: String
         let path: String
         let query: [String: String]
-        /// The encoded JSON body, when the request had one.
+        /// The encoded JSON body, when the request carried one.
         ///
-        /// Captured because a wrong *body* is as breaking as a wrong path and
-        /// far quieter: the app-settings surface shipped for weeks sending
-        /// `{"name":…}` where the server demanded `{"deviceName":…}`, and every
-        /// path-and-method assertion passed the whole time.
+        /// Recorded so a test can assert the **shape** that goes on the wire,
+        /// not only that a call was made. A wrong body is as breaking as a wrong
+        /// path and far quieter, and two shipped defects prove it: `create(…)`
+        /// sent its schema as a string where the server demands an object
+        /// (GitHub #85), and the app-settings surface sent `{"name":…}` where
+        /// the server demands `{"deviceName":…}` (GitHub #56). Every
+        /// path-and-method assertion passed the whole time, in both cases.
         let body: Data?
 
-        /// The body decoded for assertions. Not `Equatable`, so it stays out of
-        /// the stored properties.
+        /// The body decoded for assertions. A computed property, not a stored
+        /// one, because `[String: Any]` is not `Equatable` and would break the
+        /// synthesised conformance this type relies on.
         var bodyJSON: [String: Any]? {
             guard let body else { return nil }
             return (try? JSONSerialization.jsonObject(with: body)) as? [String: Any]
@@ -101,18 +105,22 @@ actor StubAPIClient: APIClientProtocol {
         for item in request.query where item.value != nil {
             query[item.name] = item.value
         }
-        // Encoded with the production encoder, so what a test inspects is
-        // byte-for-byte what the client would have put on the wire.
-        var body: Data?
-        if case .json(let payload) = request.body {
-            body = try? JSONCoders.makeEncoder().encode(payload)
+        // Encoded with the client's own encoder, so what a test inspects is
+        // byte-for-byte what would have gone on the wire — key naming and date
+        // strategy included. A body that fails to encode is recorded as `nil`
+        // rather than failing the recording.
+        var bodyData: Data?
+        if case .json(let payload)? = request.body {
+            bodyData = try? JSONCoders.makeEncoder().encode(payload)
+        } else if case .raw(let data, _)? = request.body {
+            bodyData = data
         }
         recorded.append(
             RecordedRequest(
                 method: request.method.rawValue,
                 path: request.path,
                 query: query,
-                body: body
+                body: bodyData
             )
         )
     }

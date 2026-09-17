@@ -22,6 +22,28 @@ public protocol UserServicing: Sendable {
     /// `{ identities: [...] }` envelope is internal.
     func identities() async throws -> [LinkedIdentity]
 
+    /// Disconnects a linked provider (GitHub #47 / G33).
+    ///
+    /// - Parameter identity: the identity to remove. Takes the whole value
+    ///   rather than a provider case so Mastodon addresses the **right
+    ///   instance**: the wire token is `"mastodon:techhub.social"`, and a bare
+    ///   `"mastodon"` on an account with two instances is ambiguous enough that
+    ///   the server could disconnect the wrong one.
+    ///
+    /// Destructive: disconnecting a cross-posting provider stops cross-posts to
+    /// it. The caller is expected to confirm first and say what stops working.
+    func unlinkIdentity(_ identity: LinkedIdentity) async throws
+
+    /// Re-checks that a linked provider still works.
+    ///
+    /// Returns `true` when the connection is live. Same instance-qualified
+    /// addressing as `unlinkIdentity`.
+    func verifyIdentity(_ identity: LinkedIdentity) async throws -> Bool
+
+    /// The GitHub connection status, including the github.com page that manages
+    /// this app's organization access.
+    func githubConnectionStatus() async throws -> GitHubConnection
+
     /// Loads the organizations the signed-in user belongs to, with their own
     /// membership role and joined-at. Powers the org switcher. The
     /// `{ organizations: [...] }` envelope is internal.
@@ -97,6 +119,41 @@ public protocol UserServicing: Sendable {
 
     /// Fetches the current account's server-synced preferences
     /// (work-consolidation.md — settings storage). Maps `GET /api/user`.
+    /// Loads the identity half of the account — display name, bio, theme,
+    /// message cap, avatar, and the read-only profile location (GitHub #46).
+    func profileSettings() async throws -> ProfileSettings
+
+    /// Saves only the fields that differ from `original`.
+    ///
+    /// Change-gated on purpose: `UpdateUserRequest` omits nil fields, so an
+    /// untouched field stays untouched. Sending the whole object would make
+    /// every save a full overwrite, and two windows open on the same account
+    /// would clobber each other.
+    ///
+    /// No-ops when nothing changed, rather than spending a round-trip to write
+    /// what is already there.
+    func updateProfileSettings(
+        _ settings: ProfileSettings,
+        changedFrom original: ProfileSettings
+    ) async throws -> ProfileSettings
+
+    /// Sets the avatar from a remote URL (`POST /api/user/avatar/from-url`).
+    ///
+    /// The route existed in the kit with no service method behind it, so the
+    /// web's "set from a URL" half of the avatar control had no macOS
+    /// counterpart (GitHub #46).
+    func setAvatarFromURL(_ url: String) async throws -> URL?
+
+    /// Starts the password-reset email flow (`POST /api/auth/forgot-password`).
+    ///
+    /// ⚠️ **There is no change-password route.** Probed 2026-09-15: the live
+    /// spec carries only `/api/auth/forgot-password`, `/api/auth/reset-password`
+    /// and an admin-only `/api/admin/users/{userId}/password`. The web's
+    /// "enter your current password and a new one" form has no public endpoint,
+    /// so this client offers reset-by-email and says so plainly rather than
+    /// shipping a form pointed at a route that does not exist.
+    func requestPasswordReset(email: String) async throws
+
     func settings() async throws -> UserSettings
 
     /// Persists a settings snapshot via `PATCH /api/user/update` and returns the
@@ -200,6 +257,23 @@ public final class UserService: UserServicing {
         self.baseURL = baseURL
     }
 
+    public func unlinkIdentity(_ identity: LinkedIdentity) async throws {
+        _ = try await api.send(User.unlinkIdentity(provider: identity.providerWireToken))
+    }
+
+    public func verifyIdentity(_ identity: LinkedIdentity) async throws -> Bool {
+        let response = try await api.send(User.verifyIdentity(provider: identity.providerWireToken))
+        return response.isVerified
+    }
+
+    public func githubConnectionStatus() async throws -> GitHubConnection {
+        let response = try await api.send(GitHub.connectionStatus())
+        return GitHubConnection(
+            isConfigured: response.configured ?? false,
+            manageOrgAccessURL: response.manageOrgAccessUrl.flatMap(URL.init(string:))
+        )
+    }
+
     public func identities() async throws -> [LinkedIdentity] {
         let response = try await api.send(User.identities())
         return response.identities.map(LinkedIdentity.init(from:))
@@ -247,6 +321,9 @@ public final class UserService: UserServicing {
         case .mastodon: oauthProvider = .mastodon
         case .bluesky:  oauthProvider = .bluesky
         case .linkedin: oauthProvider = .linkedin
+        // X has an OAuth route like the rest; it was absent from the domain
+        // provider enum, not from the kit's (GitHub #47).
+        case .twitter:  oauthProvider = .twitter
         case .other(let token):
             throw UserServiceError.unsupportedProvider(token)
         }
@@ -315,6 +392,40 @@ public final class UserService: UserServicing {
 
     // MARK: - Preferences (settings storage)
 
+    public func profileSettings() async throws -> ProfileSettings {
+        let response = try await api.send(User.current())
+        return ProfileSettings(from: response.user)
+    }
+
+    public func updateProfileSettings(
+        _ settings: ProfileSettings,
+        changedFrom original: ProfileSettings
+    ) async throws -> ProfileSettings {
+        if let validationError = settings.validationError { throw validationError }
+        // Nothing to say: a PATCH with an empty body would still be a write, and
+        // the server would still bump `updatedAt`.
+        guard settings.hasChanges(from: original) else { return original }
+        let response = try await api.send(
+            User.update(settings.updateRequest(changedFrom: original))
+        )
+        return ProfileSettings(from: response.user)
+    }
+
+    public func setAvatarFromURL(_ url: String) async throws -> URL? {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        // A URL the client cannot parse is one the server will reject too, and
+        // finding out locally costs nothing.
+        guard !trimmed.isEmpty, URL(string: trimmed) != nil else {
+            throw APIError.badRequest(serverMessage: "That doesn't look like a valid image URL.")
+        }
+        let response = try await api.send(User.avatarFromURL(trimmed))
+        return URL(string: response.url)
+    }
+
+    public func requestPasswordReset(email: String) async throws {
+        _ = try await api.send(Auth.forgotPassword(email: email))
+    }
+
     public func settings() async throws -> UserSettings {
         let response = try await api.send(User.current())
         return UserSettings(from: response.user)
@@ -372,6 +483,9 @@ public final class UserService: UserServicing {
         case .mastodon: oauthProvider = .mastodon
         case .bluesky:  oauthProvider = .bluesky
         case .linkedin: oauthProvider = .linkedin
+        // X has an OAuth route like the rest; it was absent from the domain
+        // provider enum, not from the kit's (GitHub #47).
+        case .twitter:  oauthProvider = .twitter
         case .other(let token):
             throw UserServiceError.unsupportedProvider(token)
         }
@@ -425,6 +539,9 @@ public final class UserService: UserServicing {
         case .mastodon: oauthProvider = .mastodon
         case .bluesky:  oauthProvider = .bluesky
         case .linkedin: oauthProvider = .linkedin
+        // X has an OAuth route like the rest; it was absent from the domain
+        // provider enum, not from the kit's (GitHub #47).
+        case .twitter:  oauthProvider = .twitter
         case .other(let token):
             throw UserServiceError.unsupportedProvider(token)
         }

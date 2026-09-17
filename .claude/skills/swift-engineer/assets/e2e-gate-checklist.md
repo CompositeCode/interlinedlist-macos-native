@@ -36,8 +36,15 @@ Every changed behavior ships with at least four BDD-named cases:
 5. `swift test --package-path Packages/InterlinedPersistence`
    → report count; confirm no regression.
 
-6. `grep -rn "import InterlinedKit" App/Features App/Navigation App/MenuCommands 2>/dev/null`
+6. `grep -rnE "^[[:space:]]*(@[A-Za-z]+ )?import InterlinedKit" App/Features App/Navigation App/MenuCommands 2>/dev/null`
    → must produce zero hits (Decision 0003). Report the result line explicitly even when empty.
+
+   > **Anchor the pattern.** The unanchored `grep -rn "import InterlinedKit" …` this
+   > checklist used until 2026-09-14 matched **prose comments** as well as code — four
+   > files (`ProfileRootView`, `ProfileHeaderView`, `ProfileViewModel`, `OnboardingView`)
+   > carry comments saying a file *does not* import Kit, so the check reported four hits
+   > while the rule genuinely passed. A check that cries wolf gets ignored; keep the
+   > `^[[:space:]]*` anchor so only real import statements match.
 
 7. **Contract tests** (env-gated): if `INTERLINEDLIST_EMAIL` / `INTERLINEDLIST_PASSWORD` are set, the kit's `ContractTests` exercise the live API. State whether they ran or were skipped; never invent credentials.
 
@@ -49,5 +56,5 @@ Do not write tests that render SwiftUI views. Test view models against `*Servici
 
 - Build failure → fix the build before reporting.
 - Test regression in a package you did not touch → investigate; do not paper over.
-- New `import InterlinedKit` hit in `App/Features/**` → add the missing domain model in `InterlinedDomain` and re-route the feature through it (Decision 0003).
+- New `import InterlinedKit` hit in `App/Features/**` → add the missing domain model in `InterlinedDomain` and re-route the feature through it (Decision 0003). Confirm the hit is a real `import` line and not a comment before chasing it.
 - pbxproj had to be edited → warn the user that Xcode's SourceKit indexer may need **File → Packages → Reset Package Caches**; xcodebuild is unaffected.

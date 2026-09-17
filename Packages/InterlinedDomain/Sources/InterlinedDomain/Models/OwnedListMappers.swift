@@ -13,17 +13,38 @@ extension OwnedList {
     /// the API omits the flag — the authenticated routes return private
     /// lists by default, so the safe-default is `.private`.
     public init(from dto: ListDTO) {
+        // `dto.properties` is the field that actually carries the columns;
+        // `dto.schema` is a DSL string the server has never sent (GitHub #85).
+        // Absent properties leave `schema` nil — "this route does not return
+        // columns" — rather than collapsing to an empty schema.
+        let columns = dto.schemaFields.map { fields in
+            ListSchema(fields: fields.map(SchemaField.init(dto:)))
+        }
         self.init(
             id: dto.id,
             title: dto.title,
             description: dto.description,
             visibility: Visibility(publiclyVisible: dto.isPublic ?? false),
-            schemaDescription: dto.schema,
+            schemaDescription: nil,
+            schema: columns,
             parentID: dto.parentId,
-            // The kit's `ListDTO` does not yet carry GitHub-source fields
-            // (prompts file item 2.3); leave the field `nil` and let the
-            // refresh path populate it once the kit DTO grows.
-            gitHubSource: nil,
+            // `githubRepo` and `githubRepoPrivate` have been on the wire since
+            // the list routes shipped, and this mapper hard-coded `nil` past
+            // them — so a GitHub-backed list looked like a plain one, and the
+            // private-repository warning the help page describes had nothing to
+            // render from (GitHub #50).
+            //
+            // Still `nil` for a list with no repository: an empty source object
+            // would make every local list look GitHub-backed. `path`, `branch`
+            // and the refresh metadata stay absent because they remain
+            // unconfirmed on the wire (`work-consolidation.md` P3-C) — modelling
+            // them from a guess is what this codebase keeps getting bitten by.
+            gitHubSource: dto.githubRepo.map { repository in
+                GitHubListSource(
+                    repository: repository,
+                    isRepositoryPrivate: dto.githubRepoPrivate
+                )
+            },
             createdAt: dto.createdAt,
             updatedAt: dto.updatedAt
         )

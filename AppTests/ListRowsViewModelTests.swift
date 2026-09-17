@@ -23,7 +23,7 @@ final class ListRowsViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.rows.map(\.id), ["R1"])
         XCTAssertEqual(viewModel.schema.fields.map(\.name), ["Title"])
-        XCTAssertEqual(viewModel.columns, ["Title"])
+        XCTAssertEqual(viewModel.columns.map(\.key), ["Title"])
     }
 
     // MARK: - entityFields (schema-entity view, work-consolidation.md §1b)
@@ -94,7 +94,7 @@ final class ListRowsViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.rows.count, 1)
         XCTAssertTrue(viewModel.schema.fields.isEmpty)
-        XCTAssertEqual(viewModel.columns, ["A"])
+        XCTAssertEqual(viewModel.columns.map(\.key), ["A"])
     }
 
     // MARK: - addRow optimistic insert
@@ -292,5 +292,80 @@ final class ListRowsViewModelTests: XCTestCase {
         viewModel.apply(event: .schemaChanged(listId: "L1", schema: newSchema))
 
         XCTAssertEqual(viewModel.schema.fields.map(\.name), ["Z"])
+    }
+}
+
+// MARK: - Column key vs. label (GitHub #85)
+//
+// The lists UI used one `name` as both the header text and the `row.fields`
+// subscript. That was correct only while the two were the same token — true for
+// a schema typed as the client's DSL, false for one authored on the web, where
+// the server keeps `propertyKey` and `propertyName` apart. Now that macOS can
+// read a server-authored schema at all, a column labelled "Publication Year"
+// over a key of `year` must still find its cell.
+
+extension ListRowsViewModelTests {
+
+    // Happy path
+
+    func test_givenColumnsWhoseLabelDiffersFromKey_whenRendering_thenCellsStillResolve() async {
+        let stub = StubListsService()
+        let schema = ListSchema(fields: [
+            SchemaField(key: "title", label: "Title", type: .text),
+            SchemaField(key: "year", label: "Publication Year", type: .number)
+        ])
+        await stub.enqueueSchema(success: schema)
+        let row = ListsFixtures.row(
+            id: "R1",
+            listId: "L1",
+            fields: ["title": .string("Dune"), "year": .int(1965)]
+        )
+        await stub.enqueueRows(success: RowsPage(rows: [row], hasMore: false, nextOffset: nil))
+        let viewModel = ListRowsViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+
+        await viewModel.initialLoad()
+
+        // The header shows the label; the subscript uses the key.
+        XCTAssertEqual(viewModel.columns.map(\.label), ["Title", "Publication Year"])
+        XCTAssertEqual(viewModel.columns.map(\.key), ["title", "year"])
+        let loaded = try? XCTUnwrap(viewModel.rows.first)
+        XCTAssertEqual(loaded?.fields[viewModel.columns[1].key], .int(1965))
+        // The failure this guards against: looking the cell up by its label.
+        XCTAssertNil(loaded?.fields["Publication Year"])
+    }
+
+    // Boundary — ordering and visibility come from the server
+
+    func test_givenOutOfOrderAndHiddenColumns_whenRendering_thenOrderIsHonouredAndHiddenAreDropped() async {
+        let stub = StubListsService()
+        let schema = ListSchema(fields: [
+            SchemaField(key: "c", label: "Third", type: .text, displayOrder: 2),
+            SchemaField(key: "a", label: "First", type: .text, displayOrder: 0),
+            SchemaField(key: "secret", label: "Hidden", type: .text, isVisible: false, displayOrder: 1)
+        ])
+        await stub.enqueueSchema(success: schema)
+        await stub.enqueueRows(success: .empty)
+        let viewModel = ListRowsViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+
+        await viewModel.initialLoad()
+
+        // `displayOrder` is the authority, not array order — and a hidden column
+        // keeps its data but does not take a column in the table.
+        XCTAssertEqual(viewModel.columns.map(\.key), ["a", "c"])
+    }
+
+    // Invalid — a schema with no columns falls back to the observed row keys
+
+    func test_givenNoSchema_whenRowsHaveKeys_thenColumnsUseTheKeysAsTheirOwnLabels() async {
+        let stub = StubListsService()
+        await stub.enqueueSchema(success: .empty)
+        let row = ListsFixtures.row(id: "R1", listId: "L1", fields: ["b": .string("x"), "a": .string("y")])
+        await stub.enqueueRows(success: RowsPage(rows: [row], hasMore: false, nextOffset: nil))
+        let viewModel = ListRowsViewModel(lists: stub, eventBus: ListsEventBus(), listId: "L1")
+
+        await viewModel.initialLoad()
+
+        XCTAssertEqual(viewModel.columns.map(\.key), ["a", "b"])
+        XCTAssertEqual(viewModel.columns.map(\.label), ["a", "b"], "with no schema the key is all there is")
     }
 }

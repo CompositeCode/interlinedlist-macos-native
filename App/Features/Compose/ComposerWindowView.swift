@@ -97,7 +97,13 @@ struct ComposerWindowView: View {
                     // options" preference decides whether the gear opens
                     // revealed. Read synchronously off the preferences store,
                     // so there is no fetch and no flicker.
-                    initialShowsAdvancedOptions: environment.showsAdvancedPostOptionsByDefault
+                    initialShowsAdvancedOptions: environment.showsAdvancedPostOptionsByDefault,
+                    // GitHub #46: the account's own message cap, read off the
+                    // same session-cached `CurrentUser`. The composer enforces
+                    // the *lower* of this and the platform ceiling — the account
+                    // range reaches 10000 where the platform stops at 5000, so
+                    // neither number alone is the right answer.
+                    accountMessageCap: environment.currentUserStore.currentUser?.maxMessageLength
                 )
             }
             if assistant == nil, let environment {

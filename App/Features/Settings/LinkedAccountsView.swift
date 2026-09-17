@@ -176,28 +176,20 @@ private struct LinkedIdentityRow: View {
 
 extension IdentityProvider {
 
-    /// Human-readable label. `.other` surfaces the raw token capitalized so
-    /// an unrecognized provider still renders a legible name.
-    var displayName: String {
-        switch self {
-        case .github:   return "GitHub"
-        case .mastodon: return "Mastodon"
-        case .bluesky:  return "Bluesky"
-        case .linkedin: return "LinkedIn"
-        case .other(let raw):
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? "Account" : trimmed.capitalized
-        }
-    }
-
     /// SF Symbol approximating the provider (no third-party brand glyphs in
     /// the symbol set). `.other` falls back to a generic link icon.
+    ///
+    /// The label itself moved to `IdentityProvider.displayName` in the domain,
+    /// alongside the per-provider capability flags — the pane needs the name and
+    /// the capabilities together, and keeping the name in the App layer meant
+    /// two places knew about providers (GitHub #47).
     var iconName: String {
         switch self {
         case .github:   return "chevron.left.forwardslash.chevron.right"
         case .mastodon: return "number.square"
         case .bluesky:  return "cloud"
         case .linkedin: return "briefcase"
+        case .twitter:  return "at"
         case .other:    return "link"
         }
     }

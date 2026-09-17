@@ -43,10 +43,12 @@ final class NotificationsServiceTests: XCTestCase {
         // The second row is marked read (readAt present).
         XCTAssertTrue(tray.items.last?.isRead ?? false)
 
-        // And — the request shape carries `scope=tray`.
+        // And — the request asks for `scope=all`, the read-inclusive scope the
+        // web bell uses. `scope=tray` is unread-only, which made the macOS tray
+        // empty itself as the user read it (GitHub #80).
         let recorded = await api.recorded
         XCTAssertEqual(recorded.first?.path, "/api/notifications")
-        XCTAssertEqual(recorded.first?.query["scope"], "tray")
+        XCTAssertEqual(recorded.first?.query["scope"], "all")
     }
 
     func test_givenMalformedTray_whenLoadingTray_thenThrowsDecoding() async throws {

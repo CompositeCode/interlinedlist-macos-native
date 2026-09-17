@@ -74,12 +74,18 @@ extension NotificationTarget {
         let actionURL   = (userInfo[NotificationUserInfoKeys.actionUrl] as? String)
             .flatMap(URL.init(string:))
 
+        // Ask the kind whether it is message-shaped rather than listing three
+        // cases. The allowlist meant a new message-shaped kind — `push`, as it
+        // turned out — silently stopped resolving (GitHub #95).
+        if kind.isMessageShaped,
+           let id = userInfo[NotificationUserInfoKeys.targetMessageId] as? String {
+            self = .message(id: id)
+            return
+        }
+
         switch kind {
-        case .dig, .reply, .mention:
-            if let id = userInfo[NotificationUserInfoKeys.targetMessageId] as? String {
-                self = .message(id: id)
-                return
-            }
+        case .dig, .reply, .mention, .push:
+            break
 
         case .listShared, .listRowAdded:
             if let id = userInfo[NotificationUserInfoKeys.targetListId] as? String {
@@ -99,7 +105,7 @@ extension NotificationTarget {
                 return
             }
 
-        case .other:
+        case .directMessage, .integrationReconnect, .other:
             break
         }
 

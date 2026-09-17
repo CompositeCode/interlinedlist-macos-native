@@ -5,9 +5,10 @@
 //
 // The menu is always visible but disables itself with a *reason* when AI is off,
 // because "greyed out with no explanation" is the worst version of a gated
-// feature — a subscriber with no provider key would otherwise have no way to
-// learn what is missing. The reason comes from the server, not from a local
-// guess at entitlements.
+// feature. The reason comes from the server, not from a local guess at
+// entitlements — which matters because the reasons are not all the user's to
+// fix: a lapsed subscription is, a quota is until tomorrow, and an empty
+// `providers[]` is a service outage they can do nothing about (GitHub #39).
 //
 // Per Decision 0003 this view consumes only `InterlinedDomain`.
 

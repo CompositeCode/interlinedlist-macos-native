@@ -74,6 +74,26 @@ public enum SchemaFieldType: String, Sendable, Equatable, Hashable, CaseIterable
     /// parser, serializer, and editor all agree on which types need options.
     public var carriesOptions: Bool { self == .select }
 
+    /// Whether `minLength` / `maxLength` mean anything for this type.
+    ///
+    /// Character-count rules belong to the text family. Offering them on a
+    /// `boolean` or a `date` would be a control that cannot do anything, and
+    /// sending them would put rules on the server that nothing enforces
+    /// (GitHub #50).
+    public var acceptsLengthRules: Bool {
+        switch self {
+        case .text, .markdown, .url, .email: return true
+        case .number, .boolean, .date, .select: return false
+        }
+    }
+
+    /// Whether `min` / `max` mean anything. Numeric only.
+    ///
+    /// `date` is deliberately excluded: a date range is a real idea, but the
+    /// server's `min`/`max` were observed carrying numbers and nothing confirms
+    /// how it would parse a date bound. Offering it would be a guess.
+    public var acceptsRangeRules: Bool { self == .number }
+
     /// Maps a DSL token to a type, case-insensitively. Returns `nil` for any
     /// token outside the closed set — the parser surfaces that as
     /// `SchemaDSLError.unknownType`.

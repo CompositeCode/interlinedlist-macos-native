@@ -61,28 +61,65 @@ final class ViewPreferencesWiringTests: XCTestCase {
 
     // MARK: - Notification tray limit
 
-    func test_givenTrayLimit_whenLoadingTray_thenSendsItAndTrimsTheRenderedRows() async throws {
-        // Given — the server returns more rows than the account's limit. Under
-        // `scope=tray` it ignores the query parameter (probed 2026-09-09), so
-        // the client-side cap is what makes the preference observable.
+    func test_givenTrayLimit_whenLoadingTray_thenSendsItUnderTheReadInclusiveScope() async throws {
+        // Given — the account's `notificationTrayLimit`. Under `scope=all` the
+        // server honours it, so the limit travels and the rows come back already
+        // sized (probed 2026-09-15: `?scope=all&limit=3` → 3, `&limit=10` → 10).
         let api = StubAPIClient()
-        let items = (1...5).map { Fixtures.notificationObject(id: "n-\($0)") }
+        let items = (1...2).map { Fixtures.notificationObject(id: "n-\($0)") }
         await api.enqueue(json: Fixtures.notificationTrayEnvelope(unreadCount: 4, items: items))
         let service = NotificationsService(api: api)
 
         // When
         let tray = try await service.tray(limit: 2)
 
-        // Then — trimmed rows, untouched unread count, and the limit on the wire.
+        // Then — the server's page is rendered as-is.
         XCTAssertEqual(tray.items.map(\.id), ["n-1", "n-2"])
         XCTAssertEqual(
             tray.unreadCount,
             4,
-            "The server-authoritative unread badge must not be understated by trimming rows"
+            "The server-authoritative unread badge is independent of how many rows are shown"
         )
         let recorded = await api.recorded
-        XCTAssertEqual(recorded.first?.query["scope"], "tray")
+        XCTAssertEqual(recorded.first?.query["scope"], "all")
         XCTAssertEqual(recorded.first?.query["limit"], "2")
+    }
+
+    func test_givenTheServerOverAnswers_whenLoadingTray_thenRowsAreNotTrimmedClientSide() async throws {
+        // Upstream-behaviour case, and a deliberate choice worth pinning.
+        //
+        // The old implementation capped the decoded rows with `prefix(limit)`.
+        // That existed only because `scope=tray` ignored the parameter, and it
+        // made the preference *appear* to work while the rows being trimmed were
+        // unread-only — so it could only ever shrink an already-wrong list.
+        //
+        // With `scope=all` the server does the limiting. A belt-and-braces trim
+        // on top would be invisible when it agrees with the server and wrong
+        // when it does not, so the client renders what it is given.
+        let api = StubAPIClient()
+        let items = (1...5).map { Fixtures.notificationObject(id: "n-\($0)") }
+        await api.enqueue(json: Fixtures.notificationTrayEnvelope(unreadCount: 4, items: items))
+        let service = NotificationsService(api: api)
+
+        let tray = try await service.tray(limit: 2)
+
+        XCTAssertEqual(tray.items.count, 5, "the server's answer is rendered, not second-guessed")
+    }
+
+    func test_givenAllRowsRead_whenLoadingTray_thenTheTrayStillShowsThem() async throws {
+        // The behaviour this whole change is about. On `scope=tray` a fully-read
+        // account got an empty tray — a notification you glanced at vanished,
+        // with no way back to it. The web bell keeps the last N.
+        let api = StubAPIClient()
+        let items = (1...3).map { Fixtures.notificationObject(id: "n-\($0)", readAt: "2026-09-14T04:00:00.000Z") }
+        await api.enqueue(json: Fixtures.notificationTrayEnvelope(unreadCount: 0, items: items))
+        let service = NotificationsService(api: api)
+
+        let tray = try await service.tray(limit: 20)
+
+        XCTAssertEqual(tray.items.count, 3, "read notifications stay in the tray")
+        XCTAssertTrue(tray.items.allSatisfy(\.isRead))
+        XCTAssertEqual(tray.unreadCount, 0, "and the badge correctly shows nothing unread")
     }
 
     func test_givenNoTrayLimit_whenLoadingTray_thenOmitsTheParameterAndKeepsEveryRow() async throws {

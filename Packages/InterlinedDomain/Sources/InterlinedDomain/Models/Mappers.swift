@@ -44,6 +44,10 @@ extension CurrentUser {
             // Absent field falls back to `true`, matching `UserSettings.default`
             // so both readings of the same payload agree.
             defaultPubliclyVisible: dto.defaultPubliclyVisible ?? true,
+            // Left `nil` when absent rather than defaulted: "no cap on the
+            // payload" and "the user chose a cap of 666" are different facts,
+            // and `effectiveMessageLength` treats them differently.
+            maxMessageLength: dto.maxMessageLength,
             createdAt: dto.createdAt
         )
     }

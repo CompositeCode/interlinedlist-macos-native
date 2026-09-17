@@ -78,18 +78,13 @@ final class CurrentUserStoreTests: XCTestCase {
 
     // MARK: - Helpers
 
-    /// Polls `condition` until it returns `true` or 2 s elapses. Used
-    /// when the assertion depends on a value arriving asynchronously
-    /// from a stream we don't directly own a continuation on.
+    /// Thin shim onto the shared `settle(until:)` helper (`Support/AsyncSettle.swift`).
+    /// This file's private polling loop was the pattern the rest of the suite
+    /// should have been using all along; it now lives in one place (GitHub #82).
     private func waitFor(
         condition: @MainActor () -> Bool,
         timeout: Double = 2.0
     ) async throws {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if condition() { return }
-            try await Task.sleep(nanoseconds: 10_000_000) // 10ms
-        }
-        XCTFail("Condition did not become true within \(timeout)s")
+        await settle(until: condition, timeout: .seconds(timeout))
     }
 }
