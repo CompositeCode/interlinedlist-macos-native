@@ -252,10 +252,15 @@ final class DirectMessagesListViewModelTests: XCTestCase {
         let (vm, service, bus) = makeViewModel()
         await service.enqueueUnreadCount(success: 4)
 
-        // Subscribe before the refresh so the event is captured.
+        // Subscribe before the refresh so the event is captured. `events()` is
+        // called here rather than inside the Task: the bus registers the
+        // subscriber synchronously, so the subscription is live by the time this
+        // line returns and no "give it a beat" sleep is needed (GitHub #82).
         let received = expectation(description: "unread event")
+        let stream = bus.events()
+        XCTAssertEqual(bus.subscriberCount, 1, "The subscription must be live before the write")
         let task = Task {
-            for await event in bus.events() {
+            for await event in stream {
                 if case .unreadCountChanged(let count) = event {
                     XCTAssertEqual(count, 4)
                     received.fulfill()
@@ -263,8 +268,6 @@ final class DirectMessagesListViewModelTests: XCTestCase {
                 }
             }
         }
-        // Give the subscription a beat to register.
-        try? await Task.sleep(nanoseconds: 10_000_000)
 
         await vm.refreshUnreadCount()
 

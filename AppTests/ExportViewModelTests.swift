@@ -43,8 +43,8 @@ final class ExportViewModelTests: XCTestCase {
 
         // When
         vm.export(.messages)
-        // Allow async Task to complete.
-        try await Task.sleep(nanoseconds: 100_000_000)
+        // Wait for the fire-and-forget export Task to run its `defer`.
+        await settle(until: { !vm.isExporting })
 
         // Then — pendingExport populated, no error, service was called.
         XCTAssertNotNil(vm.pendingExport)
@@ -58,7 +58,7 @@ final class ExportViewModelTests: XCTestCase {
         service.enqueueLists()
 
         vm.export(.lists)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await settle(until: { !vm.isExporting })
 
         XCTAssertNotNil(vm.pendingExport)
         XCTAssertNil(vm.errorMessage)
@@ -70,7 +70,7 @@ final class ExportViewModelTests: XCTestCase {
         service.enqueueListDataRows()
 
         vm.export(.listDataRows)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await settle(until: { !vm.isExporting })
 
         XCTAssertNotNil(vm.pendingExport)
         XCTAssertNil(vm.errorMessage)
@@ -82,7 +82,7 @@ final class ExportViewModelTests: XCTestCase {
         service.enqueueFollows()
 
         vm.export(.follows)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await settle(until: { !vm.isExporting })
 
         XCTAssertNotNil(vm.pendingExport)
         XCTAssertNil(vm.errorMessage)
@@ -100,7 +100,7 @@ final class ExportViewModelTests: XCTestCase {
         vm.export(.messages)
         // Second call while isExporting should be true.
         vm.export(.lists)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await settle(until: { !vm.isExporting })
 
         // Then — only messages was dispatched; lists was dropped.
         XCTAssertEqual(service.recorded, [.messages])
@@ -115,7 +115,7 @@ final class ExportViewModelTests: XCTestCase {
 
         // When
         vm.export(.messages)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await settle(until: { !vm.isExporting })
 
         // Then — error surfaced; no pending export; isExporting cleared.
         XCTAssertNil(vm.pendingExport)
@@ -132,7 +132,7 @@ final class ExportViewModelTests: XCTestCase {
 
         // When
         vm.export(.messages)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await settle(until: { !vm.isExporting })
 
         // Then — empty data is a valid domain result; forward it for the save panel.
         let export = try XCTUnwrap(vm.pendingExport)
@@ -147,13 +147,13 @@ final class ExportViewModelTests: XCTestCase {
         let (vm, service) = makeSUT()
         service.enqueueMessages(failure: TestError.upstream("timeout"))
         vm.export(.messages)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await settle(until: { !vm.isExporting })
         XCTAssertNotNil(vm.errorMessage)
 
         // When — user retries.
         service.enqueueMessages()
         vm.export(.messages)
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await settle(until: { !vm.isExporting })
 
         // Then — stale error is cleared before the retry.
         XCTAssertNil(vm.errorMessage)
@@ -170,7 +170,7 @@ final class ExportViewModelTests: XCTestCase {
 
         // When
         vm.exportListsAsMarkdown()
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await settle(until: { !vm.isExporting })
 
         // Then — a Markdown document with the list heading and a schema-ordered table row.
         let export = try XCTUnwrap(vm.pendingMarkdownExport)
@@ -188,7 +188,7 @@ final class ExportViewModelTests: XCTestCase {
         await lists.enqueueMyLists(success: .empty)
 
         vm.exportListsAsMarkdown()
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await settle(until: { !vm.isExporting })
 
         // Then — an empty document is still a valid export; no rows call was made.
         let export = try XCTUnwrap(vm.pendingMarkdownExport)
@@ -203,7 +203,7 @@ final class ExportViewModelTests: XCTestCase {
         await lists.enqueueMyLists(failure: TestError.upstream("session expired"))
 
         vm.exportListsAsMarkdown()
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await settle(until: { !vm.isExporting })
 
         XCTAssertNil(vm.pendingMarkdownExport)
         XCTAssertNotNil(vm.errorMessage)
@@ -220,7 +220,7 @@ final class ExportViewModelTests: XCTestCase {
         await lists.enqueueRows(success: .init(rows: [row("r3", ["K": .string("three")])], hasMore: false, nextOffset: nil))
 
         vm.exportListsAsMarkdown()
-        try await Task.sleep(nanoseconds: 150_000_000)
+        await settle(until: { !vm.isExporting })
 
         // Then — both lists and all rows appear; two myLists calls were made.
         let export = try XCTUnwrap(vm.pendingMarkdownExport)

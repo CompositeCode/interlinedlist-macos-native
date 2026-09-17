@@ -84,15 +84,15 @@ final class ListsServiceTests: XCTestCase {
 
     // MARK: - publicList (detail)
 
-    func test_givenListExists_whenLoadingPublicList_thenMapsDetailAndSchema() async throws {
-        // Given
+    func test_givenListExists_whenLoadingPublicList_thenUnwrapsTheListEnvelope() async throws {
+        // Given the real envelope: `{ "list": {…}, "ancestors": [] }`, not a
+        // bare list object. This decoded a bare `ListDTO`, so the public list
+        // page could not load at all (GitHub #85).
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listObject(
+        await api.enqueue(json: Fixtures.publicListEnvelope(
             id: "books",
             title: "Books",
-            description: "Things I have read",
-            isPublic: true,
-            schema: "Title:text, Year:number"
+            description: "Things I have read"
         ))
         let service = ListsService(api: api)
 
@@ -102,16 +102,28 @@ final class ListsServiceTests: XCTestCase {
         // Then
         XCTAssertEqual(detail.id, "books")
         XCTAssertEqual(detail.title, "Books")
-        XCTAssertEqual(detail.schemaDescription, "Title:text, Year:number")
-        XCTAssertEqual(detail.visibility, .public)
+        XCTAssertEqual(detail.description, "Things I have read")
         let recorded = await api.recorded
         XCTAssertEqual(recorded.first?.path, "/api/users/ada/lists/books")
+    }
+
+    func test_givenPublicListEnvelope_whenLoading_thenSchemaDescriptionIsNil() async throws {
+        // The public projection carries **no columns** — confirmed against the
+        // live route. The old test asserted a schema string here, which only
+        // passed because the fixture invented one.
+        let api = StubAPIClient()
+        await api.enqueue(json: Fixtures.publicListEnvelope(id: "books"))
+        let service = ListsService(api: api)
+
+        let detail = try await service.publicList(username: "ada", slug: "books")
+
+        XCTAssertNil(detail.schemaDescription, "the public route returns no schema to show")
     }
 
     func test_givenListMissingSchema_whenLoadingPublicList_thenSchemaDescriptionIsNil() async throws {
         // Given — boundary: list with no schema defined yet.
         let api = StubAPIClient()
-        await api.enqueue(json: Fixtures.listObject(id: "raw", schema: nil))
+        await api.enqueue(json: Fixtures.publicListEnvelope(id: "raw"))
         let service = ListsService(api: api)
 
         // When

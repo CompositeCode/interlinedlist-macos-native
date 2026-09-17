@@ -30,6 +30,26 @@ public struct UserProfile: Sendable, Equatable, Hashable, Identifiable {
     /// Account creation timestamp, when the API returns it.
     public let joinedAt: Date?
 
+    // MARK: Content counts (GitHub #44 / G32)
+    //
+    // `GET /api/users/{username}` has always returned these; the domain model
+    // dropped them at the boundary, so the header could only ever show two of
+    // the web profile's five stat tiles. Verified live 2026-09-15:
+    //
+    //   {"followerCount":1,"followingCount":1,
+    //    "publicMessageCount":31,"publicListCount":0}
+
+    /// Public posts this user has published. `nil` when the route did not
+    /// supply it — which is **not** the same as zero, and the header renders
+    /// the tile only when a real number is known.
+    public let publicMessageCount: Int?
+
+    /// Public lists this user owns. Same `nil` semantics as above.
+    public let publicListCount: Int?
+
+    /// The profile banner image, when set.
+    public let headerImageURL: URL?
+
     public var id: String { summary.id }
     public var username: String { summary.username }
     public var displayName: String { summary.displayName }
@@ -41,7 +61,10 @@ public struct UserProfile: Sendable, Equatable, Hashable, Identifiable {
         followerCount: Int? = nil,
         followingCount: Int? = nil,
         isPrivate: Bool = false,
-        joinedAt: Date? = nil
+        joinedAt: Date? = nil,
+        publicMessageCount: Int? = nil,
+        publicListCount: Int? = nil,
+        headerImageURL: URL? = nil
     ) {
         self.summary = summary
         self.bio = bio
@@ -49,6 +72,9 @@ public struct UserProfile: Sendable, Equatable, Hashable, Identifiable {
         self.followingCount = followingCount
         self.isPrivate = isPrivate
         self.joinedAt = joinedAt
+        self.publicMessageCount = publicMessageCount
+        self.publicListCount = publicListCount
+        self.headerImageURL = headerImageURL
     }
 }
 

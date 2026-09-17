@@ -25,5 +25,5 @@
 ## Docs
 
 - [ ] `docs/api-coverage.md` updated if endpoint coverage changed
-- [ ] `docs/progress.md` updated if a wave gate moved
+- [ ] `work-consolidation.md` updated **in this PR** if it ships a `G`-item, closes a parity issue, or moves the test baseline (same-PR doc-sync rule)
 - [ ] New decision recorded under `docs/decisions/` if architecture changed

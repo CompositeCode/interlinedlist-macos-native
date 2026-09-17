@@ -106,3 +106,28 @@ extension RowsPage {
         )
     }
 }
+
+
+// MARK: - Wire projection helper
+
+/// Recursive projection from the domain's loose `ListCellValue` back to the
+/// kit's `ListJSONValue` — the inverse of `ListCellValue.init(from:)` above.
+///
+/// Used when writing a row and when serialising a column's `defaultValue`. It
+/// lived `fileprivate` in `ListsService.swift`, which meant the schema mappers
+/// could not reuse it; the two directions belong side by side.
+extension ListJSONValue {
+    init(from value: ListCellValue) {
+        switch value {
+        case .null: self = .null
+        case .bool(let v): self = .bool(v)
+        case .int(let v): self = .int(v)
+        case .double(let v): self = .double(v)
+        case .string(let v): self = .string(v)
+        case .array(let items):
+            self = .array(items.map { ListJSONValue(from: $0) })
+        case .object(let dict):
+            self = .object(dict.mapValues { ListJSONValue(from: $0) })
+        }
+    }
+}

@@ -92,6 +92,9 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
 
+      # `-resultBundlePath` so a failure names the test (GitHub #82). Two
+      # App-target runs have reported "1 failure" with no name and neither
+      # reproduced; a count is not a bug report.
       - name: Run app-target tests (xcodebuild)
         run: |
           xcodebuild test \
@@ -99,9 +102,37 @@ jobs:
             -scheme InterlinedList \
             -destination "platform=macOS" \
             -derivedDataPath build/DerivedData \
+            -resultBundlePath build/test-results/app.xcresult \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY=""
+
+      - name: Name the failing tests
+        if: failure()
+        run: |
+          xcrun xcresulttool get test-results tests \
+            --path build/test-results/app.xcresult --format json \
+          | python3 -c '
+          import json, sys
+          def walk(node):
+              for child in node.get("children") or []:
+                  yield from walk(child)
+              if node.get("nodeType") == "Test Case" and node.get("result") == "Failed":
+                  yield node.get("nodeIdentifier") or node.get("name")
+          doc = json.load(sys.stdin)
+          names = [n for root in doc.get("testNodes", []) for n in walk(root)]
+          print("::error::Failing tests: " + (", ".join(names) if names else "none listed"))
+          for n in names:
+              print("FAILED:", n)
+          '
+
+      - name: Upload the App-target result bundle
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-test-results-${{ github.sha }}
+          path: build/test-results/app.xcresult
+          retention-days: 14
 
       - name: Locate built .app
         id: locate

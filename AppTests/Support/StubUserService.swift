@@ -33,6 +33,15 @@ struct RecordedUserCall: Sendable, Equatable {
         case linkIdentityNative(provider: String, code: String, state: String)
         case settings
         case updateSettings
+        case profileSettings
+        /// A profile save, with the change-gated body it actually sent — so a
+        /// test can assert that an untouched field was *not* written.
+        case updateProfileSettings(displayName: String?, bio: String?, theme: String?, maxMessageLength: Int?)
+        case setAvatarFromURL(url: String)
+        case requestPasswordReset(email: String)
+        case unlinkIdentity(provider: String)
+        case verifyIdentity(provider: String)
+        case githubConnectionStatus
         /// The composer gear's single-field write, with the value it sent.
         case setShowAdvancedPostSettings(enabled: Bool)
     }
@@ -56,6 +65,13 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     private var blueskyConfiguredOutcomes: [Result<Bool, Error>] = []
     private var mastodonConfiguredOutcomes: [Result<Bool, Error>] = []
     private var linkIdentityNativeOutcomes: [Result<LinkedIdentity, Error>] = []
+    private var profileSettingsOutcomes: [Result<ProfileSettings, Error>] = []
+    private var updateProfileSettingsOutcomes: [Result<ProfileSettings, Error>] = []
+    private var setAvatarFromURLOutcomes: [Result<URL?, Error>] = []
+    private var requestPasswordResetOutcomes: [Result<Void, Error>] = []
+    private var unlinkIdentityOutcomes: [Result<Void, Error>] = []
+    private var verifyIdentityOutcomes: [Result<Bool, Error>] = []
+    private var githubConnectionStatusOutcomes: [Result<GitHubConnection, Error>] = []
     private var settingsOutcomes: [Result<UserSettings, Error>] = []
     private var updateSettingsOutcomes: [Result<UserSettings, Error>] = []
     private var setShowAdvancedPostSettingsOutcomes: [Result<UserSettings, Error>] = []
@@ -177,6 +193,64 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func enqueueLinkIdentityNative(failure error: Error) {
         lock.lock(); defer { lock.unlock() }
         linkIdentityNativeOutcomes.append(.failure(error))
+    }
+
+    func enqueueProfileSettings(success settings: ProfileSettings) {
+        lock.lock(); defer { lock.unlock() }
+        profileSettingsOutcomes.append(.success(settings))
+    }
+    func enqueueProfileSettings(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        profileSettingsOutcomes.append(.failure(error))
+    }
+    func enqueueUpdateProfileSettings(success settings: ProfileSettings) {
+        lock.lock(); defer { lock.unlock() }
+        updateProfileSettingsOutcomes.append(.success(settings))
+    }
+    func enqueueUpdateProfileSettings(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        updateProfileSettingsOutcomes.append(.failure(error))
+    }
+    func enqueueSetAvatarFromURL(success url: URL?) {
+        lock.lock(); defer { lock.unlock() }
+        setAvatarFromURLOutcomes.append(.success(url))
+    }
+    func enqueueSetAvatarFromURL(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        setAvatarFromURLOutcomes.append(.failure(error))
+    }
+    func enqueueRequestPasswordReset(success: Void = ()) {
+        lock.lock(); defer { lock.unlock() }
+        requestPasswordResetOutcomes.append(.success(()))
+    }
+    func enqueueRequestPasswordReset(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        requestPasswordResetOutcomes.append(.failure(error))
+    }
+
+    func enqueueUnlinkIdentity(success: Void = ()) {
+        lock.lock(); defer { lock.unlock() }
+        unlinkIdentityOutcomes.append(.success(()))
+    }
+    func enqueueUnlinkIdentity(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        unlinkIdentityOutcomes.append(.failure(error))
+    }
+    func enqueueVerifyIdentity(success verified: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        verifyIdentityOutcomes.append(.success(verified))
+    }
+    func enqueueVerifyIdentity(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        verifyIdentityOutcomes.append(.failure(error))
+    }
+    func enqueueGitHubConnectionStatus(success status: GitHubConnection) {
+        lock.lock(); defer { lock.unlock() }
+        githubConnectionStatusOutcomes.append(.success(status))
+    }
+    func enqueueGitHubConnectionStatus(failure error: Error) {
+        lock.lock(); defer { lock.unlock() }
+        githubConnectionStatusOutcomes.append(.failure(error))
     }
 
     func enqueueSettings(success settings: UserSettings) {
@@ -347,6 +421,73 @@ final class StubUserService: UserServicing, @unchecked Sendable {
     func linkIdentityNative(provider: IdentityProvider, code: String, state: String) async throws -> LinkedIdentity {
         try perform(label: "linkIdentityNative", record: .linkIdentityNative(provider: provider.wireToken, code: code, state: state)) { $0.linkIdentityNativeOutcomes }
             set: { $0.linkIdentityNativeOutcomes = $1 }
+    }
+
+    func profileSettings() async throws -> ProfileSettings {
+        try perform(label: "profileSettings", record: .profileSettings) { $0.profileSettingsOutcomes }
+            set: { $0.profileSettingsOutcomes = $1 }
+    }
+
+    func updateProfileSettings(
+        _ settings: ProfileSettings,
+        changedFrom original: ProfileSettings
+    ) async throws -> ProfileSettings {
+        // Record the change-gated body, not the whole working copy: the point of
+        // the gating is that an untouched field is absent from the PATCH, and a
+        // test can only assert that if the stub keeps what was actually sent.
+        let request = settings.updateRequest(changedFrom: original)
+        return try perform(
+            label: "updateProfileSettings",
+            record: .updateProfileSettings(
+                displayName: request.displayName,
+                bio: request.bio,
+                theme: request.theme,
+                maxMessageLength: request.maxMessageLength
+            )
+        ) { $0.updateProfileSettingsOutcomes }
+            set: { $0.updateProfileSettingsOutcomes = $1 }
+    }
+
+    func setAvatarFromURL(_ url: String) async throws -> URL? {
+        try perform(label: "setAvatarFromURL", record: .setAvatarFromURL(url: url)) {
+            $0.setAvatarFromURLOutcomes
+        } set: {
+            $0.setAvatarFromURLOutcomes = $1
+        }
+    }
+
+    func requestPasswordReset(email: String) async throws {
+        let _: Void = try perform(
+            label: "requestPasswordReset",
+            record: .requestPasswordReset(email: email)
+        ) { $0.requestPasswordResetOutcomes }
+            set: { $0.requestPasswordResetOutcomes = $1 }
+    }
+
+    func unlinkIdentity(_ identity: LinkedIdentity) async throws {
+        // Records the *wire token*, not the provider case: the whole point is
+        // that Mastodon must address its own instance.
+        let _: Void = try perform(
+            label: "unlinkIdentity",
+            record: .unlinkIdentity(provider: identity.providerWireToken)
+        ) { $0.unlinkIdentityOutcomes }
+            set: { $0.unlinkIdentityOutcomes = $1 }
+    }
+
+    func verifyIdentity(_ identity: LinkedIdentity) async throws -> Bool {
+        try perform(
+            label: "verifyIdentity",
+            record: .verifyIdentity(provider: identity.providerWireToken)
+        ) { $0.verifyIdentityOutcomes }
+            set: { $0.verifyIdentityOutcomes = $1 }
+    }
+
+    func githubConnectionStatus() async throws -> GitHubConnection {
+        try perform(label: "githubConnectionStatus", record: .githubConnectionStatus) {
+            $0.githubConnectionStatusOutcomes
+        } set: {
+            $0.githubConnectionStatusOutcomes = $1
+        }
     }
 
     func settings() async throws -> UserSettings {

@@ -159,21 +159,55 @@ public actor SwiftDataDocumentStore: DocumentStore {
     public func enqueueOutbox(_ change: DocumentChange) async throws {
         let context = self.context
         let payload = try DocumentChangeCodec.encode(change)
+        // The queue position is read from the store and assigned in the same
+        // save as the insert (GitHub #84). A process-local counter would
+        // restart at zero on the next launch and interleave new entries among
+        // old ones; the store is the only thing that knows where the queue got
+        // to.
+        //
+        // `enqueueOutbox` is the single writer — the store is actor-isolated and
+        // every caller goes through it — so the read-then-write is not a race
+        // with another enqueue.
         let row = OutboxEntryRecord(
             kind: change.kind.rawValue,
             targetId: change.targetId,
             payloadJSON: payload,
-            enqueuedAt: Date()
+            enqueuedAt: Date(),
+            sequence: nextOutboxSequence(context: context)
         )
         context.insert(row)
         try context.save()
     }
 
+    /// The next free queue position: one past the highest currently stored.
+    ///
+    /// Computed from `max` rather than from the row count, because dequeuing
+    /// removes rows — a count-based sequence would reissue a position already
+    /// used by a row still waiting behind it, and two entries sharing a position
+    /// puts the ordering right back where it started.
+    private func nextOutboxSequence(context: ModelContext) -> Int {
+        var descriptor = FetchDescriptor<OutboxEntryRecord>(
+            sortBy: [SortDescriptor(\.sequence, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        // A failed read must not reuse position 0 and silently re-tie the queue.
+        // Falling back to the row count keeps new entries after existing ones in
+        // the overwhelmingly common case, and the empty-store case is 0 anyway.
+        guard let highest = try? context.fetch(descriptor).first?.sequence else {
+            logger.error("nextOutboxSequence: fetch failed; falling back to the row count")
+            return (try? context.fetchCount(FetchDescriptor<OutboxEntryRecord>())) ?? 0
+        }
+        return highest + 1
+    }
+
     public func outboxEntries() async -> [OutboxEntry] {
         let context = self.context
         do {
+            // Sorted by `sequence`, which is a total order. `enqueuedAt` is not
+            // — two entries stamped in the same instant tie, and the tiebreak is
+            // whatever the store returns (GitHub #84).
             let descriptor = FetchDescriptor<OutboxEntryRecord>(
-                sortBy: [SortDescriptor(\.enqueuedAt, order: .forward)]
+                sortBy: [SortDescriptor(\.sequence, order: .forward)]
             )
             return try context.fetch(descriptor).compactMap { record in
                 guard let change = try? DocumentChangeCodec.decode(record.payloadJSON) else {

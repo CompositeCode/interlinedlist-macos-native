@@ -17,6 +17,24 @@ public struct NotificationDTO: Codable, Sendable, Equatable, Identifiable {
     public let createdAt: Date?
     public let readAt: Date?
 
+    /// The **typed** deep-link target the server resolves for the row.
+    ///
+    /// Decoded 2026-09-15 (GitHub #95). The client had been digging the id out
+    /// of `metadata` under keys the server does not use — `metadata.messageId`
+    /// where the live payload carries `metadata.sourceMessageId` — while this
+    /// object sat alongside with the answer already resolved:
+    ///
+    /// ```json
+    /// "target":{"messageId":"dd9ec178-…","listId":null,"orgId":null}
+    /// ```
+    public let target: NotificationTargetDTO?
+
+    /// The in-app path the server routes this row to, e.g.
+    /// `"/message/dd9ec178-…/thread"`. Mirrors `actionUrl` on every captured
+    /// row; kept because it is the server's own routing answer and is the right
+    /// last resort before giving up on a target.
+    public let routePath: String?
+
     public init(
         id: String,
         title: String? = nil,
@@ -25,7 +43,9 @@ public struct NotificationDTO: Codable, Sendable, Equatable, Identifiable {
         type: String? = nil,
         metadata: [String: NotificationMetadataValue]? = nil,
         createdAt: Date? = nil,
-        readAt: Date? = nil
+        readAt: Date? = nil,
+        target: NotificationTargetDTO? = nil,
+        routePath: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -35,6 +55,27 @@ public struct NotificationDTO: Codable, Sendable, Equatable, Identifiable {
         self.metadata = metadata
         self.createdAt = createdAt
         self.readAt = readAt
+        self.target = target
+        self.routePath = routePath
+    }
+}
+
+// MARK: - NotificationTargetDTO
+
+/// The server's own resolution of what a notification points at.
+///
+/// Every field optional and exactly one is populated per row on the captured
+/// payloads — a `message_dig` carries `messageId`, an `integration_reconnect`
+/// carries none at all and relies on `routePath`.
+public struct NotificationTargetDTO: Codable, Sendable, Equatable {
+    public let messageId: String?
+    public let listId: String?
+    public let orgId: String?
+
+    public init(messageId: String? = nil, listId: String? = nil, orgId: String? = nil) {
+        self.messageId = messageId
+        self.listId = listId
+        self.orgId = orgId
     }
 }
 

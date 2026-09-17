@@ -13,7 +13,7 @@ Documentation claims are code claims; verify them. Before reporting done you **m
 
 The gates that bite:
 
-- **Shipped-only.** Every behavior claim is cross-checked against `docs/progress.md`; planned features are labeled "coming in a future update."
+- **Shipped-only.** Every behavior claim is cross-checked against the Status snapshot and shipped scoreboard in `work-consolidation.md` (the single source of truth since 2026-09-14); planned features are labeled "coming in a future update." The old `docs/progress.md` is archived and must not be cited as current.
 - **Help Book ↔ `docs/user/` parity.** Regenerate `InterlinedList.helpindex` with `hiutil` after any HTML change (document the manual step if `hiutil` is unavailable — never fake the index).
 - **No `<script>` tags** in Help Book HTML — grep to prove it. `plutil -lint` every `Info.plist` you touch.
 - **Links resolve; coverage-matrix flips** correspond to wave consumers exercising the row end-to-end; recompute totals (never paste a number).

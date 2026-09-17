@@ -59,6 +59,44 @@ struct MainWindowView: View {
 
     @State private var selection: SidebarSection? = .timeline
 
+    /// Whether the Profile group is open. Persisted so the choice survives a
+    /// relaunch — a group that silently re-collapses every launch is a group the
+    /// user stops trusting.
+    ///
+    /// Defaults to expanded: on first run the three rows that moved into it were
+    /// previously top-level, and collapsing them by default would look like they
+    /// had been removed.
+    @AppStorage("sidebar.profileGroup.expanded") private var isProfileGroupExpanded = true
+
+    /// The Settings tab the scene should open on. Shares its key with
+    /// `SettingsRootView`, which is how a sidebar row preselects a pane that
+    /// `SettingsLink` itself cannot address.
+    @AppStorage("settings.selectedTab") private var settingsTab: SettingsTab = .linkedAccounts
+
+    /// Selects a sidebar section, opening the Profile group first when the
+    /// target lives inside it.
+    ///
+    /// Every deep link goes through here (GitHub #45). A menu command or a
+    /// notification that lands on Organizations while the group is collapsed
+    /// would otherwise select a row the user cannot see — the detail pane
+    /// changes and the sidebar appears to have ignored them.
+    ///
+    /// Expanding is deliberately one-way: a deep link to a top-level row does
+    /// **not** collapse the group, because the user's own choice to keep it open
+    /// is not something a menu command should undo.
+    private func select(_ section: SidebarSection) {
+        if Self.profileGroupSections.contains(section) {
+            isProfileGroupExpanded = true
+        }
+        selection = section
+    }
+
+    /// The rows that live inside the Profile group.
+    ///
+    /// One list, used by both the group's contents and `select(_:)`, so a row
+    /// cannot be moved into the group without deep links learning about it.
+    static let profileGroupSections: Set<SidebarSection> = [.profile, .organizations, .connections]
+
     // M7 — Data Export sheet state. `pendingExportType` is set by each
     // `ExportMenuCommands` notification before `showExportSheet` is flipped
     // so `ExportView` receives the right initial type and can auto-start
@@ -109,15 +147,60 @@ struct MainWindowView: View {
                 Label(SidebarSection.documents.rawValue, systemImage: SidebarSection.documents.systemImage)
                     .tag(SidebarSection.documents)
                     .foregroundStyle(ILColor.onMasthead)
-                Label(SidebarSection.organizations.rawValue, systemImage: SidebarSection.organizations.systemImage)
-                    .tag(SidebarSection.organizations)
-                    .foregroundStyle(ILColor.onMasthead)
-                Label(SidebarSection.profile.rawValue, systemImage: SidebarSection.profile.systemImage)
-                    .tag(SidebarSection.profile)
-                    .foregroundStyle(ILColor.onMasthead)
-                Label(SidebarSection.connections.rawValue, systemImage: SidebarSection.connections.systemImage)
-                    .tag(SidebarSection.connections)
-                    .foregroundStyle(ILColor.onMasthead)
+                // The account-shaped rows, grouped (GitHub #45 / G31). On the
+                // web these live inside the profile/account menu; macOS had ten
+                // flat peers with no account grouping at all.
+                //
+                // Settings is an *additional* entrance, never a relocation: the
+                // panes stay in the `⌘,` scene, because macOS convention is that
+                // Settings is its own window and re-homing it into the detail
+                // column would break both that expectation and the keyboard
+                // shortcut users already have.
+                DisclosureGroup(isExpanded: $isProfileGroupExpanded) {
+                    Label(SidebarSection.profile.rawValue, systemImage: SidebarSection.profile.systemImage)
+                        .tag(SidebarSection.profile)
+                        .foregroundStyle(ILColor.onMasthead)
+                    Label(SidebarSection.organizations.rawValue, systemImage: SidebarSection.organizations.systemImage)
+                        .tag(SidebarSection.organizations)
+                        .foregroundStyle(ILColor.onMasthead)
+                    Label(SidebarSection.connections.rawValue, systemImage: SidebarSection.connections.systemImage)
+                        .tag(SidebarSection.connections)
+                        .foregroundStyle(ILColor.onMasthead)
+                    // `SettingsLink` opens the real Settings scene, so `⌘,`,
+                    // File ▸ Settings and this row are three doors into one
+                    // window rather than two different Settings.
+                    SettingsLink {
+                        Label("Settings", systemImage: "gearshape")
+                            .foregroundStyle(ILColor.onMasthead)
+                    }
+                    .buttonStyle(.plain)
+                    .simultaneousGesture(TapGesture().onEnded {
+                        // Land on Preferences rather than on whichever tab was
+                        // open last: a row labelled "Settings" that opens
+                        // Crash Reporting reads as a bug.
+                        settingsTab = .preferences
+                    })
+
+                    // `SettingsLink` opens the window but cannot address a tab,
+                    // so the target is stored first and the scene opens on it.
+                    //
+                    // This targeted `.linkedAccounts` until now — not a typo, but
+                    // the honest best available when PR #94 wrote it against a
+                    // `dev` where no Integrations tab existed yet. PR #93 has
+                    // since added one, so a row labelled Integrations that opens
+                    // Linked accounts is now simply wrong.
+                    SettingsLink {
+                        Label("Integrations", systemImage: "app.connected.to.app.below.fill")
+                            .foregroundStyle(ILColor.onMasthead)
+                    }
+                    .buttonStyle(.plain)
+                    .simultaneousGesture(TapGesture().onEnded {
+                        settingsTab = .integrations
+                    })
+                } label: {
+                    Label("Profile", systemImage: "person.crop.circle")
+                        .foregroundStyle(ILColor.onMasthead)
+                }
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
@@ -152,20 +235,20 @@ struct MainWindowView: View {
         // selection without the menu commands needing to know about
         // the view tree.
         .onReceive(NotificationCenter.default.publisher(for: .notificationsShow)) { _ in
-            selection = .notifications
+            select(.notifications)
         }
         // Web-parity (work-consolidation.md G5) — the ⌘F menu command posts
         // `.searchShow`; switch the sidebar to Search, then re-post
         // `.searchFocus` so the field takes focus once it is on screen.
         .onReceive(NotificationCenter.default.publisher(for: .searchShow)) { _ in
-            selection = .search
+            select(.search)
             NotificationCenter.default.post(name: .searchFocus, object: nil)
         }
         // A document search hit has no typed deep-link target, so the
         // search view routes here to land the user on the Documents
         // section.
         .onReceive(NotificationCenter.default.publisher(for: .searchShowDocuments)) { _ in
-            selection = .documents
+            select(.documents)
         }
         // Direct Messages (work-consolidation.md G1) — the ⌥⌘M menu command and the
         // profile "Message" button post `.directMessagesShow` to route the
@@ -173,7 +256,7 @@ struct MainWindowView: View {
         // may accompany it is observed by `DirectMessagesRootView` itself,
         // which selects the target conversation once it is on screen.
         .onReceive(NotificationCenter.default.publisher(for: .directMessagesShow)) { _ in
-            selection = .messages
+            select(.messages)
         }
         // M5.x — System notification banner deep-link. `AppDelegate` posts
         // `.notificationDeepLink` with the resolved `NotificationTarget` as
@@ -185,30 +268,30 @@ struct MainWindowView: View {
             guard let target = note.object as? NotificationTarget else { return }
             switch target {
             case .message(let id):
-                selection = .timeline
+                select(.timeline)
                 pendingMessageDeepLinkID = id
             case .list:
-                selection = .lists
+                select(.lists)
             case .user:
                 // The user who acted is shown in the Connections panel
                 // (followers / following / requests roster).
-                selection = .connections
+                select(.connections)
             case .organization:
-                selection = .organizations
+                select(.organizations)
             case .unknown:
                 // No typed target — fall back to the notifications tray
                 // so the user sees the item that triggered the banner.
-                selection = .notifications
+                select(.notifications)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .socialShowFollowers)) { _ in
-            selection = .connections
+            select(.connections)
         }
         .onReceive(NotificationCenter.default.publisher(for: .socialShowFollowing)) { _ in
-            selection = .connections
+            select(.connections)
         }
         .onReceive(NotificationCenter.default.publisher(for: .socialShowRequests)) { _ in
-            selection = .connections
+            select(.connections)
         }
         // M7 — Export menu commands. Each notification maps to one ExportType;
         // the sheet auto-starts the corresponding download on appear.
@@ -247,7 +330,7 @@ struct MainWindowView: View {
         ) {
             if let parsed = pendingShare {
                 ResolveShareView(parsed: parsed, environment: environment) { _ in
-                    selection = parsed.kind == .list ? .lists : .documents
+                    select(parsed.kind == .list ? .lists : .documents)
                 }
             }
         }
